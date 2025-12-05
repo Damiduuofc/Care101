@@ -1,0 +1,160 @@
+{
+  "placeholderImages": [
+    {
+      "id": "hero-home",
+      "description": "A bright and modern hospital lobby.",
+      "imageUrl": "https://images.unsplash.com/photo-1519494026892-80bbd2d6fd0d?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHwxfHxob3NwaXRhbCUyMGxvYmJ5fGVufDB8fHx8MTc2NDQzNjA5Mnww&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "hospital lobby"
+    },
+    {
+      "id": "hero-about",
+      "description": "An architectural shot of the modern hospital exterior.",
+      "imageUrl": "https://images.unsplash.com/photo-1739185069005-8cb46fef2702?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHw2fHxob3NwaXRhbCUyMGV4dGVyaW9yfGVufDB8fHx8MTc2NDQwMzQxMXww&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "hospital exterior"
+    },
+    {
+      "id": "hero-departments",
+      "description": "A team of doctors collaborating.",
+      "imageUrl": "https://images.unsplash.com/photo-1550831107-1553da8c8464?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHw2fHxkb2N0b3JzJTIwdGVhbXxlbnwwfHx8fDE3NjQ0ODI0MDV8MA&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "doctors team"
+    },
+    {
+      "id": "hero-doctors",
+      "description": "A diverse group of smiling medical professionals.",
+      "imageUrl": "https://images.unsplash.com/photo-1666887360742-974c8fce8e6b?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHw5fHxkb2N0b3JzJTIwZGl2ZXJzZXxlbnwwfHx8fDE3NjQ0ODI0MDV8MA&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "doctors diverse"
+    },
+    {
+      "id": "hero-contact",
+      "description": "A friendly receptionist at the hospital front desk.",
+      "imageUrl": "https://images.unsplash.com/photo-1739185069005-8cb46fef2702?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHw3fHxob3NwaXRhbCUyMHJlY2VwdGlvbnxlbnwwfHx8fDE3NjQzODk5MTZ8MA&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "hospital reception"
+    },
+    {
+      "id": "doctor-1",
+      "description": "Portrait of Dr. Emily Carter.",
+      "imageUrl": "https://images.unsplash.com/photo-1550831107-1553da8c8464?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHw4fHxkb2N0b3IlMjBwb3J0cmFpdHxlbnwwfHx8fDE3NjQzNjcwNzh8MA&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "doctor portrait"
+    },
+    {
+      "id": "doctor-2",
+      "description": "Portrait of Dr. James Anderson.",
+      "imageUrl": "https://images.unsplash.com/photo-1550831107-1553da8c8464?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHw4fHxkb2N0b3IlMjBwb3J0cmFpdHxlbnwwfHx8fDE3NjQzNjcwNzh8MA&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "doctor portrait"
+    },
+    {
+      "id": "doctor-3",
+      "description": "Portrait of Dr. Olivia Garcia.",
+      "imageUrl": "https://images.unsplash.com/photo-1685022036259-04cf91a89af1?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHwxMHx8d29tYW4lMjBkb2N0b3J8ZW58MHx8fHwxNzY0Mzk5Njg4fDA&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "woman doctor"
+    },
+    {
+      "id": "doctor-4",
+      "description": "Portrait of Dr. Benjamin Lee.",
+      "imageUrl": "https://images.unsplash.com/photo-1712215544003-af10130f8eb3?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHwxfHxtYWxlJTIwZG9jdG9yfGVufDB8fHx8MTc2NDM5OTQxN3ww&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "male doctor"
+    },
+    {
+      "id": "doctor-5",
+      "description": "Portrait of Dr. Sophia Martinez.",
+      "imageUrl": "https://images.unsplash.com/photo-1605269196330-7a4ef37dbcfc?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHwxMHx8ZG9jdG9yJTIwc21pbGluZ3xlbnwwfHx8fDE3NjQ0MTIyNDl8MA&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "doctor smiling"
+    },
+    {
+      "id": "doctor-6",
+      "description": "Portrait of Dr. Michael Williams.",
+      "imageUrl": "https://images.unsplash.com/photo-1758691462123-8a17ae95d203?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHw2fHxkb2N0b3IlMjBwcm9mZXNzaW9uYWx8ZW58MHx8fHwxNzY0NDMzMTUzfDA&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "doctor professional"
+    },
+    {
+      "id": "doctor-7",
+      "description": "Portrait of Dr. Isabella Rodriguez.",
+      "imageUrl": "https://images.unsplash.com/photo-1573496358961-3c82861ab8f4?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHw0fHxwcm9mZXNzaW9uYWwlMjB3b21hbnxlbnwwfHx8fDE3NjQ0Mjc4NzJ8MA&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "professional woman"
+    },
+    {
+      "id": "doctor-8",
+      "description": "Portrait of Dr. David Chen.",
+      "imageUrl": "https://images.unsplash.com/photo-1758691463626-0ab959babe00?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHwyfHxkb2N0b3IlMjBnbGFzc2VzfGVufDB8fHx8MTc2NDQ4MjQwNXww&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "doctor glasses"
+    },
+    {
+      "id": "gallery-1",
+      "description": "A state-of-the-art operating room.",
+      "imageUrl": "https://images.unsplash.com/photo-1685997180450-242a65624238?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHw2fHxvcGVyYXRpbmclMjByb29tfGVufDB8fHx8MTc2NDQ4MjQwNXww&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "operating room"
+    },
+    {
+      "id": "gallery-2",
+      "description": "A comfortable and private patient room.",
+      "imageUrl": "https://images.unsplash.com/photo-1763310225257-590eeb4f93d4?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHw2fHxwYXRpZW50JTIwcm9vbXxlbnwwfHx8fDE3NjQ0ODI0MDV8MA&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "patient room"
+    },
+    {
+      "id": "gallery-3",
+      "description": "Advanced MRI machine.",
+      "imageUrl": "https://images.unsplash.com/photo-1663236140798-1bd2c480b816?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHwxfHxtcmklMjBtYWNoaW5lfGVufDB8fHx8MTc2NDQ4MjQwNXww&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "mri machine"
+    },
+    {
+      "id": "gallery-4",
+      "description": "The hospital's research laboratory.",
+      "imageUrl": "https://images.unsplash.com/photo-1562411053-c9ac630a5934?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHw2fHxzY2llbmNlJTIwbGFib3JhdG9yeXxlbnwwfHx8fDE3NjQzODQzMTl8MA&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "science laboratory"
+    },
+    {
+      "id": "gallery-5",
+      "description": "A child-friendly pediatric ward.",
+      "imageUrl": "https://images.unsplash.com/photo-1632053005736-6bd9cfc4daf9?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHw5fHxwZWRpYXRyaWMlMjB3YXJkfGVufDB8fHx8MTc2NDQ4MjQwNXww&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "pediatric ward"
+    },
+    {
+      "id": "gallery-6",
+      "description": "The hospital cafeteria.",
+      "imageUrl": "https://images.unsplash.com/photo-1597106525363-7916ebf5b083?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHwyfHxtb2Rlcm4lMjBjYWZldGVyaWF8ZW58MHx8fHwxNzY0NDM5MzgyfDA&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "modern cafeteria"
+    },
+    {
+      "id": "map-placeholder",
+      "description": "A placeholder map showing a generic city location.",
+      "imageUrl": "https://images.unsplash.com/photo-1603466183710-70b84997a93f?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHw1fHxjaXR5JTIwbWFwfGVufDB8fHx8MTc2NDM4MjQyM3ww&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "city map"
+    },
+    {
+      "id": "doctor-dashboard-banner",
+      "description": "A doctor reviewing charts in a modern office.",
+      "imageUrl": "https://images.unsplash.com/photo-1550831107-1553da8c8464?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHw0fHxkb2N0b3IlMjBvZmZpY2V8ZW58MHx8fHwxNzY0NDg2OTY5fDA&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "doctor office"
+    },
+    {
+      "id": "doctor-profile",
+      "description": "Professional portrait of a male doctor.",
+      "imageUrl": "https://images.unsplash.com/photo-1712215544003-af10130f8eb3?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHwxfHxtYWxlJTIwZG9jdG9yfGVufDB8fHx8MTc2NDM5OTQxN3ww&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "male doctor"
+    },
+    {
+      "id": "patient-profile",
+      "description": "Portrait of a smiling female patient.",
+      "imageUrl": "https://images.unsplash.com/photo-1544005313-94ddf0286df2?q=80&w=1976&auto=format&fit=crop",
+      "imageHint": "female portrait"
+    },
+    {
+      "id": "patient-card-1",
+      "description": "Abstract gradient representing patient data.",
+      "imageUrl": "https://images.unsplash.com/photo-1579548122080-c35fd6820ecb?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHwzfHxhYnN0cmFjdCUyMGdyYWRpZW50fGVufDB8fHx8MTc2NDM3NjY5Mnww&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "abstract gradient"
+    },
+    {
+      "id": "patient-card-2",
+      "description": "Abstract gradient representing patient data.",
+      "imageUrl": "https://images.unsplash.com/photo-1579546929518-9e396f3cc809?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHwxMHx8YWJzdHJhY3QlMjBncmFkaWVudHxlbnwwfHx8fDE3NjQzNzY2OTJ8MA&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "abstract gradient"
+    },
+    {
+      "id": "patient-card-3",
+      "description": "Abstract gradient representing patient data.",
+      "imageUrl": "https://images.unsplash.com/photo-1707130869369-c00812966290?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHw3fHxhYnN0cmFjdCUyMGdyYWRpZW50fGVufDB8fHx8MTc2NDM3NjY5Mnww&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "abstract gradient"
+    }
+  ]
+}
