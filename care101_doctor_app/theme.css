@@ -1,0 +1,19 @@
+:root {
+  --background: 255 255 255;
+  --foreground: 17 24 39;
+
+  --primary: 59 130 246;
+  --primary-foreground: 255 255 255;
+
+  --secondary: 243 244 246;
+  --secondary-foreground: 31 41 55;
+
+  --muted: 229 231 235;
+  --muted-foreground: 107 114 128;
+
+  --border: 209 213 219;
+  --input: 243 244 246;
+
+  --card: 255 255 255;
+  --card-foreground: 17 24 39;
+}

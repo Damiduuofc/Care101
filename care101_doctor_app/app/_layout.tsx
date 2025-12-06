@@ -1,5 +1,9 @@
 import { Stack } from 'expo-router';
 import { AuthProvider } from '../context/auth';
+import "../global.css";
+import { PortalHost } from "@rn-primitives/portal";
+import "../theme.css";
+
 
 export default function RootLayout() {
   return (
@@ -10,6 +14,8 @@ export default function RootLayout() {
         <Stack.Screen name="login" />
         <Stack.Screen name="dashboard" />
       </Stack>
+            <PortalHost />
+
     </AuthProvider>
   );
 }

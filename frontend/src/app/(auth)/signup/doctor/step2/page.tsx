@@ -52,13 +52,13 @@ export default function DoctorSignupStep2() {
         
         {/* Progress Bar (Full for Step 2) */}
         <div className="w-full h-2 bg-slate-100">
-          <div className="h-full w-full bg-emerald-600 rounded-r-full transition-all duration-500" />
+          <div className="h-full w-full bg-cyan-600 rounded-r-full transition-all duration-500" />
         </div>
 
         <CardHeader className="space-y-1">
           <div className="flex items-center justify-between">
             <CardTitle className="text-2xl font-bold text-slate-900">Account Details</CardTitle>
-            <span className="text-sm font-semibold text-emerald-600 bg-emerald-50 px-3 py-1 rounded-full">
+            <span className="text-sm font-semibold text-cyan-600 bg-cyan-50 px-3 py-1 rounded-full">
               Step 2 of 2
             </span>
           </div>
@@ -103,7 +103,7 @@ export default function DoctorSignupStep2() {
                           {...fieldProps}
                           type="file"
                           accept="image/*"
-                          className="pl-10 pt-2 cursor-pointer file:mr-4 file:py-1 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-emerald-50 file:text-emerald-700 hover:file:bg-emerald-100"
+                          className="pl-10 pt-2 cursor-pointer file:mr-4 file:py-1 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-cyan-50 file:text-cyan-700 hover:file:bg-cyan-100"
                           onChange={(event) => {
                             onChange(event.target.files && event.target.files[0]);
                           }}
@@ -171,7 +171,7 @@ export default function DoctorSignupStep2() {
                         <button
                           type="button"
                           onClick={() => setShowPassword(!showPassword)}
-                          className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600 focus:outline-none"
+                          className="absolute right-3 top-2.5 text-slate-400 hover:text-cyan-600 focus:outline-none"
                         >
                           {showPassword ? (
                             <EyeOff className="h-5 w-5" />
@@ -189,13 +189,13 @@ export default function DoctorSignupStep2() {
               {/* Action Buttons */}
               <div className="flex justify-between pt-6">
                  <Link href="/signup/doctor/step1">
-                    <Button type="button" variant="ghost" className="text-slate-600 hover:text-slate-900">
+                    <Button type="button" variant="ghost" className="text-cyan-600 hover:text-cyan-900">
                       <ArrowLeft className="mr-2 h-4 w-4" /> Back
                     </Button>
                 </Link>
                 <Button 
                   type="submit" 
-                  className="bg-emerald-600 hover:bg-emerald-700 text-white min-w-[140px]"
+                  className="bg-cyan-600 hover:bg-cyan-700 text-white min-w-[140px]"
                 >
                   <Check className="mr-2 h-4 w-4" /> Complete
                 </Button>

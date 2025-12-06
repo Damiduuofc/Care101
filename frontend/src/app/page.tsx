@@ -237,7 +237,7 @@ export default function Home() {
               <Button size="lg" className="h-16 px-10 text-xl bg-white text-red-600 hover:bg-red-50 hover:scale-105 transition-all shadow-xl rounded-full">
                 <Phone className="mr-3 h-6 w-6" /> Call 119 Emergency
               </Button>
-              <Button size="lg" variant="outline" className="h-16 px-10 text-xl border-2 border-white/50 text-white hover:bg-white/10 hover:border-white rounded-full">
+              <Button size="lg" variant="outline" className="h-16 px-10 text-xl border-2 border-white/50 text-black hover:bg-white/10 hover:border-white rounded-full">
                 <MapPin className="mr-3 h-6 w-6" /> Get Directions
               </Button>
             </div>

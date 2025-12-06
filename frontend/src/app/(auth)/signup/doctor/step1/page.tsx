@@ -58,13 +58,13 @@ export default function DoctorSignupStep1() {
         
         {/* Progress Bar */}
         <div className="w-full h-2 bg-slate-100">
-          <div className="h-full w-1/2 bg-emerald-600 rounded-r-full" />
+          <div className="h-full w-1/2 bg-cyan-600 rounded-r-full" />
         </div>
 
         <CardHeader className="space-y-1">
           <div className="flex items-center justify-between">
             <CardTitle className="text-2xl font-bold text-slate-900">Professional Details</CardTitle>
-            <span className="text-sm font-semibold text-emerald-600 bg-emerald-50 px-3 py-1 rounded-full">
+            <span className="text-sm font-semibold text-cyan-600 bg-cyan-50 px-3 py-1 rounded-full">
               Step 1 of 2
             </span>
           </div>
@@ -140,7 +140,7 @@ export default function DoctorSignupStep1() {
                     <FormLabel>Specialization</FormLabel>
                     <Select onValueChange={field.onChange} defaultValue={field.value}>
                       <FormControl>
-                        <SelectTrigger className="pl-10 relative">
+                        <SelectTrigger className="pl-10 relative  ">
                           <Stethoscope className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
                           <SelectValue placeholder="Select your field" />
                         </SelectTrigger>
@@ -168,7 +168,7 @@ export default function DoctorSignupStep1() {
                 
                 <Button 
                   type="submit" 
-                  className="bg-emerald-600 hover:bg-emerald-700 text-white min-w-[120px]"
+                  className="bg-cyan-600 hover:bg-cyan-700 text-white min-w-[120px]"
                 >
                   Next Step <ChevronRight className="ml-2 h-4 w-4" />
                 </Button>

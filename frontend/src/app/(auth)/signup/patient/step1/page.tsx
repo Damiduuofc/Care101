@@ -58,13 +58,13 @@ export default function PatientSignupStep1() {
       <Card className="w-full max-w-lg shadow-lg border-slate-200">
         {/* Progress Bar */}
         <div className="w-full h-2 bg-slate-100">
-          <div className="h-full w-1/3 bg-blue-600 rounded-r-full" />
+          <div className="h-full w-1/3 bg-cyan-600 rounded-r-full" />
         </div>
 
         <CardHeader className="space-y-1">
           <div className="flex items-center justify-between">
             <CardTitle className="text-2xl font-bold text-slate-900">Personal Details</CardTitle>
-            <span className="text-sm font-semibold text-blue-600 bg-blue-50 px-3 py-1 rounded-full">
+            <span className="text-sm font-semibold text-cyan-600 bg-cyan-50 px-3 py-1 rounded-full">
               Step 1 of 3
             </span>
           </div>
@@ -173,11 +173,11 @@ export default function PatientSignupStep1() {
               {/* Action Buttons */}
               <div className="flex justify-between pt-6">
                 <Link href="/signup">
-                  <Button type="button" variant="ghost" className="text-slate-600 hover:text-slate-900">
+                  <Button type="button" variant="ghost" className="text-cyan-600 hover:text-cyan-900">
                     <ArrowLeft className="mr-2 h-4 w-4" /> Back
                   </Button>
                 </Link>
-                <Button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white min-w-[120px]">
+                <Button type="submit" className="bg-cyan-600 hover:bg-cyan-700 text-white min-w-[120px]">
                   Next Step <ChevronRight className="ml-2 h-4 w-4" />
                 </Button>
               </div>

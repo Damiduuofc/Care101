@@ -26,6 +26,12 @@
       "favicon": "./assets/images/favicon.png"
     },
     "plugins": [
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow app to access your photos to upload certificates."
+        }
+      ],
       "expo-router",
       [
         "expo-splash-screen",

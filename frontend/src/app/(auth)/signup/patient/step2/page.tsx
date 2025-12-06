@@ -58,17 +58,17 @@ export default function PatientSignupStep2() {
 
   return (
     <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
-      <Card className="w-full max-w-lg shadow-lg border-slate-200">
+      <Card className="w-full max-w-lg shadow-lg border-cyan-200">
         
         {/* Progress Bar (Step 2/3) */}
-        <div className="w-full h-2 bg-slate-100">
-          <div className="h-full w-2/3 bg-blue-600 rounded-r-full transition-all duration-500" />
+        <div className="w-full h-2 bg-cyan-100">
+          <div className="h-full w-2/3 bg-cyan-600 rounded-r-full transition-all duration-500" />
         </div>
 
         <CardHeader className="space-y-1">
           <div className="flex items-center justify-between">
-            <CardTitle className="text-2xl font-bold text-slate-900">Contact Information</CardTitle>
-            <span className="text-sm font-semibold text-blue-600 bg-blue-50 px-3 py-1 rounded-full">
+            <CardTitle className="text-2xl font-bold text-cyan-900">Contact Information</CardTitle>
+            <span className="text-sm font-semibold text-blue-600 bg-cyan-50 px-3 py-1 rounded-full">
               Step 2 of 3
             </span>
           </div>
@@ -147,14 +147,14 @@ export default function PatientSignupStep2() {
               {/* Action Buttons */}
               <div className="flex justify-between pt-6">
                  <Link href="/signup/patient/step1">
-                    <Button type="button" variant="ghost" className="text-slate-600 hover:text-slate-900">
+                    <Button type="button" variant="ghost" className="text-cyan-600 hover:text-cyan-900">
                       <ArrowLeft className="mr-2 h-4 w-4" /> Back
                     </Button>
                 </Link>
                 
                 <Button 
                   type="submit" 
-                  className="bg-blue-600 hover:bg-blue-700 text-white min-w-[120px]"
+                  className="bg-cyan-600 hover:bg-cyan-700 text-white min-w-[120px]"
                 >
                   Next Step <ChevronRight className="ml-2 h-4 w-4" />
                 </Button>

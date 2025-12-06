@@ -51,14 +51,14 @@ export default function PatientSignupStep3() {
       <Card className="w-full max-w-lg shadow-lg border-slate-200">
         
         {/* Progress Bar (Full) */}
-        <div className="w-full h-2 bg-slate-100">
-          <div className="h-full w-full bg-blue-600 rounded-r-full transition-all duration-500" />
+        <div className="w-full h-2 bg-ghost-100">
+          <div className="h-full w-full bg-cyan-600 rounded-r-full transition-all duration-500" />
         </div>
 
         <CardHeader className="space-y-1">
           <div className="flex items-center justify-between">
             <CardTitle className="text-2xl font-bold text-slate-900">Account Security</CardTitle>
-            <span className="text-sm font-semibold text-blue-600 bg-blue-50 px-3 py-1 rounded-full">
+            <span className="text-sm font-semibold text-cyan-600 bg-cyan-50 px-3 py-1 rounded-full">
               Step 3 of 3
             </span>
           </div>
@@ -160,13 +160,13 @@ export default function PatientSignupStep3() {
               {/* Action Buttons */}
               <div className="flex justify-between pt-6">
                  <Link href="/signup/patient/step2">
-                    <Button type="button" variant="ghost" className="text-slate-600 hover:text-slate-900">
+                    <Button type="button" variant="ghost" className="text-slate-600 hover:text-cyan-900">
                       <ArrowLeft className="mr-2 h-4 w-4" /> Back
                     </Button>
                 </Link>
                 <Button 
                   type="submit" 
-                  className="bg-blue-600 hover:bg-blue-700 text-white min-w-[140px]"
+                  className="bg-cyan-600 hover:bg-cyan-700 text-white min-w-[140px]"
                 >
                   <Check className="mr-2 h-4 w-4" /> Complete
                 </Button>
