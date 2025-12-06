@@ -47,14 +47,8 @@ export default function LoginScreen() {
 
   // 4. Handle Submission
   const onLogin = async (data: LoginFormValues) => {
-    setIsLoading(true);
-    
-    // Simulate API Call
-    setTimeout(() => {
       console.log("Login Data:", data);
-      setIsLoading(false);
-      router.replace('/dashboard');
-    }, 2000);
+       router.replace("/dashboard/dashboard");
   };
 
   // 5. Reusable Input Component

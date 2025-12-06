@@ -85,11 +85,11 @@ export default function DoctorSignupStep2() {
     form.setValue("slmcCertificate", null);
   };
 
-  const onSubmit = (values: FormValues) => {
+const onSubmit = (values: FormValues) => {
     console.log("Step 2 Data:", values);
-    Alert.alert("Success", "Doctor account created successfully!", [
-      { text: "OK", onPress: () => router.push("/dashboard") },
-    ]);
+    
+    // Matches http://localhost:8081/dashboard/dashboard
+    router.replace("/dashboard/dashboard");
   };
 
   // --- REUSABLE COMPONENTS ---
