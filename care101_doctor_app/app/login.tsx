@@ -9,7 +9,7 @@ import {
   Platform,
   ScrollView,
   Image,
-  Alert, // Imported Alert
+  Alert, // ✅ Imported Alert
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -52,15 +52,34 @@ export default function LoginScreen() {
     },
   });
 
-  // 5. Handle Submission (Connected to Backend)
+  // 5. Handle Submission (Updated with Popup Alert)
   const onLogin = async (data: LoginFormValues) => {
     setIsLoading(true);
     try {
-      // Call the signIn function from your Auth Context
+      // Attempt to sign in
       await signIn(data.email, data.password);
-      // NOTE: Navigation to dashboard is handled inside context/auth.tsx on success
+      
+      // ✅ Success: The 'signIn' function in auth.tsx handles the redirect.
+      
     } catch (error: any) {
-      Alert.alert("Login Failed", error.message || "Something went wrong. Please check your credentials.");
+      // ❌ Failed: Show the Popup Message
+      console.log("Login Error:", error);
+
+      let errorMessage = "Something went wrong. Please try again.";
+
+      // Check if the error message comes from the backend
+      if (error.message) {
+        errorMessage = error.message;
+      } else if (error.toString().includes('Network request failed')) {
+        errorMessage = "Network error. Please check your internet connection.";
+      }
+
+      // 🚨 THE POPUP ALERT
+      Alert.alert(
+        "Login Failed",       // Title
+        errorMessage,         // Message
+        [{ text: "OK", style: "default" }] // Button
+      );
     } finally {
       setIsLoading(false);
     }

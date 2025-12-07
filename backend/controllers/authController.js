@@ -121,61 +121,78 @@ export const registerPatient = async (req, res) => {
 };
 
 // --- UNIFIED LOGIN (WORKS FOR BOTH) ---
+
 export const login = async (req, res) => {
   try {
     const { email, password } = req.body;
+    
+    // 🔍 DEBUG LOG 1: Incoming Request
+    console.log(`\n--- LOGIN ATTEMPT ---`);
+    console.log(`Email provided: ${email}`);
+    console.log(`Password provided: ${password}`);
 
     let user = null;
     let role = null;
 
-    // 1. FIRST: Check Doctor Collection
+    // 1. Check Doctor Collection
     const doctor = await Doctor.findOne({ email });
-    
     if (doctor) {
+      console.log("✅ Found in Doctor Collection");
       user = doctor;
       role = "doctor";
     } else {
-      // 2. SECOND: If not a doctor, check Patient Collection
+      console.log("❌ Not found in Doctor Collection");
+    }
+
+    // 2. Check Patient Collection (if not found yet)
+    if (!user) {
       const patient = await Patient.findOne({ email });
       if (patient) {
+        console.log("✅ Found in Patient Collection");
         user = patient;
         role = "patient";
+      } else {
+        console.log("❌ Not found in Patient Collection");
       }
     }
 
-    // 3. If user is still null, they don't exist in EITHER table
+    // 3. User Not Found
     if (!user) {
+      console.log("🔴 ERROR: User does not exist in any database.");
       return res.status(400).json({ msg: "User not found" });
     }
 
     // 4. Check Password
     const isMatch = await bcrypt.compare(password, user.password);
+    console.log(`Password Match Result: ${isMatch}`);
+
     if (!isMatch) {
+      console.log("🔴 ERROR: Password did not match hash.");
       return res.status(400).json({ msg: "Invalid credentials" });
     }
 
-    // 5. Generate Token
+    // 5. Success
+    console.log("🟢 SUCCESS: Login Authorized");
+    
     const token = jwt.sign(
       { id: user._id, role: role }, 
       process.env.JWT_SECRET, 
       { expiresIn: "30d" }
     );
 
-    // 6. Send Response (Dynamic name handling)
     res.json({ 
       token, 
       user: { 
         id: user._id, 
-        // Doctors use 'name', Patients use 'fullName'. This handles both:
         name: user.name || user.fullName, 
-        email: user.email,
+        email: user.email, 
         role: role,
-        specialization: user.specialization || null // Only send if it exists
+        specialization: user.specialization || null 
       } 
     });
 
   } catch (error) {
-    console.error("Login Error:", error);
+    console.error("🔥 CRITICAL LOGIN ERROR:", error);
     res.status(500).json({ msg: "Server Error" });
   }
 };

@@ -1,9 +1,9 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import * as SecureStore from 'expo-secure-store'; // Use SecureStore for tokens
+import * as SecureStore from 'expo-secure-store'; 
 import { useRouter, useSegments } from 'expo-router';
 
-// ⚠️ REPLACE THIS WITH YOUR COMPUTER'S IP ADDRESS
-const API_URL = 'http://192.168.8.100:5000/api/auth';
+// ⚠️ YOUR COMPUTER'S IP ADDRESS
+const API_URL = 'http://192.168.8.100:5000/api/auth'; 
 
 interface AuthProps {
   user: any;
@@ -59,7 +59,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         throw new Error(data.msg || 'Login failed');
       }
 
-      // Save Data
+      // 🚨 RESTRICTION: Block Patients from the App
+      if (data.user.role !== 'doctor') {
+        throw new Error("Access Denied. This app is for Doctors only.");
+      }
+
+      // ✅ Success: Save Data
       await SecureStore.setItemAsync('token', data.token);
       await SecureStore.setItemAsync('user_data', JSON.stringify(data.user));
       
@@ -67,21 +72,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       router.replace('/dashboard/dashboard');
 
     } catch (error: any) {
-      console.error(error);
-      throw error; // Throw to UI to show alert
+      console.error("Login Error:", error);
+      throw error; // Passes the error to the Login Screen to show the red Alert
     }
   };
 
   const signUp = async (userData: any) => {
     try {
-      // Map frontend fields to backend model
-      // Frontend: fullName, email, password, specialization
-      // Backend expects: name, email, password, specialization
+      // Map frontend form fields to backend database names
       const payload = {
         name: userData.fullName,
         email: userData.email,
         password: userData.password,
         specialization: userData.specialization,
+        // Detailed fields
+        nic: userData.nicNumber,
+        phone: userData.phoneNumber, // Map 'phoneNumber' -> 'phone'
+        slmcReg: userData.slmcRegistrationNumber, // Map 'slmcRegistrationNumber' -> 'slmcReg'
+        nameWithInitials: userData.nameWithInitials
       };
 
       const response = await fetch(`${API_URL}/register`, {
@@ -104,7 +112,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       router.replace('/dashboard/dashboard');
 
     } catch (error: any) {
-      console.error(error);
+      console.error("Signup Error:", error);
       throw error;
     }
   };
