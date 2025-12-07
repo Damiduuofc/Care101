@@ -27,7 +27,8 @@ import {
   CheckCircle2,
   AlertCircle 
 } from "lucide-react";
-
+import  Header  from "@/components/layout/Header";
+import  Footer  from "@/components/layout/Footer";
 // Validation Schema
 const formSchema = z.object({
   email: z.string().email({ message: "Please enter a valid email address." }),
@@ -91,7 +92,7 @@ export default function LoginPage() {
 
   return (
     <div className="w-full min-h-screen grid lg:grid-cols-2">
-      
+      <Header />  
       {/* ================= LEFT: FORM SECTION ================= */}
       <div className="flex items-center justify-center p-8 bg-white">
         <div className="w-full max-w-md space-y-8">
@@ -240,6 +241,7 @@ export default function LoginPage() {
         </div>
       </div>
 
+   <Footer />
     </div>
   );
 }

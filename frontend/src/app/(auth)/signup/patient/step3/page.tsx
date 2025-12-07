@@ -17,8 +17,9 @@ import {
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-// 👇 UPDATED IMPORT: Added 'User' here
 import { User, Lock, Eye, EyeOff, Check, ArrowLeft, Loader2 } from "lucide-react";
+import  Header  from "@/components/layout/Header";
+import  Footer  from "@/components/layout/Footer";
 
 const formSchema = z.object({
   username: z.string().min(3, { message: "Username must be at least 3 characters." }),
@@ -99,6 +100,7 @@ export default function PatientSignupStep3() {
 
   return (
     <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+      <Header />
       <Card className="w-full max-w-lg shadow-lg border-cyan-200">
         
         {/* Progress Bar (Full) */}
@@ -233,6 +235,7 @@ export default function PatientSignupStep3() {
           </Form>
         </CardContent>
       </Card>
+    <Footer />
     </div>
   );
 }

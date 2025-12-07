@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react"; // Import useEffect
+import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -25,6 +25,8 @@ import {
 } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Phone, Mail, MapPin, ArrowLeft, ChevronRight } from "lucide-react";
+import  Header  from "@/components/layout/Header";
+import  Footer  from "@/components/layout/Footer";
 
 const districts = [
     "Ampara", "Anuradhapura", "Badulla", "Batticaloa", "Colombo", "Galle", "Gampaha", 
@@ -71,6 +73,7 @@ export default function PatientSignupStep2() {
   // ... (Return statement remains exactly the same as your code) ...
   return (
     <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+     <Header/>
       <Card className="w-full max-w-lg shadow-lg border-cyan-200">
         <div className="w-full h-2 bg-cyan-100">
           <div className="h-full w-2/3 bg-cyan-600 rounded-r-full transition-all duration-500" />
@@ -158,6 +161,7 @@ export default function PatientSignupStep2() {
           </Form>
         </CardContent>
       </Card>
+    <Footer />
     </div>
   );
 }

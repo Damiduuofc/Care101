@@ -26,7 +26,8 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { cn } from "@/lib/utils";
 import { Calendar as CalendarIcon, User, CreditCard, ArrowLeft, ChevronRight } from "lucide-react";
 import DatePicker from "react-datepicker";
-import "react-datepicker/dist/react-datepicker.css";
+import  Header  from "@/components/layout/Header";
+import  Footer  from "@/components/layout/Footer";
 
 const formSchema = z.object({
   fullName: z.string().min(2, { message: "Full name is required." }),
@@ -59,6 +60,7 @@ export default function PatientSignupStep1() {
 
   return (
     <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+      <Header />
       <Card className="w-full max-w-lg shadow-lg border-slate-200">
         <div className="w-full h-2 bg-slate-100">
           <div className="h-full w-1/3 bg-cyan-600 rounded-r-full" />
@@ -168,7 +170,7 @@ export default function PatientSignupStep1() {
               />
 
               <div className="flex justify-between pt-6">
-                <Link href="/signup">
+                <Link href="/">
                   <Button type="button" variant="ghost" className="text-cyan-600 hover:text-cyan-900">
                     <ArrowLeft className="mr-2 h-4 w-4" /> Back
                   </Button>
@@ -182,6 +184,7 @@ export default function PatientSignupStep1() {
           </Form>
         </CardContent>
       </Card>
+   <Footer />
     </div>
   );
 }

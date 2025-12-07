@@ -17,6 +17,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { motion } from "framer-motion";
+import  Header  from "@/components/layout/Header";
+import  Footer  from "@/components/layout/Footer";
 
 export default function ContactPage() {
   
@@ -63,7 +65,7 @@ export default function ContactPage() {
 
   return (
     <div className="flex flex-col min-h-screen bg-slate-50 font-sans selection:bg-cyan-100 selection:text-cyan-900">
-      
+     <Header/> 
       {/* ================= HERO SECTION ================= */}
       <motion.section
         className="relative w-full h-[45vh] bg-slate-900 flex items-center justify-center overflow-hidden"
@@ -261,6 +263,7 @@ export default function ContactPage() {
           </div>
         </div>
       </section>
+   <Footer />
     </div>
   );
 }

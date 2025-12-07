@@ -50,7 +50,7 @@ const Footer = () => {
                 />
               </div>
               <span className="font-bold text-2xl text-slate-100 group-hover:text-cyan-400 transition-colors">
-                Care<span className="text-cyan-500">Link</span>
+                Care<span className="text-cyan-500">101</span>
               </span>
             </Link>
             <p className="text-slate-400 leading-relaxed text-sm">
@@ -120,12 +120,12 @@ const Footer = () => {
             <div className="space-y-4 text-sm">
               <div className="flex items-start gap-3">
                 <MapPin className="h-5 w-5 text-cyan-500 shrink-0 mt-0.5" />
-                <p>123 Health St, Wellness City,<br />New York, 12345</p>
+                <p>123 Health St, Wellness City,<br />Kandy, 12345</p>
               </div>
               <div className="flex items-center gap-3">
                 <Mail className="h-5 w-5 text-cyan-500 shrink-0" />
                 <a href="mailto:contact@carelink.com" className="hover:text-cyan-400 transition-colors">
-                  contact@carelink.com
+                  contact@care101.com
                 </a>
               </div>
               <div className="flex items-center gap-3">
@@ -135,9 +135,9 @@ const Footer = () => {
               
               <div className="pt-4 mt-4 border-t border-slate-800">
                 <p className="text-xs text-slate-500 uppercase tracking-wider mb-2 font-bold">Emergency Hotline</p>
-                <a href="tel:123-456-7899" className="flex items-center gap-3 text-2xl font-bold text-white hover:text-red-400 transition-colors">
+                <a href="tel:0763801234" className="flex items-center gap-3 text-2xl font-bold text-white hover:text-red-400 transition-colors">
                   <Phone className="h-6 w-6 text-red-500 animate-pulse" />
-                  (123) 456-7899
+                  +94 76 380 1234
                 </a>
               </div>
             </div>

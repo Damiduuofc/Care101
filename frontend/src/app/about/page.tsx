@@ -14,6 +14,8 @@ import {
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { motion } from "framer-motion";
+import  Header  from "@/components/layout/Header";
+import  Footer  from "@/components/layout/Footer";
 
 export default function AboutPage() {
   
@@ -58,7 +60,7 @@ export default function AboutPage() {
 
   return (
     <div className="flex flex-col min-h-screen bg-slate-50 font-sans">
-      
+      <Header />
       {/* ================= HERO SECTION ================= */}
       <motion.section
         className="relative h-[50vh] flex items-center justify-center overflow-hidden bg-slate-900"
@@ -280,7 +282,8 @@ export default function AboutPage() {
           </div>
         </div>
       </section>
-
+            <Footer/>
+    
     </div>
   );
 }

@@ -1,11 +1,12 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { ArrowRight, Phone, Stethoscope, Heart, Activity, Users, MapPin } from "lucide-react";
+import { ArrowRight, Phone, Stethoscope, Heart, Activity, Users, MapPin, User, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { featuredDoctors, services, testimonials } from "@/lib/data";
+import { services } from "@/lib/data"; // ⚠️ ONLY import services. DO NOT import featuredDoctors.
 import {
   Carousel,
   CarouselContent,
@@ -14,20 +15,44 @@ import {
   CarouselPrevious,
 } from "@/components/ui/carousel";
 import { motion, useScroll, useTransform } from "framer-motion";
-import Autoplay from "embla-carousel-autoplay";
+import  Header  from "@/components/layout/Header";
 import  Footer  from "@/components/layout/Footer";
-import Navbar from "@/components/layout/Header";
+
+const API_URL = "http://localhost:5000/api/doctors/public";
+
 export default function Home() {
   const { scrollY } = useScroll();
   const y = useTransform(scrollY, [0, 500], [0, 200]);
   const opacity = useTransform(scrollY, [0, 300], [1, 0]);
 
+  // State to hold Real Database Data
+  const [doctors, setDoctors] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  // Fetch Data from Backend
+  useEffect(() => {
+    const fetchDoctors = async () => {
+      try {
+        const res = await fetch(API_URL);
+        if (res.ok) {
+          const data = await res.json();
+          setDoctors(data);
+          console.log("Real Doctors Loaded:", data.length); // Debug log
+        }
+      } catch (error) {
+        console.error("Failed to fetch doctors:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchDoctors();
+  }, []);
+
   return (
     <div className="flex flex-col min-h-screen bg-slate-50 font-sans selection:bg-cyan-100 selection:text-cyan-900">
-      <Navbar/>
+      <Header />
       {/* ================= HERO SECTION ================= */}
       <section className="relative h-[95vh] flex items-center justify-center overflow-hidden">
-        {/* Parallax Background Image */}
         <motion.div style={{ y, opacity }} className="absolute inset-0 z-0">
           <Image
             src="/images/hero-bg.jpg"
@@ -38,7 +63,6 @@ export default function Home() {
           />
         </motion.div>
 
-        {/* Gradient Overlays for Readability */}
         <div className="absolute inset-0 bg-gradient-to-r from-blue-950/90 via-blue-900/80 to-blue-900/40 z-10" />
         <div className="absolute inset-0 bg-gradient-to-t from-slate-50 via-transparent to-transparent z-10" />
 
@@ -69,53 +93,63 @@ export default function Home() {
             </p>
 
             <div className="flex flex-col sm:flex-row gap-4">
-              <Link href="/appointment">
+              <Link href="/patient/appointments">
                 <Button size="lg" className="bg-cyan-500 hover:bg-cyan-400 text-white font-bold h-14 px-8 rounded-full shadow-lg shadow-cyan-500/30 transition-all hover:scale-105">
                   <Stethoscope className="mr-2 h-5 w-5" /> Book Appointment
                 </Button>
               </Link>
-              <Link href="/services">
+              <Link href="/doctors">
                 <Button size="lg" variant="outline" className="bg-white/10 backdrop-blur-sm border-white/20 text-white hover:bg-white hover:text-blue-900 h-14 px-8 rounded-full transition-all hover:scale-105">
-                  Our Departments
+                  Find a Doctor
                 </Button>
               </Link>
             </div>
           </motion.div>
         </div>
-
-        {/* Floating Abstract Shapes */}
-        <div className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-1/3 w-[800px] h-[800px] bg-cyan-500/20 rounded-full blur-[120px] -z-10 pointer-events-none" />
       </section>
 
       {/* ================= STATS BANNER ================= */}
       <div className="container px-6 mx-auto -mt-20 relative z-20">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {[
-            { icon: Users, label: "Expert Doctors", value: "150+", desc: "Top-tier specialists" },
-            { icon: Heart, label: "Patients Healed", value: "12k+", desc: "Successful surgeries" },
-            { icon: Activity, label: "Emergency Care", value: "24/7", desc: "Always available" },
-          ].map((stat, i) => (
-            <motion.div
-              key={i}
-              initial={{ opacity: 0, y: 20 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              transition={{ delay: i * 0.1 }}
-              viewport={{ once: true }}
-            >
+          <motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }}>
               <Card className="border-none shadow-xl bg-white/95 backdrop-blur-sm">
                 <CardContent className="p-8 flex items-center gap-6">
-                  <div className="p-4 rounded-2xl bg-blue-50 text-blue-600">
-                    <stat.icon className="w-8 h-8" />
-                  </div>
+                  <div className="p-4 rounded-2xl bg-blue-50 text-blue-600"><Users className="w-8 h-8" /></div>
                   <div>
-                    <h3 className="text-3xl font-bold text-slate-800">{stat.value}</h3>
-                    <p className="font-semibold text-slate-600">{stat.label}</p>
-                    <p className="text-sm text-slate-400">{stat.desc}</p>
+                    {/* Shows real count from DB */}
+                    <h3 className="text-3xl font-bold text-slate-800">{loading ? "..." : doctors.length}</h3>
+                    <p className="font-semibold text-slate-600">Expert Doctors</p>
+                    <p className="text-sm text-slate-400">Available now</p>
                   </div>
                 </CardContent>
               </Card>
-            </motion.div>
-          ))}
+          </motion.div>
+
+          <motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} viewport={{ once: true }}>
+              <Card className="border-none shadow-xl bg-white/95 backdrop-blur-sm">
+                <CardContent className="p-8 flex items-center gap-6">
+                  <div className="p-4 rounded-2xl bg-blue-50 text-blue-600"><Heart className="w-8 h-8" /></div>
+                  <div>
+                    <h3 className="text-3xl font-bold text-slate-800">12k+</h3>
+                    <p className="font-semibold text-slate-600">Patients Healed</p>
+                    <p className="text-sm text-slate-400">Trusted by community</p>
+                  </div>
+                </CardContent>
+              </Card>
+          </motion.div>
+
+          <motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} viewport={{ once: true }}>
+              <Card className="border-none shadow-xl bg-white/95 backdrop-blur-sm">
+                <CardContent className="p-8 flex items-center gap-6">
+                  <div className="p-4 rounded-2xl bg-blue-50 text-blue-600"><Activity className="w-8 h-8" /></div>
+                  <div>
+                    <h3 className="text-3xl font-bold text-slate-800">24/7</h3>
+                    <p className="font-semibold text-slate-600">Emergency Care</p>
+                    <p className="text-sm text-slate-400">Always open</p>
+                  </div>
+                </CardContent>
+              </Card>
+          </motion.div>
         </div>
       </div>
 
@@ -135,7 +169,6 @@ export default function Home() {
                 initial={{ opacity: 0, scale: 0.95 }}
                 whileInView={{ opacity: 1, scale: 1 }}
                 viewport={{ once: true }}
-                transition={{ delay: i * 0.05 }}
                 whileHover={{ y: -8 }}
               >
                 <Card className="h-full border border-slate-100 hover:border-cyan-100 bg-white hover:bg-slate-50/50 shadow-sm hover:shadow-xl hover:shadow-cyan-500/10 transition-all duration-300 group rounded-3xl overflow-hidden">
@@ -156,7 +189,7 @@ export default function Home() {
         </div>
       </section>
 
-      {/* ================= DOCTORS SECTION ================= */}
+      {/* ================= REAL DOCTORS SECTION ================= */}
       <section className="py-24 bg-slate-900 text-white relative overflow-hidden">
         {/* Background Patterns */}
         <div className="absolute top-0 left-0 w-full h-full opacity-10 pointer-events-none">
@@ -169,52 +202,86 @@ export default function Home() {
             <div className="max-w-2xl">
               <h2 className="text-4xl md:text-5xl font-bold mb-6">Meet Our Specialists</h2>
               <p className="text-slate-400 text-lg">
-                Our team of dedicated doctors brings years of experience and specialized knowledge to ensure you receive the best care.
+                Our team of dedicated doctors brings years of experience and specialized knowledge.
               </p>
             </div>
-            <Button variant="outline" className="border-slate-700 text-slate-200 hover:bg-white hover:text-slate-900 rounded-full px-8">
-              View All Doctors
-            </Button>
+            <Link href="/doctors">
+              <Button variant="outline" className="border-slate-700 text-slate-200 hover:bg-white hover:text-slate-900 rounded-full px-8">
+                View All Doctors
+              </Button>
+            </Link>
           </div>
 
-          <Carousel
-            opts={{ align: "start", loop: true }}
-            className="w-full"
-          >
-            <CarouselContent className="-ml-4">
-              {featuredDoctors.map((doctor, i) => (
-                <CarouselItem key={i} className="pl-4 md:basis-1/2 lg:basis-1/3 xl:basis-1/4">
-                  <div className="group relative h-[420px] rounded-3xl overflow-hidden cursor-pointer">
-                    {/* Local Image Path Logic */}
-                    <Image
-                      src={`/images/doctor-${(i % 4) + 1}.jpg`} // Assumes you named images doctor-1.jpg, etc.
-                      alt={doctor.name}
-                      fill
-                      className="object-cover transition-transform duration-700 group-hover:scale-110"
-                    />
-                    <div className="absolute inset-0 bg-gradient-to-t from-slate-900 via-slate-900/40 to-transparent opacity-80 group-hover:opacity-90 transition-opacity" />
-                    
-                    <div className="absolute bottom-0 left-0 right-0 p-6 translate-y-2 group-hover:translate-y-0 transition-transform duration-300">
-                      <div className="bg-cyan-500 w-fit px-3 py-1 rounded-md text-xs font-bold uppercase tracking-wider mb-2">
-                        {doctor.specialty}
-                      </div>
-                      <h3 className="text-2xl font-bold mb-1">{doctor.name}</h3>
-                      <p className="text-slate-300 text-sm mb-4 opacity-0 group-hover:opacity-100 transition-opacity duration-300 delay-100">
-                        {doctor.qualifications}
-                      </p>
-                      <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300 delay-150">
-                        <Button size="sm" className="w-full bg-white text-slate-900 hover:bg-slate-200">Book Now</Button>
-                      </div>
-                    </div>
-                  </div>
-                </CarouselItem>
-              ))}
-            </CarouselContent>
-            <div className="flex justify-end gap-2 mt-8">
-              <CarouselPrevious className="static translate-y-0 bg-slate-800 border-slate-700 hover:bg-cyan-500 hover:text-white" />
-              <CarouselNext className="static translate-y-0 bg-slate-800 border-slate-700 hover:bg-cyan-500 hover:text-white" />
+          {/* LOADING STATE */}
+          {loading && (
+             <div className="flex flex-col items-center justify-center py-20 text-slate-500 gap-4">
+                <Loader2 className="h-10 w-10 animate-spin text-cyan-500" />
+                <p>Loading Specialists...</p>
+             </div>
+          )}
+
+          {/* EMPTY STATE */}
+          {!loading && doctors.length === 0 && (
+            <div className="text-center py-20 bg-slate-800 rounded-3xl border border-slate-700">
+                <User className="h-16 w-16 mx-auto text-slate-600 mb-4" />
+                <p className="text-slate-400 text-xl">No doctors available right now.</p>
             </div>
-          </Carousel>
+          )}
+
+          {/* DOCTORS CAROUSEL */}
+          {!loading && doctors.length > 0 && (
+            <Carousel opts={{ align: "start", loop: true }} className="w-full">
+                <CarouselContent className="-ml-4">
+                {doctors.map((doctor) => (
+                    <CarouselItem key={doctor._id} className="pl-4 md:basis-1/2 lg:basis-1/3 xl:basis-1/4">
+                    <div className="group relative h-[420px] rounded-3xl overflow-hidden cursor-pointer bg-slate-800 border border-slate-700 hover:border-cyan-500/50 transition-colors">
+                        
+                        {/* Doctor Image */}
+                        <div className="h-full w-full relative">
+                            {doctor.profileImage ? (
+                                <img
+                                    src={doctor.profileImage} 
+                                    alt={doctor.name}
+                                    className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-110"
+                                />
+                            ) : (
+                                <div className="h-full w-full flex flex-col items-center justify-center bg-slate-800 text-slate-600">
+                                    <User className="h-20 w-20 mb-2" />
+                                    <span className="text-sm">No Image</span>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Overlay Gradient */}
+                        <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/60 to-transparent opacity-90 transition-opacity" />
+                        
+                        {/* Doctor Info */}
+                        <div className="absolute bottom-0 left-0 right-0 p-6 translate-y-2 group-hover:translate-y-0 transition-transform duration-300">
+                            <div className="bg-cyan-600 w-fit px-3 py-1 rounded-md text-xs font-bold uppercase tracking-wider mb-2">
+                                {doctor.specialization || "Doctor"}
+                            </div>
+                            <h3 className="text-2xl font-bold mb-1 text-white">{doctor.name}</h3>
+                            <p className="text-slate-300 text-sm mb-4 opacity-0 group-hover:opacity-100 transition-opacity duration-300 delay-100 line-clamp-2">
+                                {doctor.qualifications || "Specialist"}
+                            </p>
+                            
+                            {/* Link to Booking with Pre-selection */}
+                            <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300 delay-150">
+                                <Link href={`/patient/appointments?preSelectedDocId=${doctor._id}`} className="w-full">
+                                    <Button size="sm" className="w-full bg-white text-slate-900 hover:bg-cyan-50">Book Now</Button>
+                                </Link>
+                            </div>
+                        </div>
+                    </div>
+                    </CarouselItem>
+                ))}
+                </CarouselContent>
+                <div className="flex justify-end gap-2 mt-8">
+                    <CarouselPrevious className="static translate-y-0 bg-slate-800 border-slate-700 hover:bg-cyan-500 hover:text-white" />
+                    <CarouselNext className="static translate-y-0 bg-slate-800 border-slate-700 hover:bg-cyan-500 hover:text-white" />
+                </div>
+            </Carousel>
+          )}
         </div>
       </section>
 
@@ -245,7 +312,7 @@ export default function Home() {
           </div>
         </div>
       </section>
-              <Footer/>
+    <Footer/>
     </div>
   );
 }

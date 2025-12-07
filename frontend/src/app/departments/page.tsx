@@ -21,7 +21,8 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { motion } from "framer-motion";
-
+import  Header  from "@/components/layout/Header";
+import  Footer  from "@/components/layout/Footer";
 // Helper function to get Icon and Image based on department slug
 // This allows you to style specific departments without changing your data.ts file
 const getDeptAssets = (slug: string) => {
@@ -60,7 +61,7 @@ export default function DepartmentsPage() {
 
   return (
     <div className="flex flex-col min-h-screen bg-slate-50 font-sans">
-      
+      <Header /> 
       {/* ================= HERO SECTION ================= */}
       <section className="relative h-[45vh] flex items-center justify-center overflow-hidden bg-slate-900">
         <div className="absolute inset-0">
@@ -186,6 +187,7 @@ export default function DepartmentsPage() {
         </div>
       </section>
 
+   <Footer />
     </div>
   );
 }
