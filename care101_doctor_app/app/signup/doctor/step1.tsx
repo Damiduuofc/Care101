@@ -1,4 +1,3 @@
-// app/signup/doctor/step1.tsx
 import React, { useState } from 'react';
 import {
   View,
@@ -22,7 +21,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm, Controller } from "react-hook-form";
 import { z } from "zod";
-import { departments } from "@/app/lib/data"; // Ensure this exists, or remove if testing
+import { departments } from "@/app/lib/data"; // Ensure this path is correct
 
 // --- VALIDATION SCHEMA ---
 const formSchema = z.object({
@@ -40,9 +39,9 @@ export default function DoctorSignupStep1() {
   const isLargeScreen = width >= 768;
   const [modalVisible, setModalVisible] = useState(false);
 
-  // --- ASSETS (Matches Login Screen) ---
-  const logoSource = require('../../../assets/logo1.png'); // Adjust path as needed
-  const bgSource = { uri: 'https://images.unsplash.com/photo-1622902919000-ad92953d8288?q=80&w=2069&auto=format&fit=crop' }; // Medical background
+  // --- ASSETS ---
+  const logoSource = require('../../../assets/logo1.png'); 
+  const bgSource = { uri: 'https://images.unsplash.com/photo-1622902919000-ad92953d8288?q=80&w=2069&auto=format&fit=crop' };
 
   // --- FORM SETUP ---
   const form = useForm<FormValues>({
@@ -55,14 +54,17 @@ export default function DoctorSignupStep1() {
     },
   });
 
+  // --- ✅ UPDATED SUBMIT HANDLER ---
   const onSubmit = (values: FormValues) => {
-    console.log("Step 1 Data:", values);
-    router.push("/signup/doctor/step2");
+    // Pass data to Step 2 via params
+    router.push({
+      pathname: "/signup/doctor/step2",
+      // We cast to 'any' to avoid strict TypeScript warnings with Expo Router params
+      params: values as any 
+    });
   };
 
   // --- REUSABLE COMPONENTS ---
-
-  // Custom Input Component to match Login Style
   const FormInput = ({ control, name, placeholder, icon, keyboardType = 'default' }: any) => (
     <Controller
       control={control}
@@ -95,7 +97,7 @@ export default function DoctorSignupStep1() {
       <View style={styles.progressContainer}>
         <View style={styles.progressBarBackground}>
           <LinearGradient
-            colors={['#06b6d4', '#10b981']} // Cyan to Emerald
+            colors={['#06b6d4', '#10b981']}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 0 }}
             style={[styles.progressBarFill, { width: '50%' }]} 
@@ -134,7 +136,7 @@ export default function DoctorSignupStep1() {
         keyboardType="numeric"
       />
 
-      {/* Specialization Dropdown Simulator */}
+      {/* Specialization Dropdown */}
       <Controller
         control={form.control}
         name="specialization"
@@ -207,8 +209,6 @@ export default function DoctorSignupStep1() {
   );
 
   // --- RENDER (Mobile vs Desktop) ---
-
-  // Mobile View
   if (!isLargeScreen) {
     return (
       <View style={{ flex: 1 }}>
@@ -223,7 +223,6 @@ export default function DoctorSignupStep1() {
               <ScrollView contentContainerStyle={{ flexGrow: 1 }} showsVerticalScrollIndicator={false}>
                 <View style={styles.mobileLogoContainer}>
                   <Image source={logoSource} style={styles.mobileLogo} resizeMode="contain" />
-                 
                 </View>
                 <View style={styles.mobileCard}>
                   <FormContent />
@@ -279,20 +278,10 @@ const styles = StyleSheet.create({
   mobileBackground: { flex: 1 },
   mobileLogoContainer: { alignItems: 'center', justifyContent: 'center', paddingVertical: 30, height: 160 },
   mobileLogo: { width: 200, height: 200, marginBottom: 10 },
- 
   mobileCard: {
-    flex: 1,
-    backgroundColor: '#fff',
-    borderTopLeftRadius: 30,
-    borderTopRightRadius: 30,
-    paddingHorizontal: 24,
-    paddingTop: 32,
-    paddingBottom: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 10,
-    elevation: 5,
+    flex: 1, backgroundColor: '#fff', borderTopLeftRadius: 30, borderTopRightRadius: 30,
+    paddingHorizontal: 24, paddingTop: 32, paddingBottom: 20,
+    shadowColor: '#000', shadowOffset: { width: 0, height: -2 }, shadowOpacity: 0.1, shadowRadius: 10, elevation: 5,
   },
 
   // --- Desktop Specific ---
@@ -320,14 +309,8 @@ const styles = StyleSheet.create({
   inputContainer: { marginBottom: 20 },
   label: { fontSize: 14, fontWeight: '600', color: '#334155', marginBottom: 6 },
   inputWrapper: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#f8fafc',
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    height: 50,
+    flexDirection: 'row', alignItems: 'center', backgroundColor: '#f8fafc',
+    borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 8, paddingHorizontal: 12, height: 50,
   },
   inputError: { borderColor: '#ef4444' },
   errorText: { fontSize: 12, color: '#ef4444', marginTop: 4 },

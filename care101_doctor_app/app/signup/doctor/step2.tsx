@@ -1,4 +1,3 @@
-// app/signup/doctor/step2.tsx
 import React, { useState } from 'react';
 import {
   View,
@@ -13,8 +12,9 @@ import {
   ImageBackground,
   Image,
   Alert,
+  ActivityIndicator, // Added for loading state
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router'; // Updated import
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -22,6 +22,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm, Controller } from "react-hook-form";
 import { z } from "zod";
 import * as ImagePicker from "expo-image-picker";
+import { useAuth } from '../../../context/auth'; // Import Auth Context
 
 // --- VALIDATION SCHEMA ---
 const formSchema = z.object({
@@ -36,16 +37,20 @@ type FormValues = z.infer<typeof formSchema>;
 
 export default function DoctorSignupStep2() {
   const router = useRouter();
+  const params = useLocalSearchParams(); // 1. Get data passed from Step 1
+  const { signUp } = useAuth(); // 2. Get signUp function from context
+  
   const { width } = useWindowDimensions();
   const isLargeScreen = width >= 768;
 
   // --- ASSETS ---
   const logoSource = require('../../../assets/logo1.png'); 
-  const bgSource = { uri: 'https://images.unsplash.com/photo-1579684385136-4f899452c00d?q=80&w=2070&auto=format&fit=crop' }; // Different medical bg
+  const bgSource = { uri: 'https://images.unsplash.com/photo-1579684385136-4f899452c00d?q=80&w=2070&auto=format&fit=crop' };
 
   // --- STATE ---
   const [showPassword, setShowPassword] = useState(false);
   const [certificateUri, setCertificateUri] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false); // 3. Loading state
 
   // --- FORM SETUP ---
   const form = useForm<FormValues>({
@@ -69,7 +74,7 @@ export default function DoctorSignupStep2() {
 
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: false, // Professionals usually upload full docs
+      allowsEditing: false,
       quality: 0.8,
     });
 
@@ -85,11 +90,27 @@ export default function DoctorSignupStep2() {
     form.setValue("slmcCertificate", null);
   };
 
-const onSubmit = (values: FormValues) => {
-    console.log("Step 2 Data:", values);
-    
-    // Matches http://localhost:8081/dashboard/dashboard
-    router.replace("/dashboard/dashboard");
+  // --- ✅ SUBMIT HANDLER (CONNECTED TO BACKEND) ---
+  const onSubmit = async (values: FormValues) => {
+    setIsSubmitting(true);
+    try {
+      // Combine Data (Step 1 params + Step 2 values)
+      const fullData = {
+        ...params, // fullName, slmcRegistrationNumber, etc.
+        ...values  // email, password, etc.
+      };
+
+      console.log("Registering User:", fullData);
+
+      // Call Backend
+      await signUp(fullData);
+      
+      // Note: Redirect to dashboard happens inside AuthProvider upon success
+    } catch (error: any) {
+      Alert.alert("Signup Failed", error.message || "An error occurred during registration.");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   // --- REUSABLE COMPONENTS ---
@@ -212,20 +233,34 @@ const onSubmit = (values: FormValues) => {
 
       {/* Buttons */}
       <View style={styles.buttonRow}>
-        <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+        <TouchableOpacity 
+          style={styles.backButton} 
+          onPress={() => router.back()}
+          disabled={isSubmitting}
+        >
           <Ionicons name="arrow-back" size={20} color="#64748b" />
           <Text style={styles.backButtonText}>Back</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.nextButton} onPress={form.handleSubmit(onSubmit)}>
+        <TouchableOpacity 
+          style={[styles.nextButton, isSubmitting && { opacity: 0.7 }]} 
+          onPress={form.handleSubmit(onSubmit)}
+          disabled={isSubmitting}
+        >
           <LinearGradient
             colors={['#10b981', '#059669']} // Green for completion
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 0 }}
             style={styles.gradientButton}
           >
-            <Text style={styles.nextButtonText}>Complete Signup</Text>
-            <Ionicons name="checkmark-circle-outline" size={20} color="#fff" />
+            {isSubmitting ? (
+               <ActivityIndicator color="#fff" style={{marginRight: 8}} />
+            ) : (
+               <Ionicons name="checkmark-circle-outline" size={20} color="#fff" style={{marginRight: 8}} />
+            )}
+            <Text style={styles.nextButtonText}>
+              {isSubmitting ? 'Creating Account...' : 'Complete Signup'}
+            </Text>
           </LinearGradient>
         </TouchableOpacity>
       </View>
@@ -366,7 +401,7 @@ const styles = StyleSheet.create({
   backButtonText: { color: '#64748b', fontSize: 16, fontWeight: '600', marginLeft: 4 },
   nextButton: { borderRadius: 8, overflow: 'hidden', shadowColor: '#10b981', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8, elevation: 4 },
   gradientButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 12, paddingHorizontal: 24 },
-  nextButtonText: { color: '#fff', fontSize: 16, fontWeight: '700', marginRight: 8 },
+  nextButtonText: { color: '#fff', fontSize: 16, fontWeight: '700' }, // Removed margin to let icon spacing handle it
 
 
   heroSection: { flex: 1.2, backgroundColor: '#0f172a' },

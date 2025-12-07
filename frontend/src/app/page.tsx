@@ -15,7 +15,8 @@ import {
 } from "@/components/ui/carousel";
 import { motion, useScroll, useTransform } from "framer-motion";
 import Autoplay from "embla-carousel-autoplay";
-
+import  Footer  from "@/components/layout/Footer";
+import Navbar from "@/components/layout/Header";
 export default function Home() {
   const { scrollY } = useScroll();
   const y = useTransform(scrollY, [0, 500], [0, 200]);
@@ -23,7 +24,7 @@ export default function Home() {
 
   return (
     <div className="flex flex-col min-h-screen bg-slate-50 font-sans selection:bg-cyan-100 selection:text-cyan-900">
-      
+      <Navbar/>
       {/* ================= HERO SECTION ================= */}
       <section className="relative h-[95vh] flex items-center justify-center overflow-hidden">
         {/* Parallax Background Image */}
@@ -244,7 +245,7 @@ export default function Home() {
           </div>
         </div>
       </section>
-
+              <Footer/>
     </div>
   );
 }

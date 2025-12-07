@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
@@ -16,18 +17,35 @@ import {
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { IdCard, Mail, Phone, Lock, Eye, EyeOff, ArrowLeft, Check, Upload } from "lucide-react";
+import { IdCard, Mail, Phone, Lock, Eye, EyeOff, ArrowLeft, Check, Upload, Loader2 } from "lucide-react";
 
+// Define the schema
 const formSchema = z.object({
   nicNumber: z.string().min(1, { message: "NIC number is required." }),
-  slmcCertificate: z.any().optional(), // In a real app, use z.instanceof(FileList) and validate
+  slmcCertificate: z.any().optional(),
   email: z.string().email({ message: "Invalid email address." }),
   phoneNumber: z.string().min(9, { message: "Valid phone number is required." }),
   password: z.string().min(8, { message: "Password must be at least 8 characters." }),
 });
 
 export default function DoctorSignupStep2() {
+  const router = useRouter();
   const [showPassword, setShowPassword] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [step1Data, setStep1Data] = useState<any>(null);
+
+  // 1. Retrieve Step 1 Data on Mount
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const savedData = sessionStorage.getItem("signupStep1");
+      if (savedData) {
+        setStep1Data(JSON.parse(savedData));
+      } else {
+        // If no data, force back to Step 1
+        router.push("/signup/doctor/step1");
+      }
+    }
+  }, [router]);
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -36,21 +54,62 @@ export default function DoctorSignupStep2() {
         email: "",
         phoneNumber: "",
         password: "",
-        // File inputs are uncontrolled in react-hook-form usually, so no default value needed here
     },
   });
 
-  function onSubmit(values: z.infer<typeof formSchema>) {
-    console.log("Step 2 Data:", values);
-    // Will create account, backend logic will be handled later
-    // Example: router.push("/dashboard");
+  async function onSubmit(values: z.infer<typeof formSchema>) {
+    if (!step1Data) return;
+    setIsSubmitting(true);
+
+    // 2. Prepare the payload for the Backend
+    // Backend Expects: name, email, password, specialization, nic, phone, slmcReg, nameWithInitials
+    const payload = {
+        name: step1Data.fullName,
+        nameWithInitials: step1Data.nameWithInitials,
+        slmcReg: step1Data.slmcRegistrationNumber,
+        specialization: step1Data.specialization,
+        nic: values.nicNumber,
+        phone: values.phoneNumber,
+        email: values.email,
+        password: values.password,
+        // Note: We are not sending the image file yet as backend requires multipart/form-data setup
+    };
+
+    try {
+        // 3. Call the API
+        const response = await fetch("http://localhost:5000/api/auth/register", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify(payload),
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+            throw new Error(data.msg || "Registration failed");
+        }
+
+        console.log("Success:", data);
+        // Clear temp storage
+        sessionStorage.removeItem("signupStep1");
+        
+        // Redirect to Dashboard
+router.push('/doctor');
+
+    } catch (error: any) {
+        console.error("Signup Error:", error);
+        alert(error.message); // Replace with a Toast component in production
+    } finally {
+        setIsSubmitting(false);
+    }
   }
 
   return (
     <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
       <Card className="w-full max-w-lg shadow-lg border-slate-200">
         
-        {/* Progress Bar (Full for Step 2) */}
         <div className="w-full h-2 bg-slate-100">
           <div className="h-full w-full bg-cyan-600 rounded-r-full transition-all duration-500" />
         </div>
@@ -71,7 +130,6 @@ export default function DoctorSignupStep2() {
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-5">
               
-              {/* NIC Number */}
               <FormField
                 control={form.control}
                 name="nicNumber"
@@ -89,7 +147,6 @@ export default function DoctorSignupStep2() {
                 )}
               />
 
-              {/* SLMC Certificate Upload */}
               <FormField
                 control={form.control}
                 name="slmcCertificate"
@@ -116,7 +173,6 @@ export default function DoctorSignupStep2() {
                 )}
               />
 
-              {/* Email */}
               <FormField
                 control={form.control}
                 name="email"
@@ -134,7 +190,6 @@ export default function DoctorSignupStep2() {
                 )}
               />
 
-              {/* Phone Number */}
               <FormField
                 control={form.control}
                 name="phoneNumber"
@@ -152,7 +207,6 @@ export default function DoctorSignupStep2() {
                 )}
               />
 
-              {/* Password */}
               <FormField
                 control={form.control}
                 name="password"
@@ -186,7 +240,6 @@ export default function DoctorSignupStep2() {
                 )}
               />
 
-              {/* Action Buttons */}
               <div className="flex justify-between pt-6">
                  <Link href="/signup/doctor/step1">
                     <Button type="button" variant="ghost" className="text-cyan-600 hover:text-cyan-900">
@@ -195,9 +248,18 @@ export default function DoctorSignupStep2() {
                 </Link>
                 <Button 
                   type="submit" 
+                  disabled={isSubmitting}
                   className="bg-cyan-600 hover:bg-cyan-700 text-white min-w-[140px]"
                 >
-                  <Check className="mr-2 h-4 w-4" /> Complete
+                  {isSubmitting ? (
+                    <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Please wait
+                    </>
+                  ) : (
+                    <>
+                        <Check className="mr-2 h-4 w-4" /> Complete
+                    </>
+                  )}
                 </Button>
               </div>
             </form>

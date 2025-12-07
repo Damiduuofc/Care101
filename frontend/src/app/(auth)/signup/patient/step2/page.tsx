@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react"; // Import useEffect
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -41,6 +42,14 @@ const formSchema = z.object({
 export default function PatientSignupStep2() {
   const router = useRouter();
 
+  // Check if Step 1 data exists
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const step1 = sessionStorage.getItem("patientStep1");
+      if (!step1) router.push("/signup/patient/step1");
+    }
+  }, [router]);
+
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
     defaultValues: {
@@ -51,20 +60,21 @@ export default function PatientSignupStep2() {
   });
 
   function onSubmit(values: z.infer<typeof formSchema>) {
-    console.log("Patient Step 2:", values);
+    // Save Step 2 data
+    if (typeof window !== "undefined") {
+      sessionStorage.setItem("patientStep2", JSON.stringify(values));
+    }
     // Proceed to Step 3
     router.push("/signup/patient/step3");
   }
 
+  // ... (Return statement remains exactly the same as your code) ...
   return (
     <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
       <Card className="w-full max-w-lg shadow-lg border-cyan-200">
-        
-        {/* Progress Bar (Step 2/3) */}
         <div className="w-full h-2 bg-cyan-100">
           <div className="h-full w-2/3 bg-cyan-600 rounded-r-full transition-all duration-500" />
         </div>
-
         <CardHeader className="space-y-1">
           <div className="flex items-center justify-between">
             <CardTitle className="text-2xl font-bold text-cyan-900">Contact Information</CardTitle>
@@ -72,16 +82,11 @@ export default function PatientSignupStep2() {
               Step 2 of 3
             </span>
           </div>
-          <CardDescription>
-            How can we get in touch with you?
-          </CardDescription>
+          <CardDescription>How can we get in touch with you?</CardDescription>
         </CardHeader>
-
         <CardContent>
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-5">
-              
-              {/* Mobile Number */}
               <FormField
                 control={form.control}
                 name="mobileNumber"
@@ -98,8 +103,6 @@ export default function PatientSignupStep2() {
                   </FormItem>
                 )}
               />
-
-              {/* Email */}
               <FormField
                 control={form.control}
                 name="email"
@@ -116,8 +119,6 @@ export default function PatientSignupStep2() {
                   </FormItem>
                 )}
               />
-
-              {/* District */}
               <FormField
                 control={form.control}
                 name="district"
@@ -143,19 +144,13 @@ export default function PatientSignupStep2() {
                   </FormItem>
                 )}
               />
-
-              {/* Action Buttons */}
               <div className="flex justify-between pt-6">
                  <Link href="/signup/patient/step1">
                     <Button type="button" variant="ghost" className="text-cyan-600 hover:text-cyan-900">
                       <ArrowLeft className="mr-2 h-4 w-4" /> Back
                     </Button>
                 </Link>
-                
-                <Button 
-                  type="submit" 
-                  className="bg-cyan-600 hover:bg-cyan-700 text-white min-w-[120px]"
-                >
+                <Button type="submit" className="bg-cyan-600 hover:bg-cyan-700 text-white min-w-[120px]">
                   Next Step <ChevronRight className="ml-2 h-4 w-4" />
                 </Button>
               </div>

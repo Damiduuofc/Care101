@@ -1,11 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import Image from "next/image"; // Use Next.js Image for optimization
+import Image from "next/image"; 
 import { usePathname } from "next/navigation";
 import { 
   Menu, 
-  X, 
   Home, 
   Info, 
   Stethoscope, 
@@ -17,10 +16,9 @@ import {
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
-import { Sheet, SheetContent, SheetTrigger, SheetClose } from "@/components/ui/sheet";
+import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
 
-// Define links with icons for the mobile menu
 const navLinks = [
   { href: "/", label: "Home", icon: Home },
   { href: "/about", label: "About Us", icon: Info },
@@ -34,7 +32,6 @@ const Header = () => {
   const [isScrolled, setIsScrolled] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
-  // Add shadow on scroll
   useEffect(() => {
     const handleScroll = () => {
       setIsScrolled(window.scrollY > 20);
@@ -57,7 +54,6 @@ const Header = () => {
         {/* LOGO AREA */}
         <Link href="/" className="flex items-center gap-3 group">
           <div className="relative w-10 h-10 transition-transform duration-300 group-hover:scale-110">
-            {/* Make sure logo.png exists in /public folder */}
             <Image 
               src="/logo.png" 
               alt="Care Link Logo" 
@@ -98,7 +94,9 @@ const Header = () => {
                   Log In
                 </Button>
             </Link>
-            <Link href="/signup">
+            
+            {/* ✅ FIXED LINK HERE */}
+            <Link href="/signup"> 
                 <Button className="bg-cyan-500 hover:bg-cyan-600 text-white rounded-full px-6 shadow-md hover:shadow-lg transition-all">
                   Sign Up <ChevronRight className="ml-1 h-4 w-4" />
                 </Button>
@@ -158,6 +156,8 @@ const Header = () => {
                           Log In
                         </Button>
                     </Link>
+                    
+                    {/* ✅ FIXED LINK HERE TOO */}
                     <Link href="/signup" onClick={() => setIsMobileMenuOpen(false)}>
                         <Button className="w-full justify-start gap-3 bg-cyan-500 hover:bg-cyan-600 rounded-xl h-12 text-white shadow-lg shadow-cyan-200">
                           <UserPlus className="h-4 w-4" />

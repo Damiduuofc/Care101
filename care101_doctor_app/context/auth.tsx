@@ -1,35 +1,38 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
-import * as SecureStore from 'expo-secure-store'; // Run: npx expo install expo-secure-store
+import React, { createContext, useContext, useEffect, useState } from 'react';
+import * as SecureStore from 'expo-secure-store'; // Use SecureStore for tokens
+import { useRouter, useSegments } from 'expo-router';
 
-type AuthType = {
-  user: string | null;
+// ⚠️ REPLACE THIS WITH YOUR COMPUTER'S IP ADDRESS
+const API_URL = 'http://192.168.8.100:5000/api/auth';
+
+interface AuthProps {
+  user: any;
   isLoading: boolean;
-  signIn: () => void;
+  signIn: (email: string, pass: string) => Promise<void>;
+  signUp: (userData: any) => Promise<void>;
   signOut: () => void;
-};
+}
 
-const AuthContext = createContext<AuthType>({
-  user: null,
-  isLoading: true,
-  signIn: () => {},
-  signOut: () => {},
-});
+const AuthContext = createContext<AuthProps>({} as AuthProps);
 
 export function useAuth() {
   return useContext(AuthContext);
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<string | null>(null);
+  const [user, setUser] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const router = useRouter();
+  const segments = useSegments();
 
   useEffect(() => {
-    // Check if user is logged in when app opens
-    const checkLogin = async () => {
+    // Check if user is logged in on app start
+    const checkUser = async () => {
       try {
-        const token = await SecureStore.getItemAsync('user-token');
-        if (token) {
-          setUser(token);
+        const token = await SecureStore.getItemAsync('token');
+        const userData = await SecureStore.getItemAsync('user_data');
+        if (token && userData) {
+          setUser(JSON.parse(userData));
         }
       } catch (e) {
         console.error(e);
@@ -37,26 +40,84 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setIsLoading(false);
       }
     };
-    checkLogin();
+    checkUser();
   }, []);
 
-  const signIn = async () => {
-    // Call this function from your Login Screen when login succeeds
-    setIsLoading(true);
-    await SecureStore.setItemAsync('user-token', 'dummy-auth-token');
-    setUser('dummy-auth-token');
-    setIsLoading(false);
+  // --- ACTIONS ---
+
+  const signIn = async (email: string, password: string) => {
+    try {
+      const response = await fetch(`${API_URL}/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.msg || 'Login failed');
+      }
+
+      // Save Data
+      await SecureStore.setItemAsync('token', data.token);
+      await SecureStore.setItemAsync('user_data', JSON.stringify(data.user));
+      
+      setUser(data.user);
+      router.replace('/dashboard/dashboard');
+
+    } catch (error: any) {
+      console.error(error);
+      throw error; // Throw to UI to show alert
+    }
+  };
+
+  const signUp = async (userData: any) => {
+    try {
+      // Map frontend fields to backend model
+      // Frontend: fullName, email, password, specialization
+      // Backend expects: name, email, password, specialization
+      const payload = {
+        name: userData.fullName,
+        email: userData.email,
+        password: userData.password,
+        specialization: userData.specialization,
+      };
+
+      const response = await fetch(`${API_URL}/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.msg || 'Registration failed');
+      }
+
+      // Auto login after signup
+      await SecureStore.setItemAsync('token', data.token);
+      await SecureStore.setItemAsync('user_data', JSON.stringify(data.user));
+      
+      setUser(data.user);
+      router.replace('/dashboard/dashboard');
+
+    } catch (error: any) {
+      console.error(error);
+      throw error;
+    }
   };
 
   const signOut = async () => {
-    setIsLoading(true);
-    await SecureStore.deleteItemAsync('user-token');
+    await SecureStore.deleteItemAsync('token');
+    await SecureStore.deleteItemAsync('user_data');
     setUser(null);
-    setIsLoading(false);
+    router.replace('/');
   };
 
   return (
-    <AuthContext.Provider value={{ user, isLoading, signIn, signOut }}>
+    <AuthContext.Provider value={{ user, isLoading, signIn, signUp, signOut }}>
       {children}
     </AuthContext.Provider>
   );

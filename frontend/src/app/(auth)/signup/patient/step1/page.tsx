@@ -49,14 +49,17 @@ export default function PatientSignupStep1() {
   });
 
   function onSubmit(values: z.infer<typeof formSchema>) {
-    console.log("Patient Step 1:", values);
+    // 1. Save data to Session Storage
+    if (typeof window !== "undefined") {
+      sessionStorage.setItem("patientStep1", JSON.stringify(values));
+    }
+    // 2. Move to Step 2
     router.push("/signup/patient/step2");
   }
 
   return (
     <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
       <Card className="w-full max-w-lg shadow-lg border-slate-200">
-        {/* Progress Bar */}
         <div className="w-full h-2 bg-slate-100">
           <div className="h-full w-1/3 bg-cyan-600 rounded-r-full" />
         </div>
@@ -76,8 +79,7 @@ export default function PatientSignupStep1() {
         <CardContent>
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-5">
-
-              {/* Full Name */}
+              
               <FormField
                 control={form.control}
                 name="fullName"
@@ -95,7 +97,6 @@ export default function PatientSignupStep1() {
                 )}
               />
 
-              {/* Date of Birth */}
               <FormField
                 control={form.control}
                 name="dateOfBirth"
@@ -108,16 +109,14 @@ export default function PatientSignupStep1() {
                         <DatePicker
                           selected={field.value ?? null}
                           onChange={(date: Date | null) => field.onChange(date)}
-                          dateFormat="PPP"
+                          dateFormat="yyyy-MM-dd"
                           placeholderText="Pick a date"
                           maxDate={new Date()}
-                          minDate={new Date("1900-01-01")}
                           showYearDropdown
                           showMonthDropdown
                           dropdownMode="select"
-                          isClearable
                           className={cn(
-                            "w-full h-10 pl-10 rounded-md border border-slate-200 bg-white",
+                            "w-full h-10 pl-10 rounded-md border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-cyan-500",
                             !field.value && "text-muted-foreground"
                           )}
                         />
@@ -128,7 +127,6 @@ export default function PatientSignupStep1() {
                 )}
               />
 
-              {/* Gender */}
               <FormField
                 control={form.control}
                 name="gender"
@@ -142,9 +140,9 @@ export default function PatientSignupStep1() {
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        <SelectItem value="male">Male</SelectItem>
-                        <SelectItem value="female">Female</SelectItem>
-                        <SelectItem value="other">Other</SelectItem>
+                        <SelectItem value="Male">Male</SelectItem>
+                        <SelectItem value="Female">Female</SelectItem>
+                        <SelectItem value="Other">Other</SelectItem>
                       </SelectContent>
                     </Select>
                     <FormMessage />
@@ -152,7 +150,6 @@ export default function PatientSignupStep1() {
                 )}
               />
 
-              {/* NIC Number */}
               <FormField
                 control={form.control}
                 name="nicNumber"
@@ -170,7 +167,6 @@ export default function PatientSignupStep1() {
                 )}
               />
 
-              {/* Action Buttons */}
               <div className="flex justify-between pt-6">
                 <Link href="/signup">
                   <Button type="button" variant="ghost" className="text-cyan-600 hover:text-cyan-900">

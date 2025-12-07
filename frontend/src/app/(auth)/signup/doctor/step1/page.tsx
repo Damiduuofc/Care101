@@ -47,16 +47,18 @@ export default function DoctorSignupStep1() {
   });
 
   function onSubmit(values: z.infer<typeof formSchema>) {
-    console.log("Step 1 Data:", values);
-    // In a real app, you would save this to state/context/localstorage here
+    // 1. Save Step 1 data to Session Storage
+    if (typeof window !== "undefined") {
+      sessionStorage.setItem("signupStep1", JSON.stringify(values));
+    }
+    
+    // 2. Navigate to Step 2
     router.push("/signup/doctor/step2");
   }
 
   return (
     <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
       <Card className="w-full max-w-lg shadow-lg border-slate-200">
-        
-        {/* Progress Bar */}
         <div className="w-full h-2 bg-slate-100">
           <div className="h-full w-1/2 bg-cyan-600 rounded-r-full" />
         </div>
@@ -77,7 +79,6 @@ export default function DoctorSignupStep1() {
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-5">
               
-              {/* Full Name */}
               <FormField
                 control={form.control}
                 name="fullName"
@@ -95,7 +96,6 @@ export default function DoctorSignupStep1() {
                 )}
               />
 
-              {/* Name with Initials */}
               <FormField
                 control={form.control}
                 name="nameWithInitials"
@@ -113,7 +113,6 @@ export default function DoctorSignupStep1() {
                 )}
               />
 
-              {/* SLMC Number */}
               <FormField
                 control={form.control}
                 name="slmcRegistrationNumber"
@@ -131,7 +130,6 @@ export default function DoctorSignupStep1() {
                 )}
               />
 
-              {/* Specialization */}
               <FormField
                 control={form.control}
                 name="specialization"
@@ -140,7 +138,7 @@ export default function DoctorSignupStep1() {
                     <FormLabel>Specialization</FormLabel>
                     <Select onValueChange={field.onChange} defaultValue={field.value}>
                       <FormControl>
-                        <SelectTrigger className="pl-10 relative  ">
+                        <SelectTrigger className="pl-10 relative">
                           <Stethoscope className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
                           <SelectValue placeholder="Select your field" />
                         </SelectTrigger>
@@ -158,7 +156,6 @@ export default function DoctorSignupStep1() {
                 )}
               />
 
-              {/* Buttons */}
               <div className="flex justify-between pt-6">
                 <Link href="/signup">
                   <Button type="button" variant="ghost" className="text-slate-600 hover:text-slate-900">

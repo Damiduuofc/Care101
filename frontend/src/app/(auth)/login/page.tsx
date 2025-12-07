@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
+import { useRouter } from "next/navigation"; // Import router for redirection
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
@@ -23,17 +24,21 @@ import {
   EyeOff, 
   Loader2, 
   ArrowRight, 
-  CheckCircle2 
+  CheckCircle2,
+  AlertCircle 
 } from "lucide-react";
 
+// Validation Schema
 const formSchema = z.object({
   email: z.string().email({ message: "Please enter a valid email address." }),
-  password: z.string().min(6, { message: "Password must be at least 6 characters." }),
+  password: z.string().min(1, { message: "Password is required." }),
 });
 
 export default function LoginPage() {
+  const router = useRouter();
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -45,11 +50,43 @@ export default function LoginPage() {
 
   async function onSubmit(values: z.infer<typeof formSchema>) {
     setIsLoading(true);
-    // Simulate API call
-    setTimeout(() => {
-      console.log(values);
+    setError(null);
+
+    try {
+      // 1. Send Login Request to Backend
+      const response = await fetch("http://localhost:5000/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(values),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.msg || "Invalid credentials.");
+      }
+
+      // 2. Save Session Data
+      if (typeof window !== "undefined") {
+        sessionStorage.setItem("token", data.token);
+        sessionStorage.setItem("user", JSON.stringify(data.user));
+      }
+
+      console.log("Login Success:", data.user);
+
+      // 3. Redirect based on Role
+      if (data.user.role === "doctor") {
+        router.push("/doctor"); // Go to Doctor Dashboard
+      } else {
+        router.push("/patient"); // Go to Patient Dashboard
+      }
+
+    } catch (err: any) {
+      console.error("Login Error:", err);
+      setError(err.message || "Something went wrong. Please try again.");
+    } finally {
       setIsLoading(false);
-    }, 2000);
+    }
   }
 
   return (
@@ -65,9 +102,17 @@ export default function LoginPage() {
               Welcome back
             </h1>
             <p className="text-slate-500 mt-2">
-              Enter your credentials to access your patient portal.
+              Enter your credentials to access your portal.
             </p>
           </div>
+
+          {/* Error Message Alert */}
+          {error && (
+            <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-md flex items-center gap-2 text-sm animate-in fade-in slide-in-from-top-1">
+              <AlertCircle className="h-4 w-4 shrink-0" />
+              <span>{error}</span>
+            </div>
+          )}
 
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
@@ -155,8 +200,6 @@ export default function LoginPage() {
             </form>
           </Form>
 
-
-
           <p className="text-center text-sm text-slate-600">
             Don&apos;t have an account?{" "}
             <Link href="/signup" className="font-semibold text-cyan-600 hover:text-cyan-500 hover:underline">
@@ -170,7 +213,7 @@ export default function LoginPage() {
       <div className="hidden lg:block relative bg-slate-900 h-full">
         <div className="absolute inset-0">
           <Image
-            src="/images/login-bg.jpg" // Ensure this exists
+            src="/images/login-bg.jpg" // Ensure this image exists in public/images/
             alt="Medical Professional"
             fill
             className="object-cover opacity-60"

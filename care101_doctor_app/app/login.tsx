@@ -9,6 +9,7 @@ import {
   Platform,
   ScrollView,
   Image,
+  Alert, // Imported Alert
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -20,7 +21,10 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm, Controller } from "react-hook-form";
 import { z } from "zod";
 
-// 2. Define Validation Schema
+// 2. Import Auth Context
+import { useAuth } from '../context/auth'; 
+
+// 3. Define Validation Schema
 const loginSchema = z.object({
   email: z.string().min(1, "Email is required").email("Invalid email address"),
   password: z.string().min(1, "Password is required"),
@@ -32,11 +36,14 @@ export default function LoginScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const router = useRouter();
+  
+  // Get signIn function from context
+  const { signIn } = useAuth(); 
 
   // Assets
   const logoSource = require('../assets/logo1.png');
 
-  // 3. Setup Form Hook
+  // 4. Setup Form Hook
   const { control, handleSubmit, formState: { errors } } = useForm<LoginFormValues>({
     resolver: zodResolver(loginSchema),
     defaultValues: {
@@ -45,13 +52,21 @@ export default function LoginScreen() {
     },
   });
 
-  // 4. Handle Submission
+  // 5. Handle Submission (Connected to Backend)
   const onLogin = async (data: LoginFormValues) => {
-      console.log("Login Data:", data);
-       router.replace("/dashboard/dashboard");
+    setIsLoading(true);
+    try {
+      // Call the signIn function from your Auth Context
+      await signIn(data.email, data.password);
+      // NOTE: Navigation to dashboard is handled inside context/auth.tsx on success
+    } catch (error: any) {
+      Alert.alert("Login Failed", error.message || "Something went wrong. Please check your credentials.");
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  // 5. Reusable Input Component
+  // 6. Reusable Input Component
   const FormInput = ({ name, placeholder, icon, isPassword = false, keyboardType = 'default' }: any) => (
     <Controller
       control={control}
@@ -145,15 +160,13 @@ export default function LoginScreen() {
 
       <View style={styles.signupContainer}>
         <Text style={styles.signupText}>Don't have an account? </Text>
-        <TouchableOpacity onPress={() => router.push('/signup/doctor/step1')}>
+        <TouchableOpacity onPress={() => router.push('/signup/doctor/step1' as any)}>
           <Text style={styles.signupLink}>Sign up </Text>
         </TouchableOpacity>
       </View>
     </View>
   );
 
-  // ---------------- UNIFIED VIEW ----------------
-  // This layout now applies to both Mobile and Desktop
   return (
     <View style={{ flex: 1 }}>
       <LinearGradient
@@ -220,8 +233,8 @@ const styles = StyleSheet.create({
   // --- Form Content Styles ---
   formContentContainer: {
     width: '100%',
-    maxWidth: 500, // Added maxWidth so it doesn't look too wide on giant screens
-    alignSelf: 'center', // Center the form content on desktop
+    maxWidth: 500,
+    alignSelf: 'center',
   },
   header: {
     marginBottom: 32,

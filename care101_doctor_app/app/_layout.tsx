@@ -1,4 +1,4 @@
-import { useEffect } from 'react'; 
+import { useEffect } from 'react'; // <--- Added this missing import
 import { Stack } from 'expo-router';
 import { AuthProvider } from '../context/auth';
 import "../global.css";

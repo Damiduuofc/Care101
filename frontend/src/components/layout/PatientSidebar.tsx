@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { LayoutDashboard, Calendar, FileText, CreditCard, Bell, User, LogOut } from 'lucide-react';
-import Logo from '@/components/icons/Logo';
+import Logo from "@/public/logo.png";
 import { cn } from '@/lib/utils';
 import { Separator } from '@/components/ui/separator';
 
@@ -28,7 +28,7 @@ const PatientSidebar = ({ onLinkClick }: { onLinkClick?: () => void }) => {
     <aside className="fixed top-0 left-0 h-full w-64 bg-sidebar border-r border-sidebar-border flex flex-col z-40">
       <div className="flex items-center justify-center h-20 border-b border-sidebar-border">
          <Link href="/patient" className="flex items-center gap-2 font-bold text-xl" onClick={handleLinkClick}>
-            <Logo className="h-8 w-8 text-primary" />
+            <img src="/logo.png" alt="Logo" width={40} height={40}/>
             <span className="font-headline text-sidebar-primary">MediServe</span>
         </Link>
       </div>
