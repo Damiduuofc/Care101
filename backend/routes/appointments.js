@@ -1,6 +1,6 @@
 import express from "express";
 import Appointment from "../models/Appointment.js";
-import Notification from "../models/Notification.js"; // ✅ NEW: Import Notification Model
+import Notification from "../models/Notification.js";
 import { auth } from "../middleware/auth.js";
 
 const router = express.Router();
@@ -10,8 +10,8 @@ router.post("/book", auth, async (req, res) => {
   try {
     const { doctorId, doctorName, department, date, visitType, reason, amount } = req.body;
 
-    if (!doctorId || !doctorName || !department || !date) {
-      return res.status(400).json({ msg: "Please fill all required fields" });
+    if (!doctorId || !date) {
+      return res.status(400).json({ msg: "Doctor and Date are required" });
     }
 
     const newAppointment = new Appointment({
@@ -22,35 +22,36 @@ router.post("/book", auth, async (req, res) => {
       date,
       visitType,
       reason,
-      status: 'Pending',
-      amount: amount || 0,
-      paymentStatus: 'Paid'
+      amount: amount || 2000,
+      status: 'Pending', // Default status
+      paymentStatus: 'Pending'
     });
 
     await newAppointment.save();
 
-    // ✅ NEW: Create Notification for Booking
+    // Notify the user
     await Notification.create({
       userId: req.user.id,
       type: 'appointment',
-      message: `Appointment requested with ${doctorName} on ${new Date(date).toLocaleDateString()}. Status: Pending.`
+      message: `Booking request sent for Dr. ${doctorName} on ${new Date(date).toLocaleDateString()}.`
     });
 
     res.json(newAppointment);
 
   } catch (err) {
     console.error("Booking Error:", err.message);
-    res.status(500).json({ msg: "Server Error" });
+    res.status(500).send("Server Error");
   }
 });
 
-// 2. GET MY APPOINTMENTS
+// 2. GET MY APPOINTMENTS (Fixes "Previous details not showing")
 router.get("/my-appointments", auth, async (req, res) => {
   try {
-    const appointments = await Appointment.find({ patientId: req.user.id }).sort({ date: 1 });
+    // Find appointments where patientId matches the logged-in user
+    const appointments = await Appointment.find({ patientId: req.user.id }).sort({ date: -1 }); // Sort newest first
     res.json(appointments);
   } catch (err) {
-    console.error(err.message);
+    console.error("Fetch Error:", err.message);
     res.status(500).send("Server Error");
   }
 });
@@ -60,28 +61,18 @@ router.put("/cancel/:id", auth, async (req, res) => {
   try {
     const appointment = await Appointment.findById(req.params.id);
 
-    if (!appointment) {
-      return res.status(404).json({ msg: "Appointment not found" });
-    }
+    if (!appointment) return res.status(404).json({ msg: "Not Found" });
 
+    // Verify ownership
     if (appointment.patientId.toString() !== req.user.id) {
-      return res.status(401).json({ msg: "Not authorized" });
+      return res.status(401).json({ msg: "Not Authorized" });
     }
 
     appointment.status = "Cancelled";
     await appointment.save();
 
-    // ✅ NEW: Create Notification for Cancellation
-    await Notification.create({
-      userId: req.user.id,
-      type: 'appointment',
-      message: `Appointment with ${appointment.doctorName} has been cancelled.`
-    });
-
-    res.json({ msg: "Appointment Cancelled" });
-
+    res.json({ msg: "Cancelled Successfully" });
   } catch (err) {
-    console.error("Cancel Error:", err.message);
     res.status(500).send("Server Error");
   }
 });

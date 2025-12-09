@@ -3,7 +3,7 @@ import * as SecureStore from 'expo-secure-store';
 import { useRouter, useSegments } from 'expo-router';
 
 // ⚠️ YOUR COMPUTER'S IP ADDRESS
-const API_URL = 'http://192.168.8.100:5000/api/auth'; 
+const API_URL = 'http://192.168.8.101:5000/api/auth'; 
 
 interface AuthProps {
   user: any;

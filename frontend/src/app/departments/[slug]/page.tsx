@@ -1,10 +1,10 @@
 "use client";
 
+import { use, useEffect, useState } from 'react'; 
 import { notFound } from 'next/navigation';
-import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { departments } from '@/lib/data'; // Departments info (text) can stay static
+import { departments } from '@/lib/data'; 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -23,14 +23,15 @@ import {
   Loader2
 } from 'lucide-react';
 import { motion } from 'framer-motion';
-
+import  Header  from "@/components/layout/Header";
+import  Footer  from "@/components/layout/Footer";
 // API to get real doctors
 const API_URL = "http://localhost:5000/api/doctors/public";
 
 type DepartmentPageProps = {
-  params: {
+  params: Promise<{
     slug: string;
-  };
+  }>;
 };
 
 const getDeptAssets = (slug: string) => {
@@ -45,7 +46,10 @@ const getDeptAssets = (slug: string) => {
 };
 
 export default function DepartmentPage({ params }: DepartmentPageProps) {
-  const department = departments.find((dept) => dept.slug === params.slug);
+  // ✅ Unwrap the params Promise using React.use()
+  const { slug } = use(params);
+
+  const department = departments.find((dept) => dept.slug === slug);
   
   // State for real doctors
   const [doctors, setDoctors] = useState<any[]>([]);
@@ -55,15 +59,13 @@ export default function DepartmentPage({ params }: DepartmentPageProps) {
     notFound();
   }
 
-  // ✅ Fetch Real Doctors matching this Department
+  // Fetch Real Doctors matching this Department
   useEffect(() => {
     const fetchDoctors = async () => {
       try {
         const res = await fetch(API_URL);
         if (res.ok) {
           const allDoctors = await res.json();
-          // Filter by specialization matching department name
-          // E.g., if dept is "Cardiology", show doctors with "Cardiologist" or "Cardiology"
           const relevantDoctors = allDoctors.filter((doc: any) => 
             doc.specialization?.toLowerCase().includes(department.name.toLowerCase()) || 
             department.name.toLowerCase().includes(doc.specialization?.toLowerCase())
@@ -89,7 +91,7 @@ export default function DepartmentPage({ params }: DepartmentPageProps) {
 
   return (
     <div className="flex flex-col min-h-screen bg-slate-50 font-sans">
-      
+      <Header />
       {/* ================= HERO ================= */}
       <div className="relative h-[50vh] min-h-[400px] w-full overflow-hidden bg-slate-900">
         <motion.div initial={{ scale: 1.1, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="absolute inset-0">
@@ -139,7 +141,7 @@ export default function DepartmentPage({ params }: DepartmentPageProps) {
               </div>
             </motion.div>
 
-            {/* ✅ REAL DOCTORS SECTION */}
+            {/* REAL DOCTORS SECTION */}
             <motion.div variants={sectionVariants} initial="hidden" whileInView="visible" viewport={{ once: true }} className="pt-8">
                <h3 className="text-xl font-bold text-slate-900 mb-6 flex items-center gap-2">
                 <span className={`w-2 h-8 rounded-full ${assets.bg.replace('bg-', 'bg-')}-500`}></span>
@@ -227,6 +229,7 @@ export default function DepartmentPage({ params }: DepartmentPageProps) {
 
         </div>
       </main>
+    <Footer />
     </div>
   );
 }

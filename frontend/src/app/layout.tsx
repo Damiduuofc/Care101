@@ -1,6 +1,6 @@
-import type { Metadata } from "next";
 import "./globals.css";
 import "react-datepicker/dist/react-datepicker.css";
+import type { Metadata } from "next";
 import { cn } from "@/lib/utils";
 import { Toaster } from "@/components/ui/toaster";
 
