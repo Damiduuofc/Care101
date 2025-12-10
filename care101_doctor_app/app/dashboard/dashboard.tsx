@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -9,10 +9,12 @@ import {
   StatusBar,
   Dimensions,
   Platform,
+  ActivityIndicator
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useRouter, Href } from 'expo-router'; 
+import { useRouter } from 'expo-router'; 
+import * as SecureStore from 'expo-secure-store'; // ✅ CHANGED: Use SecureStore
 import { 
   Clock, 
   ChevronRight, 
@@ -22,34 +24,26 @@ import {
   FileText, 
   User,
   Stethoscope,
-  Plus
 } from 'lucide-react-native';
 
 import BottomNavBar from '../../components/BottomNavBar'; 
 
-const { width } = Dimensions.get('window');
-
-// Define interface for Quick Actions data
-interface QuickAction {
-  id: number;
-  title: string;
-  subtitle: string;
-  icon: React.ComponentType<any>;
-  link: string;
-  color: string;
-  bg: string;
-}
-
+const API_URL = `${process.env.EXPO_PUBLIC_API_URL}/api/doctor`;
 export default function DashboardScreen() {
   const router = useRouter(); 
+  const [loading, setLoading] = useState(true);
   
-  // --- MOCK DATA FOR UI ---
-  const doctorName = "Dr. Damidu Abeysinghe";
-  const specialization = "Emergency Medicine";
-  
+  // State for Dynamic Data
+  const [stats, setStats] = useState({
+    name: "Doctor",
+    specialization: "Specialist",
+    income: 0,
+    records: 0
+  });
+
   const bannerImage = { uri: "https://images.unsplash.com/photo-1576091160550-2187d80a1b95?ixlib=rb-1.2.1&auto=format&fit=crop&w=800&q=80" };
 
-  const quickActions: QuickAction[] = [
+  const quickActions = [
     {
       id: 1,
       title: 'Finance Management',
@@ -79,6 +73,47 @@ export default function DashboardScreen() {
     },
   ];
 
+  // ✅ FETCH DATA FUNCTION
+  useEffect(() => {
+    const fetchDashboard = async () => {
+      try {
+        // ✅ FIX: Use SecureStore to match auth.tsx
+        const token = await SecureStore.getItemAsync("token");
+        
+        if (!token) {
+          console.log("No token found, redirecting to login");
+          router.replace("/"); // Redirect to index (Login)
+          return;
+        }
+
+        const response = await fetch(`${API_URL}/dashboard-stats`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          setStats(data);
+        } else {
+           console.log("Failed to fetch stats, status:", response.status);
+        }
+      } catch (error) {
+        console.error("Network Error:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchDashboard();
+  }, []);
+
+  if (loading) {
+    return (
+      <View style={[styles.container, {justifyContent: 'center', alignItems: 'center'}]}>
+        <ActivityIndicator size="large" color="#06b6d4" />
+      </View>
+    );
+  }
+
   return (
     <View style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent />
@@ -91,8 +126,8 @@ export default function DashboardScreen() {
             </View>
             <View>
               <Text style={styles.welcomeText}>Welcome Doctor</Text>
-              <Text style={styles.doctorName}>{doctorName}</Text>
-              <Text style={styles.specialization}>{specialization}</Text>
+              <Text style={styles.doctorName}>{stats.name}</Text>
+              <Text style={styles.specialization}>{stats.specialization}</Text>
             </View>
           </View>
         </View>
@@ -102,24 +137,6 @@ export default function DashboardScreen() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
       >
-        {/* --- TRIAL NOTIFICATION BANNER --- */}
-        <TouchableOpacity activeOpacity={0.9}>
-          <LinearGradient
-            colors={['#2563eb', '#06b6d4']} 
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
-            style={styles.trialBanner}
-          >
-            <View style={styles.trialContent}>
-              <Clock size={20} color="#fff" style={styles.trialIcon} />
-              <Text style={styles.trialText}>
-                11 days left in your trial. Upgrade for unlimited access!
-              </Text>
-            </View>
-            <ChevronRight size={20} color="#fff" />
-          </LinearGradient>
-        </TouchableOpacity>
-
         {/* --- HERO BANNER --- */}
         <View style={styles.heroContainer}>
           <Image source={bannerImage} style={styles.heroImage} />
@@ -136,29 +153,32 @@ export default function DashboardScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Overview</Text>
           <View style={styles.overviewGrid}>
+            
+            {/* INCOME CARD */}
             <View style={styles.overviewCard}>
               <View style={[styles.iconCircle, { backgroundColor: '#ecfdf5' }]}>
                 <Wallet size={24} color="#10b981" />
               </View>
               <View>
-                <Text style={styles.statValue}>Rs. 0</Text>
+                <Text style={styles.statValue}>Rs. {stats.income.toLocaleString()}</Text>
                 <Text style={styles.statLabel}>Total Payable Income</Text>
               </View>
             </View>
 
+            {/* RECORDS CARD */}
             <View style={styles.overviewCard}>
               <View style={[styles.iconCircle, { backgroundColor: '#e0f2fe' }]}>
                 <Stethoscope size={24} color="#0ea5e9" />
               </View>
               <View>
-                <Text style={styles.statValue}>0</Text>
-                <Text style={styles.statLabel}>Surgery Records</Text>
+                <Text style={styles.statValue}>{stats.records}</Text>
+                <Text style={styles.statLabel}>Total Records</Text>
               </View>
             </View>
           </View>
         </View>
 
-   {/* --- QUICK ACTIONS SECTION --- */}
+        {/* --- QUICK ACTIONS SECTION --- */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Quick Actions</Text>
           <View style={styles.actionList}>
@@ -166,7 +186,6 @@ export default function DashboardScreen() {
               <TouchableOpacity 
                 key={action.id} 
                 style={styles.actionCard}
-                // USE 'as any' TO FIX THE ERROR
                 onPress={() => router.push(action.link as any)} 
               >
                 <View style={[styles.actionIconBox, { backgroundColor: action.bg }]}>
@@ -182,17 +201,6 @@ export default function DashboardScreen() {
           </View>
         </View>
 
-        {/* --- RECENT ACTIVITY SECTION --- */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Recent Activity</Text>
-          <View style={styles.emptyStateCard}>
-            <View style={styles.emptyStateIcon}>
-              <Clock size={32} color="#cbd5e1" />
-            </View>
-            <Text style={styles.emptyStateText}>No recent activity</Text>
-          </View>
-        </View>
-
       </ScrollView>
 
       <BottomNavBar />
@@ -200,6 +208,7 @@ export default function DashboardScreen() {
   );
 }
 
+// Keep your existing styles exactly as they were
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -248,29 +257,7 @@ const styles = StyleSheet.create({
     color: '#64748b',
   },
   scrollContent: {
-    paddingBottom: 100, // Increased padding for Nav Bar
-  },
-  trialBanner: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-  },
-  trialContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
-  trialIcon: {
-    marginRight: 10,
-  },
-  trialText: {
-    color: '#fff',
-    fontSize: 13,
-    fontWeight: '600',
-    flex: 1,
-    lineHeight: 18,
+    paddingBottom: 100, 
   },
   heroContainer: {
     margin: 20,

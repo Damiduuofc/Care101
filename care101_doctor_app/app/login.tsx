@@ -9,7 +9,7 @@ import {
   Platform,
   ScrollView,
   Image,
-  Alert, // ✅ Imported Alert
+  Alert,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -37,7 +37,6 @@ export default function LoginScreen() {
   const [isLoading, setIsLoading] = useState(false);
   const router = useRouter();
   
-  // Get signIn function from context
   const { signIn } = useAuth(); 
 
   // Assets
@@ -76,9 +75,9 @@ export default function LoginScreen() {
 
       // 🚨 THE POPUP ALERT
       Alert.alert(
-        "Login Failed",       // Title
-        errorMessage,         // Message
-        [{ text: "OK", style: "default" }] // Button
+        "Login Failed",
+        errorMessage,
+        [{ text: "OK", style: "default" }]
       );
     } finally {
       setIsLoading(false);
