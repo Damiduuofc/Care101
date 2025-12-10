@@ -12,6 +12,7 @@ const DoctorSchema = new mongoose.Schema({
   nic: { type: String },
   phone: { type: String },
   slmcReg: { type: String },
+  profileImage: { type: String }, 
   hospital: { type: String, default: 'Private Practice' },
 
   createdAt: { type: Date, default: Date.now },

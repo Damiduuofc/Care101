@@ -33,15 +33,28 @@ export default function HospitalDetailsScreen() {
     fetchDetails();
   }, []);
 
-  const fetchDetails = async () => {
+const fetchDetails = async () => {
     try {
+      console.log(`Fetching details for ID: ${id}`); // 1. Log ID
       const token = await SecureStore.getItemAsync('token');
+      
       const res = await fetch(`${API_URL}/${id}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
-      setHospital(await res.json());
+
+      // 2. READ RAW TEXT FIRST
+      const text = await res.text();
+      console.log("SERVER STATUS:", res.status);
+      console.log("RAW RESPONSE:", text); // 🚨 READ THIS IN CONSOLE
+
+      if (res.ok) {
+        const data = JSON.parse(text);
+        setHospital(data);
+      } else {
+        console.error("Server Error:", text);
+      }
     } catch (error) {
-      console.error(error);
+      console.error("Network Error:", error);
     } finally {
       setLoading(false);
     }
