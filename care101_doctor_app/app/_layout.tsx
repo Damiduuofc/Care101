@@ -35,33 +35,7 @@ function RootLayoutNav() {
     }
   }, []);
 
-  // EFFECT 2: Traffic Controller
-  useEffect(() => {
-    if (isLoading) return; 
-
-    // Check if we are on an auth-related route
-    const inAuthGroup = segments?.[0] === 'login' || segments?.[0] === 'signup' || segments?.[0] === 'onboarding';
-
-    // LOGIC:
-    // If NOT logged in... AND not in auth group... AND not on login/signup pages...
-    // -> Send to Login
-    if (!user && !inAuthGroup && currentRoute !== 'index' && currentRoute !== 'login' && currentRoute !== 'signup') {
-      router.replace('/' as any); 
-
-    // If LOGGED IN... AND on a login/welcome page...
-    // -> Send to Dashboard
-    } else if (user && (currentRoute === 'index' || currentRoute === 'login')) {
-      router.replace('/dashboard' as any); 
-    }
-  }, [user, isLoading, segments, currentRoute]);
-
-  if (isLoading) {
-    return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#fff' }}>
-        <ActivityIndicator size="large" color="#12a9acff" />
-      </View>
-    );
-  }
+ 
 
   return (
     <View style={{ flex: 1 }}>
