@@ -51,34 +51,29 @@ export default function LoginScreen() {
     },
   });
 
-  // 5. Handle Submission (Updated with Popup Alert)
+  // 5. Handle Submission
   const onLogin = async (data: LoginFormValues) => {
     setIsLoading(true);
     try {
       // Attempt to sign in
       await signIn(data.email, data.password);
-      
       // ✅ Success: The 'signIn' function in auth.tsx handles the redirect.
       
     } catch (error: any) {
-      // ❌ Failed: Show the Popup Message
-      console.log("Login Error:", error);
+      console.log("Login Error in UI:", error);
 
       let errorMessage = "Something went wrong. Please try again.";
 
-      // Check if the error message comes from the backend
       if (error.message) {
         errorMessage = error.message;
-      } else if (error.toString().includes('Network request failed')) {
-        errorMessage = "Network error. Please check your internet connection.";
+      } 
+      
+      // Handle Network Errors specifically
+      if (error.toString().includes('Network request failed') || error.message.includes('fetch')) {
+        errorMessage = "Cannot connect to server. Please check your IP address in auth.tsx and your internet connection.";
       }
 
-      // 🚨 THE POPUP ALERT
-      Alert.alert(
-        "Login Failed",
-        errorMessage,
-        [{ text: "OK", style: "default" }]
-      );
+      Alert.alert("Login Failed", errorMessage, [{ text: "OK" }]);
     } finally {
       setIsLoading(false);
     }
@@ -122,7 +117,6 @@ export default function LoginScreen() {
             )}
           </View>
           
-          {/* Inline Error Message */}
           {errors[name as keyof LoginFormValues] && (
             <Text style={styles.errorText}>
               {errors[name as keyof LoginFormValues]?.message}
@@ -131,58 +125,6 @@ export default function LoginScreen() {
         </View>
       )}
     />
-  );
-
-  const FormContent = () => (
-    <View style={styles.formContentContainer}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Welcome back</Text>
-        <Text style={styles.subtitle}>
-          Enter your credentials to access your patient portal.
-        </Text>
-      </View>
-
-      {/* Form Inputs */}
-      <FormInput 
-        name="email" 
-        placeholder="name@example.com" 
-        icon="mail-outline" 
-        keyboardType="email-address" 
-      />
-
-      <FormInput 
-        name="password" 
-        placeholder="••••••••" 
-        icon="lock-closed-outline" 
-        isPassword={true} 
-      />
-
-      {/* Login Button */}
-      <TouchableOpacity
-        style={[styles.loginButton, isLoading && styles.loginButtonDisabled]}
-        onPress={handleSubmit(onLogin)}
-        disabled={isLoading}
-      >
-        <LinearGradient
-          colors={['#06b6d4', '#0891b2']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 0 }}
-          style={styles.gradientButton}
-        >
-          <Text style={styles.loginButtonText}>
-            {isLoading ? 'Signing in...' : 'Log In'}
-          </Text>
-          {!isLoading && <Ionicons name="arrow-forward" size={20} color="#fff" />}
-        </LinearGradient>
-      </TouchableOpacity>
-
-      <View style={styles.signupContainer}>
-        <Text style={styles.signupText}>Don't have an account? </Text>
-        <TouchableOpacity onPress={() => router.push('/signup/doctor/step1' as any)}>
-          <Text style={styles.signupLink}>Sign up </Text>
-        </TouchableOpacity>
-      </View>
-    </View>
   );
 
   return (
@@ -207,7 +149,53 @@ export default function LoginScreen() {
               </View>
 
               <View style={styles.card}>
-                <FormContent />
+                <View style={styles.formContentContainer}>
+                  <View style={styles.header}>
+                    <Text style={styles.title}>Welcome back</Text>
+                    <Text style={styles.subtitle}>
+                      Enter your credentials to access your patient portal.
+                    </Text>
+                  </View>
+
+                  <FormInput 
+                    name="email" 
+                    placeholder="name@example.com" 
+                    icon="mail-outline" 
+                    keyboardType="email-address" 
+                  />
+
+                  <FormInput 
+                    name="password" 
+                    placeholder="••••••••" 
+                    icon="lock-closed-outline" 
+                    isPassword={true} 
+                  />
+
+                  <TouchableOpacity
+                    style={[styles.loginButton, isLoading && styles.loginButtonDisabled]}
+                    onPress={handleSubmit(onLogin)}
+                    disabled={isLoading}
+                  >
+                    <LinearGradient
+                      colors={['#06b6d4', '#0891b2']}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 0 }}
+                      style={styles.gradientButton}
+                    >
+                      <Text style={styles.loginButtonText}>
+                        {isLoading ? 'Signing in...' : 'Log In'}
+                      </Text>
+                      {!isLoading && <Ionicons name="arrow-forward" size={20} color="#fff" />}
+                    </LinearGradient>
+                  </TouchableOpacity>
+
+                  <View style={styles.signupContainer}>
+                    <Text style={styles.signupText}>Don't have an account? </Text>
+                    <TouchableOpacity onPress={() => router.push('/signup/doctor/step1' as any)}>
+                      <Text style={styles.signupLink}>Sign up </Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
               </View>
             </ScrollView>
           </KeyboardAvoidingView>
@@ -218,21 +206,9 @@ export default function LoginScreen() {
 }
 
 const styles = StyleSheet.create({
-  // --- Main Layout Styles ---
-  background: {
-    flex: 1,
-  },
-  logoContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 40,
-    height: 200,
-  },
-  logo: {
-    width: 200,
-    height: 200,
-    marginBottom: 10,
-  },
+  background: { flex: 1 },
+  logoContainer: { alignItems: 'center', justifyContent: 'center', paddingVertical: 40, height: 200 },
+  logo: { width: 200, height: 200, marginBottom: 10 },
   card: {
     flex: 1,
     backgroundColor: '#fff',
@@ -247,36 +223,12 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
     elevation: 5,
   },
-
-  // --- Form Content Styles ---
-  formContentContainer: {
-    width: '100%',
-    maxWidth: 500,
-    alignSelf: 'center',
-  },
-  header: {
-    marginBottom: 32,
-  },
-  title: {
-    fontSize: 30,
-    fontWeight: '700',
-    color: '#0f172a',
-    marginBottom: 8,
-  },
-  subtitle: {
-    fontSize: 16,
-    color: '#64748b',
-    lineHeight: 24,
-  },
-  inputContainer: {
-    marginBottom: 24,
-  },
-  label: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#334155',
-    marginBottom: 8,
-  },
+  formContentContainer: { width: '100%', maxWidth: 500, alignSelf: 'center' },
+  header: { marginBottom: 32 },
+  title: { fontSize: 30, fontWeight: '700', color: '#0f172a', marginBottom: 8 },
+  subtitle: { fontSize: 16, color: '#64748b', lineHeight: 24 },
+  inputContainer: { marginBottom: 24 },
+  label: { fontSize: 14, fontWeight: '600', color: '#334155', marginBottom: 8 },
   inputWrapper: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -287,26 +239,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     height: 50,
   },
-  inputError: {
-    borderColor: '#ef4444',
-  },
-  inputIcon: {
-    marginRight: 10,
-  },
-  input: {
-    flex: 1,
-    fontSize: 16,
-    color: '#0f172a',
-    height: '100%',
-  },
-  errorText: {
-    fontSize: 12,
-    color: '#ef4444',
-    marginTop: 4,
-  },
-  eyeButton: {
-    padding: 8,
-  },
+  inputError: { borderColor: '#ef4444' },
+  inputIcon: { marginRight: 10 },
+  input: { flex: 1, fontSize: 16, color: '#0f172a', height: '100%' },
+  errorText: { fontSize: 12, color: '#ef4444', marginTop: 4 },
+  eyeButton: { padding: 8 },
   loginButton: {
     borderRadius: 8,
     overflow: 'hidden',
@@ -317,34 +254,10 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 4,
   },
-  loginButtonDisabled: {
-    opacity: 0.7,
-  },
-  gradientButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 14,
-  },
-  loginButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '700',
-    marginRight: 8,
-  },
-  signupContainer: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    marginTop: 32,
-    paddingBottom: 20,
-  },
-  signupText: {
-    fontSize: 14,
-    color: '#475569',
-  },
-  signupLink: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#06b6d4',
-  },
+  loginButtonDisabled: { opacity: 0.7 },
+  gradientButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 14 },
+  loginButtonText: { color: '#fff', fontSize: 16, fontWeight: '700', marginRight: 8 },
+  signupContainer: { flexDirection: 'row', justifyContent: 'center', marginTop: 32, paddingBottom: 20 },
+  signupText: { fontSize: 14, color: '#475569' },
+  signupLink: { fontSize: 14, fontWeight: '600', color: '#06b6d4' },
 });
