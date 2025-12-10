@@ -2,21 +2,29 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import * as SecureStore from 'expo-secure-store'; 
 import { useRouter, useSegments } from 'expo-router';
 
-// ⚠️ YOUR PHONE'S IP ADDRESS (Ensure this matches your computer's local IP)
-const API_URL = 'http://192.168.8.101:5000/api/auth'; 
+// ✅ ROBUST API URL HANDLING
+// 1. Tries to use the .env variable first
+// 2. Falls back to your local IP if the .env is missing
+const BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.8.101:5000';
+const API_URL = `${BASE_URL}/api/auth`;
 
 interface AuthProps {
   user: any;
   isLoading: boolean;
   signIn: (email: string, pass: string) => Promise<void>;
   signUp: (userData: any) => Promise<void>;
-  signOut: () => void;
+  signOut: () => Promise<void>;
 }
 
-const AuthContext = createContext<AuthProps>({} as AuthProps);
+const AuthContext = createContext<AuthProps | null>(null);
 
+// ✅ SAFETY HOOK: Prevents usage outside the Provider
 export function useAuth() {
-  return useContext(AuthContext);
+  const context = useContext(AuthContext);
+  if (!context) {
+    throw new Error("useAuth must be used within an <AuthProvider>");
+  }
+  return context;
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -25,17 +33,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const segments = useSegments();
 
-  // 1. Check for stored session on app launch
+  // 1. INITIAL SESSION CHECK
   useEffect(() => {
     const checkUser = async () => {
       try {
         const token = await SecureStore.getItemAsync('token');
         const userData = await SecureStore.getItemAsync('user_data');
+        
         if (token && userData) {
           setUser(JSON.parse(userData));
         }
       } catch (e) {
-        console.error("Session Check Error:", e);
+        console.error("Session Restoration Failed:", e);
       } finally {
         setIsLoading(false);
       }
@@ -46,11 +55,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // 2. SIGN IN ACTION
   const signIn = async (email: string, password: string) => {
     try {
+      console.log(`Attempting login to: ${API_URL}/login`); 
+
       const response = await fetch(`${API_URL}/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password }),
       });
+
+      // 🚨 CRITICAL CHECK: Ensure response is JSON
+      const contentType = response.headers.get("content-type");
+      if (!contentType || !contentType.includes("application/json")) {
+        const text = await response.text();
+        console.error("Server returned non-JSON:", text);
+        throw new Error("Cannot connect to server. Check your API URL.");
+      }
 
       const data = await response.json();
 
@@ -58,38 +77,41 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         throw new Error(data.msg || 'Login failed');
       }
 
-      // 🚨 RESTRICTION: Block Patients from the Doctor App
+      // 🚨 RESTRICTION: Block Patients
       if (data.user.role !== 'doctor') {
         throw new Error("Access Denied. This app is for Doctors only.");
       }
 
-      // ✅ Success: Save Data & Redirect
+      // ✅ SUCCESS: Save Session & Redirect
       await SecureStore.setItemAsync('token', data.token);
       await SecureStore.setItemAsync('user_data', JSON.stringify(data.user));
       
       setUser(data.user);
-router.replace('/dashboard/dashboard');
+      
+      // ✅ FIX: Route to the dashboard folder, not the file inside it
+      router.replace('/dashboard'); 
 
     } catch (error: any) {
       console.error("Login Error:", error);
-      throw error; // Propagate error to the UI for alerts
+      throw error; // Re-throw to be caught by the Login Screen UI
     }
   };
 
-  // 3. SIGN UP ACTION (Corrected for Doctors)
+  // 3. SIGN UP ACTION
   const signUp = async (userData: any) => {
     try {
-      // ✅ Map frontend fields to backend Doctor Model
+      console.log(`Registering doctor at: ${API_URL}/register-doctor`);
+
+      // ✅ Map frontend fields to backend Schema
       const payload = {
-        name: userData.fullName, // Backend expects 'name'
+        name: userData.fullName, 
         email: userData.email,
         password: userData.password,
         specialization: userData.specialization,
-        mobileNumber: userData.phoneNumber, // Backend expects 'mobileNumber'
-        qualifications: userData.slmcRegistrationNumber, // Using SLMC Reg as qualifications
+        mobileNumber: userData.phoneNumber, 
+        qualifications: userData.slmcRegistrationNumber, 
       };
 
-      // ✅ Use the DOCTOR registration endpoint
       const response = await fetch(`${API_URL}/register-doctor`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -102,8 +124,7 @@ router.replace('/dashboard/dashboard');
         throw new Error(data.msg || 'Registration failed');
       }
 
-      // ✅ Auto-Login after successful registration
-      // We call signIn immediately so the user doesn't have to type credentials again
+      // ✅ AUTO-LOGIN: Log them in immediately after signup
       await signIn(userData.email, userData.password);
 
     } catch (error: any) {
@@ -114,10 +135,14 @@ router.replace('/dashboard/dashboard');
 
   // 4. SIGN OUT ACTION
   const signOut = async () => {
-    await SecureStore.deleteItemAsync('token');
-    await SecureStore.deleteItemAsync('user_data');
-    setUser(null);
-    router.replace('/');
+    try {
+      await SecureStore.deleteItemAsync('token');
+      await SecureStore.deleteItemAsync('user_data');
+      setUser(null);
+      router.replace('/');
+    } catch (error) {
+      console.error("Sign Out Error:", error);
+    }
   };
 
   return (

@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useMemo, useEffect } from 'react';
-import Image from 'next/image';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardFooter } from '@/components/ui/card';
@@ -15,11 +14,10 @@ import {
 } from '@/components/ui/select';
 import { Search, Filter, MapPin, Star, Calendar, User, Loader2 } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { departments } from '@/lib/data'; // Keep departments static or fetch them too
+import { departments } from '@/lib/data'; 
 import  Header  from "@/components/layout/Header";
 import  Footer  from "@/components/layout/Footer";
 
-// ✅ Point to your Backend
 const API_URL = "http://localhost:5000/api/doctors/public";
 
 export default function DoctorsPage() {
@@ -28,13 +26,13 @@ export default function DoctorsPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [specialtyFilter, setSpecialtyFilter] = useState('all');
 
-  // 1. Fetch Real Doctors on Load
   useEffect(() => {
     const fetchDoctors = async () => {
       try {
-        const res = await fetch(API_URL);
+        const res = await fetch(API_URL, { cache: 'no-store' });
         if (res.ok) {
             const data = await res.json();
+            console.log("Doctors Loaded:", data.length);
             setDoctors(data);
         }
       } catch (error) {
@@ -46,41 +44,43 @@ export default function DoctorsPage() {
     fetchDoctors();
   }, []);
 
-  // 2. Filter Logic (Applied to Real Data)
+  // ✅ FIXED: Simplified and working filter
   const filteredDoctors = useMemo(() => {
-    return doctors.filter(doctor => {
-      const matchesSearch = doctor.name.toLowerCase().includes(searchTerm.toLowerCase());
+    const filtered = doctors.filter(doctor => {
+      // 1. Search Logic
+      const doctorName = (doctor.name || "").toLowerCase().trim();
+      const search = searchTerm.toLowerCase().trim();
+      const matchesSearch = !search || doctorName.includes(search);
       
-      // Backend field is 'specialization', make sure to match
-      const docSpecialty = doctor.specialization || ""; 
+      // 2. Specialty Logic
+      if (specialtyFilter === 'all') {
+        return matchesSearch;
+      }
       
-      const matchesSpecialty = specialtyFilter === 'all' || 
-                               docSpecialty.includes(specialtyFilter);
+      const docSpecialty = (doctor.specialization || "").toLowerCase().trim();
+      const selectedSpecialty = specialtyFilter.toLowerCase().trim();
+      
+      const exactMatch = docSpecialty === selectedSpecialty;
+      const containsMatch = docSpecialty.includes(selectedSpecialty) || selectedSpecialty.includes(docSpecialty);
+      
+      const matchesSpecialty = exactMatch || containsMatch;
                                
       return matchesSearch && matchesSpecialty;
     });
+    
+    console.log(`Filtered: ${filtered.length} doctors`);
+    return filtered;
   }, [searchTerm, specialtyFilter, doctors]);
-
-  const containerVariants = {
-    hidden: { opacity: 0 },
-    visible: { opacity: 1, transition: { staggerChildren: 0.1 } }
-  };
-
-  const itemVariants = {
-    hidden: { opacity: 0, y: 20 },
-    visible: { opacity: 1, y: 0 }
-  };
 
   return (
     <div className="flex flex-col min-h-screen bg-slate-50 font-sans">
       <Header />
+      
       {/* HERO SECTION */}
       <section className="relative h-[40vh] min-h-[300px] bg-slate-900 flex flex-col justify-center items-center overflow-hidden">
         <div className="absolute inset-0 bg-gradient-to-br from-slate-900 to-slate-800">
-           {/* You can add a background image here if you have one */}
            <div className="absolute inset-0 bg-black/30" />
         </div>
-        
         <div className="relative container px-6 text-center z-10 -mt-10">
           <motion.div initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6 }}>
             <h1 className="text-4xl md:text-5xl font-bold text-white mb-4">
@@ -120,12 +120,16 @@ export default function DoctorsPage() {
                   <SelectContent>
                     <SelectItem value="all">All Specialties</SelectItem>
                     {departments.map(dept => (
-                      <SelectItem key={dept.slug} value={dept.name}>{dept.name}</SelectItem>
+                      <SelectItem key={dept.slug} value={dept.name}>
+                        {dept.name}
+                      </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
             </div>
+            
+       
           </Card>
         </motion.div>
       </div>
@@ -133,36 +137,42 @@ export default function DoctorsPage() {
       {/* DOCTORS GRID */}
       <section className="py-20">
         <div className="container px-6 mx-auto">
-          
           {loading ? (
              <div className="flex justify-center items-center h-40">
                 <Loader2 className="h-10 w-10 animate-spin text-cyan-600" />
              </div>
           ) : filteredDoctors.length > 0 ? (
-            <motion.div 
-              className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8"
-              variants={containerVariants}
-              initial="hidden"
-              whileInView="visible"
-              viewport={{ once: true }}
-            >
-              {filteredDoctors.map((doctor) => (
-                <motion.div key={doctor._id} variants={itemVariants}>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
+              {filteredDoctors.map((doctor, index) => (
+                <motion.div 
+                  key={`${doctor._id}-${index}`}
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: index * 0.1 }}
+                >
                   <Card className="h-full border-0 shadow-md hover:shadow-2xl transition-all duration-300 group overflow-hidden rounded-3xl bg-white flex flex-col">
                     
-                    {/* Image Area */}
                     <div className="relative h-64 w-full bg-slate-100 flex items-center justify-center overflow-hidden">
                       {doctor.profileImage ? (
                         <img
-                          src={doctor.profileImage}
+                          src={doctor.profileImage.startsWith('data:') 
+                                ? doctor.profileImage 
+                                : `data:image/jpeg;base64,${doctor.profileImage}`}
                           alt={doctor.name}
                           className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+                          onError={(e) => {
+                            e.currentTarget.style.display = 'none';
+                            const fallback = e.currentTarget.nextElementSibling;
+                            if (fallback) fallback.classList.remove('hidden');
+                          }}
                         />
-                      ) : (
-                         <User className="h-20 w-20 text-slate-300" />
-                      )}
+                      ) : null}
                       
-                      <div className="absolute top-4 right-4 bg-white/90 backdrop-blur text-xs font-bold px-3 py-1 rounded-full text-cyan-700 shadow-sm">
+                      <div className={`absolute inset-0 flex items-center justify-center ${doctor.profileImage ? 'hidden' : ''}`}>
+                         <User className="h-20 w-20 text-slate-300" />
+                      </div>
+                      
+                      <div className="absolute top-4 right-4 bg-white/90 backdrop-blur text-xs font-bold px-3 py-1 rounded-full text-cyan-700 shadow-sm z-10">
                         Available
                       </div>
                     </div>
@@ -194,7 +204,6 @@ export default function DoctorsPage() {
                     </CardContent>
 
                     <CardFooter className="p-6 pt-0 mt-auto">
-                      {/* ✅ LINK TO APPOINTMENTS WITH PRE-FILLED DOCTOR ID */}
                       <Link 
                         href={`/patient/appointments?preSelectedDocId=${doctor._id}`} 
                         className="w-full"
@@ -207,11 +216,14 @@ export default function DoctorsPage() {
                   </Card>
                 </motion.div>
               ))}
-            </motion.div>
+            </div>
           ) : (
             <div className="text-center py-20 bg-white rounded-3xl shadow-sm border border-slate-100">
               <h3 className="text-2xl font-bold text-slate-900 mb-2">No doctors found</h3>
               <p className="text-slate-500">Try adjusting your filters.</p>
+              <p className="text-xs text-slate-400 mt-2">
+                Filter: "{specialtyFilter}" | Search: "{searchTerm}" | Total doctors: {doctors.length}
+              </p>
             </div>
           )}
         </div>
