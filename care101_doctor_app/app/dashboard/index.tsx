@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState, useCallback } from 'react'; // ✅ Import useCallback
 import {
   View,
   Text,
@@ -7,28 +7,28 @@ import {
   TouchableOpacity,
   StyleSheet,
   StatusBar,
-  Dimensions,
   Platform,
   ActivityIndicator
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useRouter } from 'expo-router'; 
-import * as SecureStore from 'expo-secure-store'; // ✅ CHANGED: Use SecureStore
+import { useRouter, useFocusEffect } from 'expo-router'; // ✅ Import useFocusEffect
+import * as SecureStore from 'expo-secure-store';
 import { 
-  Clock, 
   ChevronRight, 
   Wallet, 
   Activity, 
   BarChart3, 
   FileText, 
   User,
+  Calendar,
   Stethoscope,
 } from 'lucide-react-native';
 
 import BottomNavBar from '../../components/BottomNavBar'; 
 
 const API_URL = `${process.env.EXPO_PUBLIC_API_URL}/api/doctor`;
+
 export default function DashboardScreen() {
   const router = useRouter(); 
   const [loading, setLoading] = useState(true);
@@ -44,6 +44,15 @@ export default function DashboardScreen() {
   const bannerImage = { uri: "https://images.unsplash.com/photo-1576091160550-2187d80a1b95?ixlib=rb-1.2.1&auto=format&fit=crop&w=800&q=80" };
 
   const quickActions = [
+    {
+      id: 4,
+      title: 'Appointments',
+      subtitle: 'View schedule and manage bookings',
+      icon: Calendar, 
+      link: '/dashboard/appointment',
+      color: '#f59e0b', 
+      bg: '#fffbeb', 
+    },
     {
       id: 1,
       title: 'Finance Management',
@@ -71,40 +80,43 @@ export default function DashboardScreen() {
       color: '#8b5cf6', 
       bg: '#f5f3ff',
     },
+
   ];
 
-  // ✅ FETCH DATA FUNCTION
-  useEffect(() => {
-    const fetchDashboard = async () => {
-      try {
-        // ✅ FIX: Use SecureStore to match auth.tsx
-        const token = await SecureStore.getItemAsync("token");
-        
-        if (!token) {
-          console.log("No token found, redirecting to login");
-          router.replace("/"); // Redirect to index (Login)
-          return;
+  // ✅ AUTO-REFRESH LOGIC
+  // This runs every time the screen comes into focus
+  useFocusEffect(
+    useCallback(() => {
+      const fetchDashboard = async () => {
+        try {
+          const token = await SecureStore.getItemAsync("token");
+          
+          if (!token) {
+            console.log("No token found, redirecting to login");
+            router.replace("/");
+            return;
+          }
+  
+          const response = await fetch(`${API_URL}/dashboard-stats`, {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+  
+          if (response.ok) {
+            const data = await response.json();
+            setStats(data);
+          } else {
+             console.log("Failed to fetch stats, status:", response.status);
+          }
+        } catch (error) {
+          console.error("Network Error:", error);
+        } finally {
+          setLoading(false);
         }
-
-        const response = await fetch(`${API_URL}/dashboard-stats`, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-
-        if (response.ok) {
-          const data = await response.json();
-          setStats(data);
-        } else {
-           console.log("Failed to fetch stats, status:", response.status);
-        }
-      } catch (error) {
-        console.error("Network Error:", error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchDashboard();
-  }, []);
+      };
+  
+      fetchDashboard();
+    }, [])
+  );
 
   if (loading) {
     return (
@@ -208,7 +220,7 @@ export default function DashboardScreen() {
   );
 }
 
-// Keep your existing styles exactly as they were
+// Keep your existing styles...
 const styles = StyleSheet.create({
   container: {
     flex: 1,

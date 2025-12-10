@@ -29,7 +29,7 @@ export default function BottomNavBar() {
 
   const handlePress = (path: string) => {
     // Cast to 'any' to bypass strict route typing for dynamic strings
-    if (path === '/dashboard/dashboard') {
+    if (path === '/dashboard') {
         router.replace(path as any);
     } else {
         router.push(path as any);
@@ -41,8 +41,8 @@ export default function BottomNavBar() {
       <NavItem 
         icon={Home} 
         label="Home" 
-        active={pathname === '/dashboard/dashboard' || pathname === '/dashboard'}
-        onPress={() => handlePress('/dashboard/dashboard')} 
+        active={pathname === '/dashboard' || pathname === '/dashboard'}
+        onPress={() => handlePress('/dashboard')} 
       />
       <NavItem 
         icon={BarChart3} 
