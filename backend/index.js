@@ -15,8 +15,17 @@ import billingRoutes from "./routes/billing.js";
 import financeRoutes from "./routes/finance.js";
 import surgeryRecordRoutes from "./routes/surgeryRecords.js";
 import chatRoutes from "./routes/chatRoutes.js"; 
+import adminRoutes from "./routes/adminRoutes.js"; 
 
 const app = express();
+
+// ✅ ADD THIS MIDDLEWARE (Before routes)
+app.use(cors({
+  origin: "http://localhost:9002", // Allow your Next.js app
+  credentials: true
+}));
+
+
 
 // 2. Middleware (Increase limit for images)
 app.use(express.json({ limit: '50mb' }));
@@ -43,6 +52,7 @@ app.use("/api/billing", billingRoutes);
 app.use("/api/finance", financeRoutes);
 app.use("/api/surgery-records", surgeryRecordRoutes); 
 app.use("/api/chat", chatRoutes);
+app.use("/api/admin", adminRoutes);
 
 
 // 4. Database Connection & Server Start
