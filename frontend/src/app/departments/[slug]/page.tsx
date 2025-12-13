@@ -26,7 +26,7 @@ import { motion } from 'framer-motion';
 import  Header  from "@/components/layout/Header";
 import  Footer  from "@/components/layout/Footer";
 // API to get real doctors
-const API_URL = "http://localhost:5000/api/doctors/public";
+const API_URL = `${process.env.NEXT_PUBLIC_API_URL}/doctors/public`;
 
 type DepartmentPageProps = {
   params: Promise<{

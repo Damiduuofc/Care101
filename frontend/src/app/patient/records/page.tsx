@@ -13,7 +13,7 @@ import {
 import { FileText, Stethoscope, Beaker, Upload, Download, FilePlus, Loader2, Trash2 } from 'lucide-react'; // Added Trash2
 import { motion } from 'framer-motion';
 
-const API_URL = "http://localhost:5000/api/medical-records";
+const API_URL = `${process.env.NEXT_PUBLIC_API_URL}/medical-records`;
 
 export default function MedicalRecordsPage() {
     const [records, setRecords] = useState<any[]>([]);
