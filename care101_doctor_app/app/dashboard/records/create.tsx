@@ -9,7 +9,6 @@ import { ArrowLeft, Camera } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as SecureStore from 'expo-secure-store';
 
-// Change the API_URL at the top
 const API_URL = `${process.env.EXPO_PUBLIC_API_URL}/api/surgery-records/create`;
 export default function CreateRecordScreen() {
   const router = useRouter();

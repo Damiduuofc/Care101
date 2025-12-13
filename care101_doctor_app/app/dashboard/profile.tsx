@@ -212,13 +212,35 @@ const handleLogout = () => {
           )}
         </View>
 
-        {/* --- DETAILS FORM --- */}
+         {/* --- DETAILS FORM --- */}
         <View style={styles.detailsContainer}>
-          <EditableRow label="Full Name" value={profile.fullName} isEditing={isEditing} onChange={(t) => setProfile({...profile, fullName: t})} />
-          <EditableRow label="Name w/ Initials" value={profile.nameWithInitials} isEditing={isEditing} onChange={(t) => setProfile({...profile, nameWithInitials: t})} />
-          <EditableRow label="NIC" value={profile.nic} isEditing={isEditing} onChange={(t) => setProfile({...profile, nic: t})} />
-          <EditableRow label="Phone" value={profile.phone} isEditing={isEditing} onChange={(t) => setProfile({...profile, phone: t})} />
-          <DetailRow label="Email" value={profile.email} /> 
+          <EditableRow 
+            label="Full Name" 
+            value={profile.fullName || ""} 
+            isEditing={isEditing} 
+            onChange={(t: string) => setProfile({...profile, fullName: t})} 
+          />
+          <EditableRow 
+            label="Name w/ Initials" 
+            value={profile.nameWithInitials || ""} 
+            isEditing={isEditing} 
+            onChange={(t: string) => setProfile({...profile, nameWithInitials: t})} 
+          />
+          <EditableRow 
+            label="NIC" 
+            value={profile.nic || ""} 
+            isEditing={isEditing} 
+            onChange={(t: string) => setProfile({...profile, nic: t})} 
+          />
+          <EditableRow 
+            label="Phone" 
+            value={profile.phone || ""} 
+            isEditing={isEditing} 
+            onChange={(t: string) => setProfile({...profile, phone: t})} 
+          />
+          
+          {/* Email is typically read-only */}
+          <DetailRow label="Email" value={profile.email || ""} /> 
         </View>
 
         {/* --- SUBSCRIPTION CARD --- */}

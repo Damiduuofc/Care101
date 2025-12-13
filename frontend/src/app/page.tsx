@@ -6,7 +6,7 @@ import Link from "next/link";
 import { ArrowRight, Phone, Stethoscope, Heart, Activity, Users, MapPin, User, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { services } from "@/lib/data"; // ⚠️ ONLY import services. DO NOT import featuredDoctors.
+import { services } from "@/lib/data";
 import {
   Carousel,
   CarouselContent,
@@ -17,6 +17,7 @@ import {
 import { motion, useScroll, useTransform } from "framer-motion";
 import  Header  from "@/components/layout/Header";
 import  Footer  from "@/components/layout/Footer";
+import AiAssistant from "@/components/layout/AiAssistant";
 
 const API_URL = "http://localhost:5000/api/doctors/public";
 
@@ -188,7 +189,7 @@ export default function Home() {
           </div>
         </div>
       </section>
-
+<AiAssistant />
       {/* ================= REAL DOCTORS SECTION ================= */}
       <section className="py-24 bg-slate-900 text-white relative overflow-hidden">
         {/* Background Patterns */}
