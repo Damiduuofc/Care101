@@ -35,7 +35,7 @@ export default function HospitalDetailsScreen() {
 
 const fetchDetails = async () => {
     try {
-      console.log(`Fetching details for ID: ${id}`); // 1. Log ID
+      console.log(`Fetching details for ID: ${id}`); 
       const token = await SecureStore.getItemAsync('token');
       
       const res = await fetch(`${API_URL}/${id}`, {
