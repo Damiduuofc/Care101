@@ -17,7 +17,7 @@ import { cn } from '@/lib/utils';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
-const API_URL = "http://localhost:5000/api";
+const API_URL = `${process.env.NEXT_PUBLIC_API_URL}`;
 
 // --- 1. MAIN CONTENT COMPONENT ---
 function AppointmentsContent() {

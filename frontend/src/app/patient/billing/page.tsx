@@ -10,7 +10,7 @@ import { motion } from 'framer-motion';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
-const API_URL = "http://localhost:5000/api/billing";
+const API_URL = `${process.env.NEXT_PUBLIC_API_URL}/billing`;
 
 // --- 1. PDF GENERATOR ---
 const generateInvoice = (paidBills: any[]) => {

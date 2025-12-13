@@ -7,7 +7,7 @@ import { Bell, Calendar, FileText, MessageSquare, CreditCard, Clock, Loader2 } f
 import { motion } from 'framer-motion';
 import { Badge } from "@/components/ui/badge";
 
-const API_URL = "http://localhost:5000/api/notifications";
+const API_URL = `${process.env.NEXT_PUBLIC_API_URL}/notifications`;
 
 const iconMap: any = {
     appointment: <Calendar className="h-5 w-5 text-primary" />,

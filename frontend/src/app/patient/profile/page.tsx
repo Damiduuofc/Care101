@@ -15,7 +15,7 @@ import {
 import { User, Mail, Phone, LogOut, Edit, Shield, QrCode, Loader2, Camera, Trash2 } from 'lucide-react';
 import { motion } from 'framer-motion';
 
-const API_URL = "http://localhost:5000/api/patient";
+const API_URL = `${process.env.NEXT_PUBLIC_API_URL}/patient`;
 
 export default function ProfilePage() {
   const router = useRouter();

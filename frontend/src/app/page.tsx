@@ -19,7 +19,7 @@ import  Header  from "@/components/layout/Header";
 import  Footer  from "@/components/layout/Footer";
 import AiAssistant from "@/components/layout/AiAssistant";
 
-const API_URL = "http://localhost:5000/api/doctors/public";
+const API_URL = `${process.env.NEXT_PUBLIC_API_URL}/doctors/public`;
 
 export default function Home() {
   const { scrollY } = useScroll();

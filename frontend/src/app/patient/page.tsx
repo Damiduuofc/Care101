@@ -9,9 +9,8 @@ import { Button } from "@/components/ui/button";
 import { Calendar, FileText, Upload, MessageSquare, Bell, BarChart3, ShieldCheck, HeartPulse, User, Loader2 } from 'lucide-react';
 import { motion } from 'framer-motion';
 
-// API URL
-const API_URL = "http://localhost:5000/api/patient";
 
+const API_URL = `${process.env.NEXT_PUBLIC_API_URL}/patient`;
 export default function PatientHomePage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
