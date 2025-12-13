@@ -14,6 +14,8 @@ import notificationRoutes from "./routes/notifications.js";
 import billingRoutes from "./routes/billing.js";
 import financeRoutes from "./routes/finance.js";
 import surgeryRecordRoutes from "./routes/surgeryRecords.js";
+import chatRoutes from "./routes/chatRoutes.js"; 
+
 const app = express();
 
 // 2. Middleware (Increase limit for images)
@@ -40,6 +42,8 @@ app.use("/api/notifications", notificationRoutes);
 app.use("/api/billing", billingRoutes);
 app.use("/api/finance", financeRoutes);
 app.use("/api/surgery-records", surgeryRecordRoutes); 
+app.use("/api/chat", chatRoutes);
+
 
 // 4. Database Connection & Server Start
 const startServer = async () => {

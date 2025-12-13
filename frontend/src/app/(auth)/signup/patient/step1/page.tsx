@@ -26,8 +26,9 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { cn } from "@/lib/utils";
 import { Calendar as CalendarIcon, User, CreditCard, ArrowLeft, ChevronRight } from "lucide-react";
 import DatePicker from "react-datepicker";
-import  Header  from "@/components/layout/Header";
-import  Footer  from "@/components/layout/Footer";
+import "react-datepicker/dist/react-datepicker.css";
+import Header from "@/components/layout/Header";
+import Footer from "@/components/layout/Footer";
 
 const formSchema = z.object({
   fullName: z.string().min(2, { message: "Full name is required." }),
@@ -59,132 +60,160 @@ export default function PatientSignupStep1() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+    <div className="flex flex-col min-h-screen bg-slate-50">
       <Header />
-      <Card className="w-full max-w-lg shadow-lg border-slate-200">
-        <div className="w-full h-2 bg-slate-100">
-          <div className="h-full w-1/3 bg-cyan-600 rounded-r-full" />
-        </div>
-
-        <CardHeader className="space-y-1">
-          <div className="flex items-center justify-between">
-            <CardTitle className="text-2xl font-bold text-slate-900">Personal Details</CardTitle>
-            <span className="text-sm font-semibold text-cyan-600 bg-cyan-50 px-3 py-1 rounded-full">
-              Step 1 of 3
-            </span>
+      
+      <div className="flex-1 flex items-center justify-center p-4 py-12">
+        <Card className="w-full max-w-lg shadow-lg border-slate-200">
+          {/* Progress Bar */}
+          <div className="w-full h-2 bg-slate-100">
+            <div className="h-full w-1/3 bg-cyan-600 rounded-r-full transition-all duration-500" />
           </div>
-          <CardDescription>
-            Let's start with your basic personal information.
-          </CardDescription>
-        </CardHeader>
 
-        <CardContent>
-          <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-5">
-              
-              <FormField
-                control={form.control}
-                name="fullName"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Full Name</FormLabel>
-                    <FormControl>
-                      <div className="relative">
-                        <User className="absolute left-3 top-2.5 h-5 w-5 text-slate-400" />
-                        <Input placeholder="Jane Doe" className="pl-10" {...field} />
-                      </div>
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+          <CardHeader className="space-y-1 pb-6">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-2xl font-bold text-slate-900">Personal Details</CardTitle>
+              <span className="text-sm font-semibold text-cyan-600 bg-cyan-50 px-3 py-1 rounded-full">
+                Step 1 of 3
+              </span>
+            </div>
+            <CardDescription className="text-slate-500">
+              Let's start with your basic personal information.
+            </CardDescription>
+          </CardHeader>
 
-              <FormField
-                control={form.control}
-                name="dateOfBirth"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Date of Birth</FormLabel>
-                    <FormControl>
-                      <div className="relative">
-                        <CalendarIcon className="absolute left-3 top-2.5 h-4 w-4 text-slate-400 z-10" />
-                        <DatePicker
-                          selected={field.value ?? null}
-                          onChange={(date: Date | null) => field.onChange(date)}
-                          dateFormat="yyyy-MM-dd"
-                          placeholderText="Pick a date"
-                          maxDate={new Date()}
-                          showYearDropdown
-                          showMonthDropdown
-                          dropdownMode="select"
-                          className={cn(
-                            "w-full h-10 pl-10 rounded-md border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-cyan-500",
-                            !field.value && "text-muted-foreground"
-                          )}
-                        />
-                      </div>
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={form.control}
-                name="gender"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Gender</FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value}>
+          <CardContent>
+            <Form {...form}>
+              <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-5">
+                
+                {/* Full Name */}
+                <FormField
+                  control={form.control}
+                  name="fullName"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="text-slate-700">Full Name</FormLabel>
                       <FormControl>
-                        <SelectTrigger className="bg-white border-slate-200">
-                          <SelectValue placeholder="Select your gender" />
-                        </SelectTrigger>
+                        <div className="relative">
+                          <User className="absolute left-3 top-2.5 h-5 w-5 text-slate-400" />
+                          <Input 
+                            placeholder="Jane Doe" 
+                            className="pl-10 h-10 bg-white border-slate-200 focus-visible:ring-cyan-500" 
+                            {...field} 
+                          />
+                        </div>
                       </FormControl>
-                      <SelectContent>
-                        <SelectItem value="Male">Male</SelectItem>
-                        <SelectItem value="Female">Female</SelectItem>
-                        <SelectItem value="Other">Other</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
 
-              <FormField
-                control={form.control}
-                name="nicNumber"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>National ID (NIC)</FormLabel>
-                    <FormControl>
-                      <div className="relative">
-                        <CreditCard className="absolute left-3 top-2.5 h-5 w-5 text-slate-400" />
-                        <Input placeholder="e.g. 199512345678" className="pl-10" {...field} />
-                      </div>
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+                {/* Date of Birth */}
+                <FormField
+                  control={form.control}
+                  name="dateOfBirth"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="text-slate-700">Date of Birth</FormLabel>
+                      <FormControl>
+                        <div className="relative">
+                          <CalendarIcon className="absolute left-3 top-2.5 h-4 w-4 text-slate-400 z-10 pointer-events-none" />
+                          <DatePicker
+                            selected={field.value ?? null}
+                            onChange={(date: Date | null) => field.onChange(date)}
+                            dateFormat="yyyy-MM-dd"
+                            placeholderText="Select your date of birth"
+                            maxDate={new Date()}
+                            showYearDropdown
+                            scrollableYearDropdown
+                            yearDropdownItemNumber={100}
+                            showMonthDropdown
+                            dropdownMode="select"
+                            className={cn(
+                              "w-full h-10 pl-10 pr-3 rounded-md border border-slate-200 bg-white text-sm",
+                              "focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent",
+                              !field.value && "text-slate-400"
+                            )}
+                          />
+                        </div>
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
 
-              <div className="flex justify-between pt-6">
-                <Link href="/">
-                  <Button type="button" variant="ghost" className="text-cyan-600 hover:text-cyan-900">
-                    <ArrowLeft className="mr-2 h-4 w-4" /> Back
+                {/* Gender */}
+                <FormField
+                  control={form.control}
+                  name="gender"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="text-slate-700">Gender</FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value}>
+                        <FormControl>
+                          <SelectTrigger className="h-10 bg-white border-slate-200 focus:ring-cyan-500">
+                            <SelectValue placeholder="Select your gender" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="Male">Male</SelectItem>
+                          <SelectItem value="Female">Female</SelectItem>
+                          <SelectItem value="Other">Other</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                {/* NIC Number */}
+                <FormField
+                  control={form.control}
+                  name="nicNumber"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="text-slate-700">National ID (NIC)</FormLabel>
+                      <FormControl>
+                        <div className="relative">
+                          <CreditCard className="absolute left-3 top-2.5 h-5 w-5 text-slate-400" />
+                          <Input 
+                            placeholder="e.g. 199512345678" 
+                            className="pl-10 h-10 bg-white border-slate-200 focus-visible:ring-cyan-500" 
+                            {...field} 
+                          />
+                        </div>
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                {/* Navigation Buttons */}
+                <div className="flex justify-between items-center pt-6 border-t border-slate-100">
+                  <Link href="/signup">
+                    <Button 
+                      type="button" 
+                      variant="ghost" 
+                      className="text-slate-600 hover:text-slate-900 hover:bg-slate-100"
+                    >
+                      <ArrowLeft className="mr-2 h-4 w-4" /> Back
+                    </Button>
+                  </Link>
+                  <Button 
+                    type="submit" 
+                    className="bg-cyan-600 hover:bg-cyan-700 text-white min-w-[140px] h-10 shadow-md shadow-cyan-200"
+                  >
+                    Next Step <ChevronRight className="ml-2 h-4 w-4" />
                   </Button>
-                </Link>
-                <Button type="submit" className="bg-cyan-600 hover:bg-cyan-700 text-white min-w-[120px]">
-                  Next Step <ChevronRight className="ml-2 h-4 w-4" />
-                </Button>
-              </div>
+                </div>
 
-            </form>
-          </Form>
-        </CardContent>
-      </Card>
-   <Footer />
+              </form>
+            </Form>
+          </CardContent>
+        </Card>
+      </div>
+
+      <Footer />
     </div>
   );
 }

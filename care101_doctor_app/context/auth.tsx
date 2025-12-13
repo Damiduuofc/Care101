@@ -2,11 +2,8 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import * as SecureStore from 'expo-secure-store'; 
 import { useRouter, useSegments } from 'expo-router';
 
-// ✅ ROBUST API URL HANDLING
-// 1. Tries to use the .env variable first
-// 2. Falls back to your local IP if the .env is missing
-const BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.8.101:5000';
-const API_URL = `${BASE_URL}/api/auth`;
+
+const API_URL = `${process.env.EXPO_PUBLIC_API_URL}/api/auth`;
 
 interface AuthProps {
   user: any;
