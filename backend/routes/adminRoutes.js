@@ -1,119 +1,86 @@
 import express from "express";
 import bcrypt from "bcryptjs";
-import jwt from "jsonwebtoken"; // ✅ Added missing import
+import jwt from "jsonwebtoken";
 import Admin from "../models/Admin.js";
-import Doctor from "../models/Doctor.js"; // Needed for stats
-import { protect, authorize } from "../middleware/authRole.js"; 
+import Doctor from "../models/Doctor.js";
+import Patient from "../models/Patient.js";
+import Appointment from "../models/Appointment.js";
+import HospitalStatus from "../models/HospitalStatus.js";
+import Bill from "../models/Bill.js"; // ✅ Import Bill Model
+import { protect, authorize } from "../middleware/authRole.js";
 
 const router = express.Router();
 
-// ==========================================
-// 1. ADMIN LOGIN (This was missing!)
-// ==========================================
-router.post("/login", async (req, res) => {
-  const { email, password } = req.body;
+// ... (Keep your Login, Status, Stats, Staff routes exactly as they are) ...
+// ... Skip down to the APPOINTMENT MANAGEMENT section ...
 
+// ==========================================
+// 5. APPOINTMENT MANAGEMENT (Master Control)
+// ==========================================
+
+// GET ALL APPOINTMENTS
+router.get("/appointments", protect, async (req, res) => {
   try {
-    // Check if user exists
-    const admin = await Admin.findOne({ email });
-    if (!admin) {
-      return res.status(400).json({ msg: "Invalid Credentials" });
-    }
+    const appointments = await Appointment.find()
+      .populate("patientId", "fullName phone") 
+      .populate("doctorId", "name department") 
+      .sort({ date: -1 });
 
-    // Check password
-    const isMatch = await bcrypt.compare(password, admin.password);
-    if (!isMatch) {
-      return res.status(400).json({ msg: "Invalid Credentials" });
-    }
-
-    // Create Token
-    const payload = {
-      id: admin.id,
-      role: admin.role 
-    };
-
-    const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: "1d" });
-
-    // Return User Data
-    res.json({
-      token,
-      admin: {
-        id: admin.id,
-        name: admin.name,
-        email: admin.email,
-        role: admin.role,
-        department: admin.department
-      }
-    });
-
-  } catch (err) {
-    console.error("Login Error:", err.message);
-    res.status(500).send("Server Error");
-  }
-});
-
-// ==========================================
-// 2. DASHBOARD STATS
-// ==========================================
-router.get("/stats", protect, async (req, res) => {
-  try {
-    const doctorCount = await Doctor.countDocuments();
-    const pendingDoctors = await Doctor.countDocuments({ isApproved: false });
-
-    // Placeholder data until you have real patients/revenue
-    res.json({
-      doctors: doctorCount,
-      patients: 120, // Fake number for now
-      pendingDoctors: pendingDoctors,
-      revenue: 250000 // Fake number for now
-    });
-  } catch (err) {
-    res.status(500).send("Server Error");
-  }
-});
-
-// ==========================================
-// 3. CREATE NEW STAFF (System Admin Only)
-// ==========================================
-router.post("/create-staff", protect, authorize(["system_admin"]), async (req, res) => {
-  try {
-    const { name, email, password, role, department } = req.body;
-
-    if (!["receptionist", "nurse", "system_admin"].includes(role)) {
-      return res.status(400).json({ msg: "Invalid Role" });
-    }
-
-    let user = await Admin.findOne({ email });
-    if (user) return res.status(400).json({ msg: "User already exists" });
-
-    const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash(password, salt);
-
-    user = new Admin({
-      name,
-      email,
-      password: hashedPassword,
-      role,
-      department
-    });
-
-    await user.save();
-    res.json({ msg: `New ${role} created successfully` });
-
+    res.json(appointments);
   } catch (err) {
     console.error(err);
     res.status(500).send("Server Error");
   }
 });
 
-// ==========================================
-// 4. GET ALL STAFF (System Admin Only)
-// ==========================================
-router.get("/staff", protect, authorize(["system_admin"]), async (req, res) => {
+// ✅ UPDATE APPOINTMENT (With Validation & Bill Sync)
+router.put("/appointments/:id", protect, async (req, res) => {
   try {
-    const staff = await Admin.find().select("-password");
-    res.json(staff);
+    const { status, paymentStatus } = req.body;
+    let appointment = await Appointment.findById(req.params.id);
+
+    if (!appointment) return res.status(404).json({ msg: "Not found" });
+
+    // 🔒 RULE 1: Cannot edit if Patient already Cancelled
+    if (appointment.status.toLowerCase() === "cancelled") {
+      return res.status(400).json({ msg: "Cannot edit a Cancelled appointment" });
+    }
+
+    // Update Status (Confirmed/Completed)
+    if (status) {
+      appointment.status = status;
+    }
+
+    // Update Payment Status
+    if (paymentStatus) {
+      appointment.paymentStatus = paymentStatus;
+
+      // 🔄 SYNC: If Admin marks "Paid", update the linked Bill too
+      if (paymentStatus.toLowerCase() === "paid") {
+        await Bill.findOneAndUpdate(
+          { appointmentId: appointment._id },
+          { status: "Paid" }
+        );
+      }
+    }
+
+    await appointment.save();
+    res.json(appointment);
   } catch (err) {
+    console.error(err);
+    res.status(500).send("Server Error");
+  }
+});
+
+// DELETE APPOINTMENT
+router.delete("/appointments/:id", protect, authorize(["system_admin", "receptionist"]), async (req, res) => {
+  try {
+    await Appointment.findByIdAndDelete(req.params.id);
+    // Optional: Delete linked bill too
+    await Bill.findOneAndDelete({ appointmentId: req.params.id });
+    res.json({ msg: "Appointment removed" });
+  } catch (err) {
+    console.error(err);
     res.status(500).send("Server Error");
   }
 });
