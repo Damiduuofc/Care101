@@ -5,11 +5,11 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Calendar as CalendarIcon, Clock, Hospital, Stethoscope, PlusCircle, CalendarDays, Loader2, AlertCircle, XCircle, Receipt, Coins } from 'lucide-react';
+import { Clock, Stethoscope, PlusCircle, CalendarDays, Loader2, XCircle, Receipt, Coins } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { motion } from 'framer-motion';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { departments } from '@/lib/data'; 
+// ❌ REMOVED DEMO DATA IMPORT: import { departments } from '@/lib/data'; 
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
 import { format } from 'date-fns';
@@ -27,16 +27,19 @@ function AppointmentsContent() {
     const [loading, setLoading] = useState(true);
     const [refreshTrigger, setRefreshTrigger] = useState(0);
 
-    // Fetch Data
+    // Fetch Real Data from API
     useEffect(() => {
         const fetchData = async () => {
             const token = sessionStorage.getItem("token");
             if (!token) { router.push("/login"); return; }
 
             try {
+                // 1. Get My Appointments
                 const appRes = await fetch(`${API_URL}/appointments/my-appointments`, {
                     headers: { "Authorization": `Bearer ${token}` }
                 });
+                
+                // 2. Get All Doctors (to populate booking form)
                 const docRes = await fetch(`${API_URL}/doctors/list`, {
                     headers: { "Authorization": `Bearer ${token}` }
                 });
@@ -46,7 +49,7 @@ function AppointmentsContent() {
                     setDoctorsList(await docRes.json());
                 }
             } catch (error) {
-                console.error("Failed to load data");
+                console.error("Failed to load data", error);
             } finally {
                 setLoading(false);
             }
@@ -54,7 +57,7 @@ function AppointmentsContent() {
         fetchData();
     }, [refreshTrigger, router]);
 
-    // Handle Cancel
+    // Handle Cancel (Real API Call)
     const handleCancel = async (id: string) => {
         if (!confirm("Are you sure you want to cancel this appointment?")) return;
         const token = sessionStorage.getItem("token");
@@ -65,7 +68,7 @@ function AppointmentsContent() {
             });
             if (res.ok) {
                 alert("Appointment Cancelled.");
-                setRefreshTrigger(prev => prev + 1);
+                setRefreshTrigger(prev => prev + 1); // Refresh list
             } else {
                 alert("Failed to cancel.");
             }
@@ -98,6 +101,7 @@ function AppointmentsContent() {
                             <TabsTrigger value="completed">History</TabsTrigger>
                             <TabsTrigger value="cancelled">Cancelled</TabsTrigger>
                         </TabsList>
+                        
                         <TabsContent value="upcoming">
                             <AppointmentList appointments={appointments} filterStatus={['Pending', 'Confirmed']} onCancel={handleCancel} />
                         </TabsContent>
@@ -110,6 +114,7 @@ function AppointmentsContent() {
                     </Tabs>
                 </div>
                 <div className="space-y-6">
+                    {/* Pass real doctors list to form */}
                     <BookingForm doctors={doctorsList} onSuccess={() => setRefreshTrigger(prev => prev + 1)} />
                 </div>
             </div>
@@ -119,13 +124,19 @@ function AppointmentsContent() {
 
 // --- 2. LIST COMPONENT ---
 function AppointmentList({ appointments, filterStatus, onCancel }: { appointments: any[], filterStatus: string[], onCancel?: (id: string) => void }) {
-    const filtered = appointments.filter(app => filterStatus.includes(app.status));
     
-    const statusStyles: any = {
-        Pending: 'bg-yellow-100 text-yellow-700 border-yellow-200',
-        Confirmed: 'bg-green-100 text-green-700 border-green-200',
-        Cancelled: 'bg-red-100 text-red-700 border-red-200',
-        Completed: 'bg-slate-100 text-slate-700 border-slate-200',
+    // Case-Insensitive Filter
+    const filtered = appointments.filter(app => 
+        filterStatus.some(status => status.toLowerCase() === app.status.toLowerCase())
+    );
+    
+    const getStatusStyle = (status: string) => {
+        const normalized = status.toLowerCase();
+        if (normalized === 'pending') return 'bg-yellow-100 text-yellow-700 border-yellow-200';
+        if (normalized === 'confirmed') return 'bg-green-100 text-green-700 border-green-200';
+        if (normalized === 'cancelled') return 'bg-red-100 text-red-700 border-red-200';
+        if (normalized === 'completed') return 'bg-slate-100 text-slate-700 border-slate-200';
+        return 'bg-gray-100 text-gray-700'; 
     };
 
     if (filtered.length === 0) {
@@ -149,7 +160,9 @@ function AppointmentList({ appointments, filterStatus, onCancel }: { appointment
                         <div className="flex-grow space-y-3">
                             <div className="flex items-center justify-between">
                                 <h3 className="font-bold text-lg text-slate-900">{app.doctorName}</h3>
-                                <Badge className={cn("border px-2.5 py-0.5", statusStyles[app.status])}>{app.status}</Badge>
+                                <Badge className={cn("border px-2.5 py-0.5 capitalize", getStatusStyle(app.status))}>
+                                    {app.status}
+                                </Badge>
                             </div>
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm text-slate-500">
                                 <div className="flex items-center gap-2">
@@ -162,14 +175,13 @@ function AppointmentList({ appointments, filterStatus, onCancel }: { appointment
                                 </div>
                             </div>
                             
-                            {/* Payment & Actions */}
                             <div className="flex items-center justify-between pt-3 border-t border-slate-100 mt-2">
                                 <div className="flex items-center gap-2 text-slate-700 font-medium text-sm">
                                     <Coins className="h-4 w-4 text-yellow-600" />
-                                    <span>LKR {app.amount ? app.amount.toLocaleString() : "3,870"}.00</span>
+                                    <span>LKR {app.amount ? app.amount.toLocaleString() : "0"}.00</span>
                                 </div>
 
-                                {onCancel && (app.status === 'Pending' || app.status === 'Confirmed') && (
+                                {onCancel && (['pending', 'confirmed'].includes(app.status.toLowerCase())) && (
                                     <Button variant="ghost" size="sm" onClick={() => onCancel(app._id)} className="text-red-600 hover:text-red-700 hover:bg-red-50 ml-auto h-8 px-3">
                                         <XCircle className="h-4 w-4 mr-1.5" /> Cancel
                                     </Button>
@@ -183,11 +195,9 @@ function AppointmentList({ appointments, filterStatus, onCancel }: { appointment
     );
 }
 
-// --- 3. BOOKING FORM (With Auto-Select & Payment) ---
+// --- 3. BOOKING FORM (DYNAMIC REAL DATA) ---
 function BookingForm({ onSuccess, doctors }: { onSuccess: () => void, doctors: any[] }) {
     const [date, setDate] = useState<Date>();
-    
-    // ✅ 1. Get Params for Auto-Selection
     const searchParams = useSearchParams();
     const preSelectedDocId = searchParams.get('preSelectedDocId');
 
@@ -201,7 +211,11 @@ function BookingForm({ onSuccess, doctors }: { onSuccess: () => void, doctors: a
     const [summaryOpen, setSummaryOpen] = useState(false);
     const [submitting, setSubmitting] = useState(false);
 
-    // ✅ 2. Auto-Fill if ID is present
+    // ✅ EXTRACT UNIQUE DEPARTMENTS FROM REAL DOCTORS LIST
+    const availableDepartments = Array.from(
+        new Set(doctors.map(doc => doc.specialization || doc.department))
+    ).filter(Boolean).sort();
+
     useEffect(() => {
         if (preSelectedDocId && doctors.length > 0) {
             const doc = doctors.find(d => d._id === preSelectedDocId);
@@ -216,11 +230,11 @@ function BookingForm({ onSuccess, doctors }: { onSuccess: () => void, doctors: a
         }
     }, [preSelectedDocId, doctors]);
 
-    // Fees
     const DOCTOR_FEE = 2000;
     const HOSPITAL_FEE = 1870;
     const TOTAL_FEE = DOCTOR_FEE + HOSPITAL_FEE;
 
+    // Filter doctors based on selected department
     const filteredDoctors = formData.department 
         ? doctors.filter(doc => doc.specialization === formData.department)
         : doctors;
@@ -280,13 +294,24 @@ function BookingForm({ onSuccess, doctors }: { onSuccess: () => void, doctors: a
                     </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4 pt-6">
+                    
+                    {/* Dynamic Department Select */}
                     <div className="space-y-2">
                         <label className="text-sm font-medium text-slate-700">Department</label>
                         <Select value={formData.department} onValueChange={(val) => setFormData(prev => ({ ...prev, department: val, doctorName: "", doctorId: "" }))}>
                             <SelectTrigger className="bg-white"><SelectValue placeholder="Select department" /></SelectTrigger>
-                            <SelectContent>{departments.map(d => <SelectItem key={d.slug} value={d.name}>{d.name}</SelectItem>)}</SelectContent>
+                            <SelectContent>
+                                {availableDepartments.length > 0 ? (
+                                    availableDepartments.map((dept: any) => (
+                                        <SelectItem key={dept} value={dept}>{dept}</SelectItem>
+                                    ))
+                                ) : (
+                                    <div className="p-2 text-sm text-slate-500 text-center">No departments available</div>
+                                )}
+                            </SelectContent>
                         </Select>
                     </div>
+
                     <div className="space-y-2">
                         <label className="text-sm font-medium text-slate-700">Doctor</label>
                         <Select value={formData.doctorId} onValueChange={(val) => {

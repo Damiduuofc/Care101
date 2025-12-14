@@ -1,23 +1,22 @@
 "use client";
 
 import { useEffect, useState } from 'react';
-import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { Calendar, FileText, Upload, MessageSquare, Bell, BarChart3, ShieldCheck, HeartPulse, User, Loader2 } from 'lucide-react';
 import { motion } from 'framer-motion';
 
-
+// Ensure this matches your .env
 const API_URL = `${process.env.NEXT_PUBLIC_API_URL}/patient`;
+
 export default function PatientHomePage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   
   // State for Dashboard Data
   const [data, setData] = useState({
-    name: "",
+    name: "Patient",
     profileImage: "",
     stats: {
         appointments: 0,
@@ -32,6 +31,8 @@ export default function PatientHomePage() {
   useEffect(() => {
     const fetchData = async () => {
       const token = sessionStorage.getItem("token");
+      
+      // Redirect if no token
       if (!token) {
         router.push("/login");
         return;
@@ -45,6 +46,12 @@ export default function PatientHomePage() {
         if (res.ok) {
           const result = await res.json();
           setData(result);
+        } else {
+            // Handle expired token
+            if(res.status === 401) {
+                sessionStorage.removeItem("token");
+                router.push("/login");
+            }
         }
       } catch (error) {
         console.error("Error loading dashboard:", error);
@@ -67,12 +74,12 @@ export default function PatientHomePage() {
     visible: { opacity: 1, y: 0 },
   };
 
-  // Dynamic Overview Data
+  // Dynamic Overview Data Mapping
   const patientOverview = [
-    { title: "Upcoming Appointments", value: data.stats.appointments, icon: Calendar, subtitle: "Next: None" },
-    { title: "Active Prescriptions", value: data.stats.prescriptions, icon: FileText, subtitle: "Current medications" },
+    { title: "Upcoming Appointments", value: data.stats.appointments, icon: Calendar, subtitle: "Scheduled visits" },
+    { title: "Past Visits", value: data.stats.prescriptions, icon: FileText, subtitle: "Completed sessions" },
     { title: "Lab Reports", value: data.stats.reports, icon: BarChart3, subtitle: "Available for download" },
-    { title: "Health Status", value: data.stats.vitals, icon: HeartPulse, subtitle: "Based on last visit" },
+    { title: "Health Status", value: data.stats.vitals, icon: HeartPulse, subtitle: "General condition" },
   ];
 
   if (loading) {
@@ -85,7 +92,7 @@ export default function PatientHomePage() {
 
   return (
     <motion.div 
-        className="space-y-8 max-w-7xl mx-auto"
+        className="space-y-8 max-w-7xl mx-auto p-4"
         initial="hidden"
         animate="visible"
         variants={sectionVariants}
@@ -94,22 +101,21 @@ export default function PatientHomePage() {
         <motion.div variants={itemVariants}>
             <Card className="overflow-hidden border-none shadow-md">
                 <CardContent className="p-8 flex flex-col md:flex-row items-center gap-8 bg-gradient-to-r from-cyan-50 via-white to-white">
-                    {/* Replace the <Image> component with a standard <img> tag */}
-                    <div className="relative h-28 w-28 rounded-full border-4 border-white shadow-lg bg-slate-200 flex items-center justify-center overflow-hidden">
+                    {/* Profile Image - Using standard img for Base64 compatibility */}
+                    <div className="relative h-28 w-28 rounded-full border-4 border-white shadow-lg bg-slate-200 flex items-center justify-center overflow-hidden shrink-0">
                         {data.profileImage ? (
-                                // ✅ USE STANDARD IMG TAG FOR BASE64
                                 <img 
-                                src={data.profileImage} 
-                                alt="Profile" 
-                                className="h-32 w-32 object-cover"
+                                    src={data.profileImage} 
+                                    alt="Profile" 
+                                    className="h-full w-full object-cover"
                                 />
                         ) : (
                             <User className="h-12 w-12 text-slate-400" />
                         )}
                     </div>
                     <div className='text-center md:text-left space-y-2'>
-                        <h1 className="text-4xl font-bold font-headline text-slate-900">
-                            Welcome, <span className="text-cyan-600">{data.name.split(' ')[0]}</span>!
+                        <h1 className="text-3xl md:text-4xl font-bold font-headline text-slate-900">
+                            Welcome, <span className="text-cyan-600 capitalize">{data.name.split(' ')[0]}</span>!
                         </h1>
                         <p className="text-slate-500 text-lg">Here is your health summary and quick access to your records.</p>
                     </div>
@@ -121,14 +127,14 @@ export default function PatientHomePage() {
                         </div>
                         <div className="flex flex-col">
                             <span className="text-sm font-semibold">Notifications</span>
-                            <span className="text-xs text-yellow-700/80">You have 0 new messages.</span>
+                            <span className="text-xs text-yellow-700/80">System updates available.</span>
                         </div>
                     </div>
                 </CardContent>
             </Card>
         </motion.div>
 
-        {/* OVERVIEW STATS */}
+        {/* OVERVIEW STATS GRID */}
         <motion.div variants={sectionVariants}>
             <h2 className="text-2xl font-bold tracking-tight mb-6 font-headline text-slate-900">Overview</h2>
             <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
@@ -168,13 +174,13 @@ export default function PatientHomePage() {
             {/* RECENT ACTIVITY */}
             <motion.div variants={itemVariants}>
                 <h2 className="text-2xl font-bold tracking-tight mb-6 font-headline text-slate-900">Recent Activities</h2>
-                <Card className="h-fit">
+                <Card className="h-fit border-slate-200 shadow-sm">
                     <CardContent className="p-0">
                         <div className="divide-y divide-slate-100">
                             {data.activities.length > 0 ? (
                                 data.activities.map((activity, index) => (
                                     <div key={index} className="flex items-start gap-4 p-4 hover:bg-slate-50 transition-colors">
-                                        <div className="bg-cyan-50 p-2 rounded-full mt-1">
+                                        <div className="bg-cyan-50 p-2 rounded-full mt-1 shrink-0">
                                             <ShieldCheck className="h-4 w-4 text-cyan-600" />
                                         </div>
                                         <div className="flex-grow">
@@ -200,10 +206,10 @@ export default function PatientHomePage() {
 // Helper Component for Action Cards
 function QuickActionCard({ href, icon: Icon, title, description }: { href: string, icon: React.ElementType, title: string, description: string }) {
   return (
-    <Link href={href}>
-        <Card className="hover:bg-cyan-50/50 hover:border-cyan-200 transition-all duration-200 h-full cursor-pointer group">
+    <Link href={href} className="block h-full">
+        <Card className="hover:bg-cyan-50/50 hover:border-cyan-200 transition-all duration-200 h-full cursor-pointer group border-slate-200 shadow-sm">
             <CardContent className="p-6 flex items-start gap-4">
-                <div className="p-3 bg-cyan-100 rounded-xl group-hover:bg-cyan-200 transition-colors">
+                <div className="p-3 bg-cyan-100 rounded-xl group-hover:bg-cyan-200 transition-colors shrink-0">
                     <Icon className="h-6 w-6 text-cyan-700" />
                 </div>
                 <div>
