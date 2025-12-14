@@ -1,13 +1,16 @@
 import express from "express";
 import Stripe from "stripe";
 import Bill from "../models/Bill.js";
-import Notification from "../models/Notification.js"; // ✅ 1. IMPORT THIS
+import Notification from "../models/Notification.js";
+import Appointment from "../models/Appointment.js"; 
 import { auth } from "../middleware/auth.js";
 
 const router = express.Router();
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
+// ==========================================
 // 1. GET ALL BILLS
+// ==========================================
 router.get("/", auth, async (req, res) => {
   try {
     const bills = await Bill.find({ patientId: req.user.id }).sort({ date: -1 });
@@ -17,37 +20,27 @@ router.get("/", auth, async (req, res) => {
   }
 });
 
-// 2. CREATE A BILL
-router.post("/create", auth, async (req, res) => {
-  try {
-    const { title, type, amount } = req.body;
-    const newBill = new Bill({
-      patientId: req.user.id,
-      title,
-      type,
-      amount,
-      status: 'Pending'
-    });
-    await newBill.save();
-    res.json(newBill);
-  } catch (err) {
-    res.status(500).send("Server Error");
-  }
-});
-
-// 3. PAY MULTIPLE BILLS (STRIPE)
+// ==========================================
+// 2. CREATE STRIPE CHECKOUT SESSION
+// ==========================================
 router.post("/create-checkout-session", auth, async (req, res) => {
   try {
     const { billIds } = req.body; 
-    const bills = await Bill.find({ _id: { $in: billIds } });
+    
+    // Security: Fetch from DB to verify amounts
+    const bills = await Bill.find({ 
+      _id: { $in: billIds },
+      patientId: req.user.id,
+      status: "Pending"
+    });
 
-    if (!bills.length) return res.status(404).json({ msg: "No bills found" });
+    if (!bills.length) return res.status(404).json({ msg: "No valid pending bills found" });
 
     const line_items = bills.map(bill => ({
       price_data: {
         currency: "lkr",
         product_data: { name: bill.title, metadata: { type: bill.type } },
-        unit_amount: bill.amount * 100,
+        unit_amount: bill.amount * 100, // Stripe expects cents
       },
       quantity: 1,
     }));
@@ -69,41 +62,60 @@ router.post("/create-checkout-session", auth, async (req, res) => {
   }
 });
 
-// 4. ✅ MARK SINGLE BILL AS PAID (Redirect Success)
-router.put("/mark-paid/:id", auth, async (req, res) => {
-  try {
-    const bill = await Bill.findByIdAndUpdate(req.params.id, { status: "Paid" });
-
-    // ✅ CREATE NOTIFICATION
-    await Notification.create({
-        userId: req.user.id,
-        type: 'payment',
-        message: `Payment of LKR ${bill.amount.toLocaleString()} for '${bill.title}' was successful.`
-    });
-
-    res.json({ msg: "Payment Recorded" });
-  } catch (err) {
-    res.status(500).send("Server Error");
-  }
-});
-
-// 5. ✅ MARK MULTIPLE AS PAID (Bulk Success)
+// ==========================================
+// 3. MARK PAID (Syncs Bills, Appointments & Notifications)
+// ==========================================
 router.put("/mark-paid", auth, async (req, res) => {
   try {
-    const { billIds } = req.body; 
+    const { billIds } = req.body;
+
+    // A. Update Bills to "Paid"
+    await Bill.updateMany(
+      { _id: { $in: billIds }, patientId: req.user.id },
+      { $set: { status: "Paid" } }
+    );
+
+    // B. Sync Linked Appointments
+    const paidBills = await Bill.find({ _id: { $in: billIds } });
     
-    // Update Bills
-    await Bill.updateMany({ _id: { $in: billIds } }, { status: "Paid" });
-    
-    // ✅ CREATE NOTIFICATION (General message for bulk)
-    await Notification.create({
-        userId: req.user.id,
-        type: 'payment',
-        message: `Bulk payment for ${billIds.length} items was successful.`
-    });
-    
-    res.json({ msg: "Payments Recorded" });
+    // Get valid Appointment IDs linked to these bills
+    const appointmentIds = paidBills
+      .map(bill => bill.appointmentId)
+      .filter(id => id); // Remove null/undefined
+
+    if (appointmentIds.length > 0) {
+      // Update linked appointments to Paid & Confirmed
+      await Appointment.updateMany(
+        { _id: { $in: appointmentIds } },
+        { 
+          $set: { 
+            paymentStatus: "paid", // Lowercase for Admin Panel
+            status: "confirmed"    // Auto-confirm booking
+          } 
+        }
+      );
+      console.log(`✅ Synced ${appointmentIds.length} appointments`);
+    }
+
+    // C. Create Notification
+    try {
+      const message = billIds.length === 1 
+        ? `Payment successful for '${paidBills[0]?.title}'`
+        : `Bulk payment for ${billIds.length} items was successful.`;
+
+      await Notification.create({
+          userId: req.user.id,
+          type: 'payment',
+          message: message
+      });
+    } catch (notifError) {
+      console.error("Notification failed", notifError);
+    }
+
+    res.json({ msg: "Payment Successful, Appointments Updated & Notified" });
+
   } catch (err) {
+    console.error("Payment Sync Error:", err);
     res.status(500).send("Server Error");
   }
 });

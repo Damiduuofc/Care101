@@ -3,8 +3,7 @@ import mongoose from "mongoose";
 const AppointmentSchema = new mongoose.Schema({
   patientId: { type: mongoose.Schema.Types.ObjectId, ref: "Patient", required: true },
   
-  // Ensure doctorId is just a String for now (unless you have a strict Ref set up)
-  doctorId: { type: String, required: true }, 
+  doctorId: { type: mongoose.Schema.Types.ObjectId, ref: "Doctor", required: true },
   doctorName: { type: String, required: true }, 
   
   department: { type: String, required: true },
@@ -14,8 +13,18 @@ const AppointmentSchema = new mongoose.Schema({
   
   status: { 
     type: String, 
-    enum: ['Pending', 'Confirmed', 'Cancelled', 'Completed'], 
-    default: 'Pending' 
+    enum: ["pending", "confirmed", "completed", "cancelled"], 
+    default: "pending" 
+  },
+  
+  // ✅ Removed the extra "}," that was here
+  
+  amount: { type: Number, default: 0 }, // Fee for the appointment
+  
+  paymentStatus: { 
+    type: String, 
+    enum: ["pending", "paid"], 
+    default: "pending" 
   },
   
   createdAt: { type: Date, default: Date.now }

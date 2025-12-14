@@ -1,11 +1,14 @@
 import express from "express";
+import bcrypt from "bcryptjs";
 import Patient from "../models/Patient.js";
-import { auth } from "../middleware/auth.js";
-import bcrypt from "bcryptjs"; // Needed for password hashing
+import Appointment from "../models/Appointment.js"; 
+import { auth } from "../middleware/auth.js"; 
 
 const router = express.Router();
 
-// 1. GET Profile
+// ==========================================
+// 1. GET PROFILE
+// ==========================================
 router.get("/profile", auth, async (req, res) => {
   try {
     const patient = await Patient.findById(req.user.id).select("-password");
@@ -17,27 +20,26 @@ router.get("/profile", auth, async (req, res) => {
   }
 });
 
-// 2. UPDATE Profile (Includes Photo & Phone)
+// ==========================================
+// 2. UPDATE PROFILE
+// ==========================================
 router.put("/profile", auth, async (req, res) => {
   try {
     const { 
       fullName, dateOfBirth, gender, emergencyContact, 
-      mobileNumber, // ✅ Fix: Ensure this matches frontend
-      profileImage, // ✅ New: Base64 Image String
-      medicalConditions, allergies, 
-      insuranceProvider, policyNumber 
+      mobileNumber, profileImage, medicalConditions, 
+      allergies, insuranceProvider, policyNumber 
     } = req.body;
 
     const patient = await Patient.findById(req.user.id);
     if (!patient) return res.status(404).json({ msg: "Patient not found" });
 
-    // Update fields
     if (fullName) patient.fullName = fullName;
     if (dateOfBirth) patient.dateOfBirth = dateOfBirth;
     if (gender) patient.gender = gender;
-    if (mobileNumber) patient.mobileNumber = mobileNumber; // ✅ Save Phone
+    if (mobileNumber) patient.mobileNumber = mobileNumber;
     if (emergencyContact) patient.emergencyContact = emergencyContact;
-    if (profileImage) patient.profileImage = profileImage; // ✅ Save Image
+    if (profileImage) patient.profileImage = profileImage;
     if (medicalConditions) patient.medicalConditions = medicalConditions;
     if (allergies) patient.allergies = allergies;
     if (insuranceProvider) patient.insuranceProvider = insuranceProvider;
@@ -51,17 +53,17 @@ router.put("/profile", auth, async (req, res) => {
   }
 });
 
+// ==========================================
 // 3. CHANGE PASSWORD
+// ==========================================
 router.put("/change-password", auth, async (req, res) => {
   try {
     const { currentPassword, newPassword } = req.body;
     const patient = await Patient.findById(req.user.id);
 
-    // Verify old password
     const isMatch = await bcrypt.compare(currentPassword, patient.password);
     if (!isMatch) return res.status(400).json({ msg: "Current password is incorrect" });
 
-    // Hash new password
     const salt = await bcrypt.genSalt(10);
     patient.password = await bcrypt.hash(newPassword, salt);
 
@@ -73,7 +75,9 @@ router.put("/change-password", auth, async (req, res) => {
   }
 });
 
+// ==========================================
 // 4. DELETE ACCOUNT
+// ==========================================
 router.delete("/delete-account", auth, async (req, res) => {
   try {
     await Patient.findByIdAndDelete(req.user.id);
@@ -83,34 +87,72 @@ router.delete("/delete-account", auth, async (req, res) => {
     res.status(500).send("Server Error");
   }
 });
-// GET Patient Dashboard Data
+
+// ==========================================
+// 5. GET DASHBOARD DATA (FIXED)
+// ==========================================
 router.get("/dashboard", auth, async (req, res) => {
   try {
-    const patient = await Patient.findById(req.user.id).select("-password");
+    const patientId = req.user.id;
+
+    // 1. Fetch Patient Details
+    const patient = await Patient.findById(patientId).select("-password");
     if (!patient) return res.status(404).json({ msg: "Patient not found" });
 
-    // In the future, you will run queries here to count appointments, etc.
-    // const appointmentCount = await Appointment.countDocuments({ patientId: req.user.id });
+    // 2. Calculate Stats
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    // ✅ FIX: Changed to look for LOWERCASE "pending" and "confirmed"
+    const upcomingAppointments = await Appointment.countDocuments({
+      patientId: patientId,
+      date: { $gte: today },
+      status: { $in: ["pending", "confirmed", "Pending", "Confirmed"] } // Checking both to be safe
+    });
+
+    // ✅ FIX: Changed to look for LOWERCASE "completed"
+    const completedAppointments = await Appointment.countDocuments({
+      patientId: patientId,
+      status: { $in: ["completed", "Completed"] }
+    });
+
+    // 3. Generate Recent Activity Feed
+    const latestAppointments = await Appointment.find({ patientId: patientId })
+      .sort({ createdAt: -1 })
+      .limit(3);
+
+    const activities = latestAppointments.map((appt) => {
+      // Capitalize first letter for display (e.g., "pending" -> "Pending")
+      const statusDisplay = appt.status.charAt(0).toUpperCase() + appt.status.slice(1);
+      return {
+        description: `Appointment ${statusDisplay} with ${appt.doctorName}`,
+        timestamp: new Date(appt.createdAt).toLocaleDateString()
+      };
+    });
+
+    if (activities.length === 0) {
+      activities.push({
+        description: "Account created successfully",
+        timestamp: new Date(patient.createdAt).toLocaleDateString()
+      });
+    }
 
     res.json({
       name: patient.fullName,
-      profileImage: patient.profileImage,
-      // Sending mock stats for now until we build those tables
+      profileImage: patient.profileImage || "",
       stats: {
-        appointments: 0,
-        prescriptions: 0,
-        reports: 0,
-        vitals: "Normal"
+        appointments: upcomingAppointments,
+        prescriptions: completedAppointments,
+        reports: 0, 
+        vitals: "Good" 
       },
-      // Mock activities
-      activities: [
-        { id: 1, description: "Profile updated", timestamp: new Date(patient.updatedAt).toLocaleDateString() },
-        { id: 2, description: "Account created", timestamp: new Date(patient.createdAt).toLocaleDateString() }
-      ]
+      activities: activities
     });
+
   } catch (err) {
-    console.error(err.message);
+    console.error("Dashboard Error:", err);
     res.status(500).send("Server Error");
   }
 });
+
 export default router;
