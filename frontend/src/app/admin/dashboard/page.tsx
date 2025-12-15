@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { 
   Stethoscope, CreditCard, Clock, CalendarCheck, Activity 
 } from "lucide-react";
+import Sidebar from "@/components/admin/Sidebar";
 
 export default function Dashboard() {
   const [stats, setStats] = useState<any>({
@@ -56,6 +57,7 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-8">
+      <Sidebar/>
       {/* Header */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>

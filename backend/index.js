@@ -19,9 +19,8 @@ import adminRoutes from "./routes/adminRoutes.js";
 
 const app = express();
 
-// ✅ ADD THIS MIDDLEWARE (Before routes)
 app.use(cors({
-  origin: "http://localhost:9002", // Allow your Next.js app
+  origin: "http://localhost:9002", 
   credentials: true
 }));
 

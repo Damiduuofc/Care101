@@ -11,13 +11,13 @@ export default function ManageStatus() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
-    generalWard: "",
+    generalWard: "Available",
     icuBeds: 0,
     emergencyUnit: "Normal",
     pharmacy: "Open"
   });
 
-  // 1. Load Current Status on Page Load
+  // 1. Load Current Status on Page Load (Safe Version)
   useEffect(() => {
     const fetchStatus = async () => {
       const token = localStorage.getItem("adminToken");
@@ -25,10 +25,17 @@ export default function ManageStatus() {
         const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/admin/stats`, {
           headers: { "x-auth-token": token || "" }
         });
+        
+        // ✅ SAFETY CHECK: If server errors (404/500), stop here to prevent crash
+        if (!res.ok) {
+            console.error("Server Error:", res.status);
+            return;
+        }
+
         const data = await res.json();
         
-        // Populate form with existing data (if any)
-        if (data.status) {
+        // Populate form if data exists
+        if (data && data.status) {
           setFormData({
             generalWard: data.status.generalWard || "Available",
             icuBeds: data.status.icuBeds || 0,
@@ -43,7 +50,7 @@ export default function ManageStatus() {
     fetchStatus();
   }, []);
 
-  // 2. Handle Update
+  // 2. Handle Update (Saves to Database)
   const handleUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -60,13 +67,14 @@ export default function ManageStatus() {
       });
 
       if (res.ok) {
-        alert("✅ Hospital Status Updated Successfully!");
+        alert("✅ Hospital Status Saved to Database!");
         router.push("/admin/dashboard"); // Go back to dashboard
       } else {
-        alert("Failed to update status.");
+        alert("Failed to update status. Please try again.");
       }
     } catch (err) {
       console.error(err);
+      alert("Server Connection Error");
     } finally {
       setLoading(false);
     }
@@ -87,13 +95,13 @@ export default function ManageStatus() {
             Manage Hospital Status
           </CardTitle>
           <p className="text-sm text-slate-500">
-            Manually update bed availability and unit status.
+            Updates here are saved permanently for all staff (Admins, Nurses).
           </p>
         </CardHeader>
         <CardContent className="p-6">
           <form onSubmit={handleUpdate} className="space-y-6">
             
-{/* General Ward Status - Upgraded to Dropdown */}
+            {/* General Ward Status */}
             <div className="space-y-2">
               <label className="text-sm font-medium text-slate-700">General Ward Status</label>
               <div className="relative">
@@ -107,7 +115,6 @@ export default function ManageStatus() {
                   <option value="Full Capacity">🔴 Full Capacity</option>
                   <option value="Closed Maintenance">⚫ Closed / Maintenance</option>
                 </select>
-                {/* Dropdown Arrow Icon for better UX */}
                 <div className="absolute right-3 top-3 pointer-events-none">
                   <svg className="h-4 w-4 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
@@ -116,7 +123,7 @@ export default function ManageStatus() {
               </div>
             </div>
 
-            {/* ICU Beds Input (Number) */}
+            {/* ICU Beds Input */}
             <div className="space-y-2">
               <label className="text-sm font-medium text-slate-700">ICU Beds Available</label>
               <Input 
@@ -157,7 +164,7 @@ export default function ManageStatus() {
 
             <Button type="submit" className="w-full bg-cyan-600 hover:bg-cyan-700" disabled={loading}>
               {loading ? <Loader2 className="animate-spin h-4 w-4 mr-2" /> : <Save className="h-4 w-4 mr-2" />}
-              Update Status
+              Save Status
             </Button>
 
           </form>

@@ -7,7 +7,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-
+import Sidebar from "@/components/admin/Sidebar";
 export default function AppointmentsPage() {
   const [appointments, setAppointments] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -87,6 +87,7 @@ export default function AppointmentsPage() {
 
   return (
     <div className="space-y-6">
+      <Sidebar/>
       <div className="flex flex-col md:flex-row justify-between items-center gap-4">
         <div>
             <h1 className="text-3xl font-bold text-slate-900">Appointments</h1>

@@ -37,10 +37,15 @@ export default function Sidebar() {
       
       {/* HEADER */}
       <div className="p-6 border-b border-slate-800 flex items-center gap-3">
+        <Link href="/admin/dashboard" className="flex items-center gap-2">
        <img src="/logo.png" alt="Care101 Logo" className="h-8 w-8 object-contain" />
+        </Link>
         <div>
-            <h1 className="font-bold text-lg tracking-wide">Care101</h1>
+            
+            <Link href="/admin/dashboard" className="flex items-center gap-2">
+            <h1 className="font-bold text-lg tracking-wide">Care101</h1></Link>
             <p className="text-xs text-slate-400 uppercase tracking-wider">{role.replace('_', ' ')}</p>
+           
         </div>
       </div>
 

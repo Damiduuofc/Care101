@@ -7,7 +7,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Calendar, FileText, Upload, MessageSquare, Bell, BarChart3, ShieldCheck, HeartPulse, User, Loader2 } from 'lucide-react';
 import { motion } from 'framer-motion';
 
-// Ensure this matches your .env
 const API_URL = `${process.env.NEXT_PUBLIC_API_URL}/patient`;
 
 export default function PatientHomePage() {
