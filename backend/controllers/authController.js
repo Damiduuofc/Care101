@@ -3,45 +3,51 @@ import Patient from "../models/Patient.js";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 
-// --- REGISTER DOCTOR ---
-export const register = async (req, res) => {
+// ==========================================
+// 1. REGISTER DOCTOR
+// ==========================================
+export const registerDoctor = async (req, res) => {
   try {
+    // 1. Destructure with Frontend Field Names
     const { 
-      name, 
+      fullName,              // Frontend sends 'fullName'
       email, 
       password, 
       specialization,
-      nic, 
+      nicNumber,             // Frontend sends 'nicNumber'
       phoneNumber, 
-      slmcRegistrationNumber, 
+      slmcRegistrationNumber,// Frontend sends 'slmcRegistrationNumber'
       nameWithInitials
     } = req.body;
 
-    // 1. Check if doctor exists
+    // 2. Check if user exists in EITHER collection
     const existingDoctor = await Doctor.findOne({ email });
-    if (existingDoctor) {
-      return res.status(400).json({ msg: "Doctor already exists" });
+    const existingPatient = await Patient.findOne({ email });
+
+    if (existingDoctor || existingPatient) {
+      return res.status(400).json({ message: "User with this email already exists." });
     }
 
-    // 2. Hash Password
+    // 3. Hash Password
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
-    // 3. Create Doctor
+    // 4. Create Doctor (Map Frontend fields to Schema fields)
     const newDoctor = new Doctor({
-      name,
+      name: fullName,                // Map fullName -> name
       email,
       password: hashedPassword,
       specialization,
-      nic,
-      phone: phoneNumber,
-      slmcReg: slmcRegistrationNumber,
-      nameWithInitials
+      nic: nicNumber,                // Map nicNumber -> nic
+      phone: phoneNumber,            // Map phoneNumber -> phone
+      slmcReg: slmcRegistrationNumber, // Map -> slmcReg
+      nameWithInitials,
+      // Subscription defaults are handled by the Mongoose Schema
     });
 
     await newDoctor.save();
 
-    // 4. Create Token (Added role: 'doctor')
+    // 5. Create Token
     const token = jwt.sign(
       { id: newDoctor._id, role: 'doctor' }, 
       process.env.JWT_SECRET, 
@@ -55,16 +61,19 @@ export const register = async (req, res) => {
         name: newDoctor.name, 
         email: newDoctor.email,
         role: "doctor"
-      } 
+      },
+      message: "Doctor registered successfully"
     });
 
   } catch (error) {
     console.error("Register Error:", error);
-    res.status(500).json({ msg: "Server Error" });
+    res.status(500).json({ message: "Server Error" });
   }
 };
 
-// --- REGISTER PATIENT ---
+// ==========================================
+// 2. REGISTER PATIENT
+// ==========================================
 export const registerPatient = async (req, res) => {
   try {
     const { 
@@ -72,10 +81,12 @@ export const registerPatient = async (req, res) => {
       mobileNumber, email, district, username, password 
     } = req.body;
 
-    // 1. Check if patient exists
+    // 1. Check uniqueness across BOTH collections
     const existingPatient = await Patient.findOne({ email });
-    if (existingPatient) {
-      return res.status(400).json({ msg: "Patient already exists with this email" });
+    const existingDoctor = await Doctor.findOne({ email });
+
+    if (existingPatient || existingDoctor) {
+      return res.status(400).json({ message: "User with this email already exists" });
     }
 
     // 2. Hash Password
@@ -97,7 +108,7 @@ export const registerPatient = async (req, res) => {
 
     await newPatient.save();
 
-    // 4. Create Token (Added role: 'patient')
+    // 4. Create Token
     const token = jwt.sign(
       { id: newPatient._id, role: 'patient' }, 
       process.env.JWT_SECRET, 
@@ -116,64 +127,48 @@ export const registerPatient = async (req, res) => {
 
   } catch (error) {
     console.error("Patient Register Error:", error);
-    res.status(500).json({ msg: "Server Error" });
+    res.status(500).json({ message: "Server Error" });
   }
 };
 
-// --- UNIFIED LOGIN (WORKS FOR BOTH) ---
-
+// ==========================================
+// 3. UNIFIED LOGIN
+// ==========================================
 export const login = async (req, res) => {
   try {
     const { email, password } = req.body;
     
-    // 🔍 DEBUG LOG 1: Incoming Request
-    console.log(`\n--- LOGIN ATTEMPT ---`);
-    console.log(`Email provided: ${email}`);
-    console.log(`Password provided: ${password}`);
-
     let user = null;
     let role = null;
 
     // 1. Check Doctor Collection
     const doctor = await Doctor.findOne({ email });
     if (doctor) {
-      console.log("✅ Found in Doctor Collection");
       user = doctor;
       role = "doctor";
-    } else {
-      console.log("❌ Not found in Doctor Collection");
     }
 
-    // 2. Check Patient Collection (if not found yet)
+    // 2. Check Patient Collection (if not found in Doctor)
     if (!user) {
       const patient = await Patient.findOne({ email });
       if (patient) {
-        console.log("✅ Found in Patient Collection");
         user = patient;
         role = "patient";
-      } else {
-        console.log("❌ Not found in Patient Collection");
       }
     }
 
     // 3. User Not Found
     if (!user) {
-      console.log("🔴 ERROR: User does not exist in any database.");
-      return res.status(400).json({ msg: "User not found" });
+      return res.status(400).json({ message: "User not found" });
     }
 
     // 4. Check Password
     const isMatch = await bcrypt.compare(password, user.password);
-    console.log(`Password Match Result: ${isMatch}`);
-
     if (!isMatch) {
-      console.log("🔴 ERROR: Password did not match hash.");
-      return res.status(400).json({ msg: "Invalid credentials" });
+      return res.status(400).json({ message: "Invalid credentials" });
     }
 
-    // 5. Success
-    console.log("🟢 SUCCESS: Login Authorized");
-    
+    // 5. Generate Token
     const token = jwt.sign(
       { id: user._id, role: role }, 
       process.env.JWT_SECRET, 
@@ -192,7 +187,7 @@ export const login = async (req, res) => {
     });
 
   } catch (error) {
-    console.error("🔥 CRITICAL LOGIN ERROR:", error);
-    res.status(500).json({ msg: "Server Error" });
+    console.error("Login Error:", error);
+    res.status(500).json({ message: "Server Error" });
   }
 };

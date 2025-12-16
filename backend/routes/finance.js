@@ -1,6 +1,7 @@
 import express from "express";
 import HospitalFinance from "../models/Finance.js";
 import { auth } from "../middleware/auth.js";
+import { checkPlanLimits } from "../utils/checkLimits.js"; // ✅ Import
 
 const router = express.Router();
 
@@ -40,9 +41,16 @@ router.get("/", auth, async (req, res) => {
   }
 });
 
-// 2. ADD HOSPITAL
+// 2. ADD HOSPITAL (Apply Limit: Max 1)
 router.post("/add-hospital", auth, async (req, res) => {
   try {
+    // 🛑 CHECK LIMIT
+    try {
+      await checkPlanLimits(req.user.id, 'add_hospital');
+    } catch (limitErr) {
+      return res.status(403).json({ msg: limitErr.message, upgradeRequired: true });
+    }
+
     const { name, whtEnabled } = req.body;
     const newHospital = new HospitalFinance({ doctorId: req.user.id, name, whtEnabled });
     await newHospital.save();
@@ -52,7 +60,7 @@ router.post("/add-hospital", auth, async (req, res) => {
   }
 });
 
-// ✅ 3. GET SINGLE HOSPITAL (This is the missing route!)
+// 3. GET SINGLE HOSPITAL
 router.get("/:id", auth, async (req, res) => {
   try {
     const hospital = await HospitalFinance.findById(req.params.id);
@@ -74,7 +82,7 @@ router.delete("/:id", auth, async (req, res) => {
   }
 });
 
-// 5. ADD RECORD
+// 5. ADD RECORD (No limit specified for finance entries inside a hospital, so leaving as is)
 router.post("/:id/add-record", auth, async (req, res) => {
   try {
     const { type, date, patients, income, bht, amount } = req.body;

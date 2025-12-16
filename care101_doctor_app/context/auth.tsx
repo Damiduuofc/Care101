@@ -2,7 +2,7 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import * as SecureStore from 'expo-secure-store'; 
 import { useRouter, useSegments } from 'expo-router';
 
-
+// Ensure this points to /api/auth in your .env
 const API_URL = `${process.env.EXPO_PUBLIC_API_URL}/api/auth`;
 
 interface AuthProps {
@@ -15,7 +15,6 @@ interface AuthProps {
 
 const AuthContext = createContext<AuthProps | null>(null);
 
-// ✅ SAFETY HOOK: Prevents usage outside the Provider
 export function useAuth() {
   const context = useContext(AuthContext);
   if (!context) {
@@ -60,7 +59,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         body: JSON.stringify({ email, password }),
       });
 
-      // 🚨 CRITICAL CHECK: Ensure response is JSON
       const contentType = response.headers.get("content-type");
       if (!contentType || !contentType.includes("application/json")) {
         const text = await response.text();
@@ -71,7 +69,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.msg || 'Login failed');
+        // ✅ FIX: Check 'message' first (New Backend), then 'msg' (Old Backend)
+        throw new Error(data.message || data.msg || 'Login failed');
       }
 
       // 🚨 RESTRICTION: Block Patients
@@ -85,12 +84,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       
       setUser(data.user);
       
-      // ✅ FIX: Route to the dashboard folder, not the file inside it
+      // Navigate to dashboard
       router.replace('/dashboard'); 
 
     } catch (error: any) {
       console.error("Login Error:", error);
-      throw error; // Re-throw to be caught by the Login Screen UI
+      throw error; 
     }
   };
 
@@ -98,27 +97,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signUp = async (userData: any) => {
     try {
       console.log(`Registering doctor at: ${API_URL}/register-doctor`);
-
-      // ✅ Map frontend fields to backend Schema
-      const payload = {
-        name: userData.fullName, 
-        email: userData.email,
-        password: userData.password,
-        specialization: userData.specialization,
-        mobileNumber: userData.phoneNumber, 
-        qualifications: userData.slmcRegistrationNumber, 
-      };
+      
+      // ✅ FIX: Do NOT rename fields here. 
+      // The backend controller expects: fullName, nicNumber, etc.
+      // Pass 'userData' directly since the form already uses the correct names.
 
       const response = await fetch(`${API_URL}/register-doctor`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+        body: JSON.stringify(userData), // <--- Send raw form data
       });
 
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.msg || 'Registration failed');
+        // ✅ FIX: Catch the specific backend error message
+        throw new Error(data.message || data.msg || 'Registration failed');
       }
 
       // ✅ AUTO-LOGIN: Log them in immediately after signup

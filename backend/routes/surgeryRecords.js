@@ -1,6 +1,7 @@
 import express from "express";
 import SurgeryRecord from "../models/SurgeryRecord.js"; 
 import { auth } from "../middleware/auth.js";
+import { checkPlanLimits } from "../utils/checkLimits.js"; // ✅ Import
 
 const router = express.Router();
 
@@ -15,9 +16,16 @@ router.get("/", auth, async (req, res) => {
   }
 });
 
-// 2. CREATE NEW RECORD
+// 2. CREATE NEW RECORD (Apply Limit: Max 4)
 router.post("/create", auth, async (req, res) => {
   try {
+    // 🛑 CHECK LIMIT
+    try {
+      await checkPlanLimits(req.user.id, 'create_record');
+    } catch (limitErr) {
+      return res.status(403).json({ msg: limitErr.message, upgradeRequired: true });
+    }
+
     const { name, nic, hospital, surgeryCardImage } = req.body;
 
     if (!name || !surgeryCardImage) {
@@ -62,26 +70,31 @@ router.delete("/:id", auth, async (req, res) => {
   }
 });
 
-// 5. ADD PROGRESS ENTRY (New Endpoint)
+// 5. ADD PROGRESS ENTRY (Apply Limit: Max 3 per patient)
 router.post("/:id/entry", auth, async (req, res) => {
   try {
+    // 🛑 CHECK LIMIT
+    try {
+      await checkPlanLimits(req.user.id, 'add_entry', req.params.id);
+    } catch (limitErr) {
+      return res.status(403).json({ msg: limitErr.message, upgradeRequired: true });
+    }
+
     const { notes, images } = req.body;
     const record = await SurgeryRecord.findById(req.params.id);
 
     if (!record) return res.status(404).json({ msg: "Record not found" });
 
-    // Create new entry object
     const newEntry = {
       date: new Date(),
       notes: notes || "",
       images: images || [] 
     };
 
-    // Add to the beginning of the array (newest first)
     record.entries.unshift(newEntry);
     
     await record.save();
-    res.json(record); // Return updated record
+    res.json(record);
 
   } catch (err) {
     console.error("Add Entry Error:", err.message);

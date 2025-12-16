@@ -66,8 +66,7 @@ router.get("/profile", auth, async (req, res) => {
       email: doctor.email,
       specialization: doctor.specialization || "General Physician",
       profileImage: doctor.profileImage || null,
-      subscriptionStatus: "Trial (11 days)", 
-      status: "trial"
+subscription: doctor.subscription || { plan: 'free', status: 'active' },
     });
 
   } catch (err) {
@@ -81,7 +80,7 @@ router.get("/profile", auth, async (req, res) => {
 // ---------------------------------------------
 router.put("/profile", auth, async (req, res) => {
   try {
-    const { fullName, nameWithInitials, nic, phone, specialization, profileImage } = req.body;
+    const { fullName, nameWithInitials, nic, phone,  profileImage } = req.body;
 
     const doctor = await Doctor.findById(req.user.id);
     if (!doctor) return res.status(404).json({ msg: "Doctor not found" });
@@ -91,7 +90,6 @@ router.put("/profile", auth, async (req, res) => {
     if (nameWithInitials) doctor.nameWithInitials = nameWithInitials;
     if (nic) doctor.nic = nic;
     if (phone) doctor.phone = phone;
-    if (specialization) doctor.specialization = specialization;
     if (profileImage) doctor.profileImage = profileImage; 
 
     await doctor.save();

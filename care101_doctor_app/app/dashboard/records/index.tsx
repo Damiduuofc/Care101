@@ -1,55 +1,77 @@
 import React, { useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TextInput, FlatList, TouchableOpacity, StatusBar, Platform,
-  ActivityIndicator
+  ActivityIndicator, Alert
 } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Search, Plus, CreditCard, Image as ImageIcon, ChevronRight } from 'lucide-react-native';
+import { Search, Plus, Image as ImageIcon, ChevronRight, Lock, Crown } from 'lucide-react-native';
 import BottomNavBar from '@/components/BottomNavBar'; 
 import * as SecureStore from 'expo-secure-store';
 
-const API_URL = `${process.env.EXPO_PUBLIC_API_URL}/api/surgery-records`;
+const API_URL = process.env.EXPO_PUBLIC_API_URL;
+
 export default function RecordsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  
+  // Data State
   const [records, setRecords] = useState([]);
+  const [currentPlan, setCurrentPlan] = useState('free');
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
 
-  // Auto-refresh when screen loads
+  // ✅ LOGIC: Check if limit reached (Free plan max 4)
+  const isLimitReached = currentPlan === 'free' && records.length >= 4;
+
   useFocusEffect(
     useCallback(() => {
-      fetchRecords();
+      fetchData();
     }, [])
   );
 
-const fetchRecords = async () => {
+  const fetchData = async () => {
     try {
-      // 1. Log the exact URL being called
-      console.log("Attempting to fetch:", API_URL); 
-
       const token = await SecureStore.getItemAsync('token');
-      const res = await fetch(API_URL, {
+      
+      // 1. Fetch Records
+      const resRecords = await fetch(`${API_URL}/api/surgery-records`, {
         headers: { Authorization: `Bearer ${token}` }
       });
+      if (resRecords.ok) {
+        const data = await resRecords.json();
+        setRecords(data);
+      }
 
-      // 2. Get Raw Text FIRST (Before parsing JSON)
-      const text = await res.text();
-      console.log("SERVER STATUS:", res.status); 
-      console.log("SERVER RESPONSE:", text); // 🚨 LOOK AT THIS IN YOUR LOGS
-
-      // 3. Manually throw error if status is bad
-      if (!res.ok) throw new Error(`Server Error: ${res.status}`);
-
-      // 4. Safe Parse
-      const data = JSON.parse(text);
-      setRecords(data);
+      // 2. Fetch Profile (to check plan)
+      const resProfile = await fetch(`${API_URL}/api/doctor/profile`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (resProfile.ok) {
+        const profile = await resProfile.json();
+        setCurrentPlan(profile.subscription?.plan || 'free');
+      }
 
     } catch (error) {
-      console.error("FETCH FAILURE:", error);
+      console.error("Fetch Error:", error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  // ✅ HANDLE ADD BUTTON
+  const handleAddPress = () => {
+    if (isLimitReached) {
+      Alert.alert(
+        "Limit Reached",
+        "Free plan allows only 4 records. Upgrade to Premium for unlimited access.",
+        [
+          { text: "Cancel", style: "cancel" },
+          { text: "Upgrade Now", onPress: () => router.push('/subscription') }
+        ]
+      );
+    } else {
+      router.push('/dashboard/records/create');
     }
   };
 
@@ -86,8 +108,16 @@ const fetchRecords = async () => {
   return (
     <SafeAreaView edges={['top']} style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#fff" />
+      
+      {/* Header with Premium Tag */}
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Surgery Records</Text>
+        {currentPlan === 'premium' && (
+            <View style={styles.premiumTag}>
+                <Crown size={12} color="#b45309" fill="#f59e0b" />
+                <Text style={styles.premiumText}>PREMIUM</Text>
+            </View>
+        )}
       </View>
 
       <View style={styles.searchContainer}>
@@ -112,16 +142,29 @@ const fetchRecords = async () => {
           ListEmptyComponent={
             <View style={styles.emptyState}>
               <Text style={styles.emptyText}>No records found</Text>
+              {currentPlan === 'free' && (
+                  <Text style={styles.emptySubText}>Free Plan: {records.length}/4 used</Text>
+              )}
             </View>
           }
         />
       )}
 
+      {/* ✅ FAB (LOCKS IF LIMIT REACHED) */}
       <TouchableOpacity 
-        style={[styles.fab, { bottom: Platform.OS === 'ios' ? insets.bottom + 90 : 100 }]}
-        onPress={() => router.push('/dashboard/records/create')}
+        style={[
+            styles.fab, 
+            { bottom: Platform.OS === 'ios' ? insets.bottom + 90 : 100 },
+            isLimitReached && styles.fabDisabled
+        ]}
+        onPress={handleAddPress}
+        activeOpacity={0.8}
       >
-        <Plus size={32} color="#fff" />
+        {isLimitReached ? (
+            <Lock size={28} color="#94a3b8" />
+        ) : (
+            <Plus size={32} color="#fff" />
+        )}
       </TouchableOpacity>
 
       <BottomNavBar />
@@ -129,11 +172,13 @@ const fetchRecords = async () => {
   );
 }
 
-// Reuse Styles...
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f8fafc' },
-  header: { padding: 20, backgroundColor: '#fff' },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 20, backgroundColor: '#fff' },
   headerTitle: { fontSize: 24, fontWeight: '700', color: '#0f172a' },
+  premiumTag: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#fef3c7', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 12 },
+  premiumText: { fontSize: 10, fontWeight: '800', color: '#b45309' },
+
   searchContainer: { paddingHorizontal: 20, paddingBottom: 16, backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#f1f5f9' },
   searchBar: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 12, paddingHorizontal: 12, height: 48 },
   searchInput: { flex: 1, marginLeft: 10, fontSize: 16, color: '#0f172a' },
@@ -150,5 +195,9 @@ const styles = StyleSheet.create({
   badgeText: { fontSize: 12, color: '#64748b', fontWeight: '500' },
   emptyState: { alignItems: 'center', justifyContent: 'center', marginTop: 60, paddingHorizontal: 40 },
   emptyText: { fontSize: 18, fontWeight: '600', color: '#94a3b8' },
-  fab: { position: 'absolute', right: 20, width: 56, height: 56, borderRadius: 28, backgroundColor: '#0d9488', alignItems: 'center', justifyContent: 'center', elevation: 6 },
+  emptySubText: { fontSize: 14, color: '#64748b', marginTop: 8 },
+
+  // FAB Styles
+  fab: { position: 'absolute', right: 20, width: 56, height: 56, borderRadius: 28, backgroundColor: '#0d9488', alignItems: 'center', justifyContent: 'center', elevation: 6, shadowColor: "#0d9488", shadowOffset: {width:0, height:4}, shadowOpacity: 0.3, shadowRadius: 4 },
+  fabDisabled: { backgroundColor: '#e2e8f0', elevation: 0, shadowOpacity: 0 },
 });

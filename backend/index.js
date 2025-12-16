@@ -16,6 +16,10 @@ import financeRoutes from "./routes/finance.js";
 import surgeryRecordRoutes from "./routes/surgeryRecords.js";
 import chatRoutes from "./routes/chatRoutes.js"; 
 import adminRoutes from "./routes/adminRoutes.js"; 
+import paymentRoutes from "./routes/paymentRoutes.js";
+import instructionRoutes from "./routes/instructionRoutes.js";
+import path from "path"; 
+
 
 const app = express();
 
@@ -24,7 +28,8 @@ app.use(cors({
   credentials: true
 }));
 
-
+const __dirname = path.resolve();
+app.use("/uploads", express.static(path.join(__dirname, "/uploads")));
 
 // 2. Middleware (Increase limit for images)
 app.use(express.json({ limit: '50mb' }));
@@ -52,6 +57,12 @@ app.use("/api/finance", financeRoutes);
 app.use("/api/surgery-records", surgeryRecordRoutes); 
 app.use("/api/chat", chatRoutes);
 app.use("/api/admin", adminRoutes);
+app.use("/api/payment", paymentRoutes);
+app.use("/api/instructions", instructionRoutes);
+
+
+
+
 
 
 // 4. Database Connection & Server Start
