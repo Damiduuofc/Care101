@@ -11,48 +11,64 @@ import {
   StatusBar,
   KeyboardAvoidingView,
   Platform,
-  ActivityIndicator
+  ActivityIndicator,
+  Alert
 } from 'react-native';
-import { useRouter, useFocusEffect } from 'expo-router'; // ✅ Added useFocusEffect
+import { useRouter, useFocusEffect } from 'expo-router'; 
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Building2, Plus, Trash2, ChevronRight, CheckCircle2, X } from 'lucide-react-native';
+import { Plus, Trash2, ChevronRight, CheckCircle2, X, Lock, Crown } from 'lucide-react-native';
 import BottomNavBar from '../../components/BottomNavBar'; 
 import * as SecureStore from 'expo-secure-store';
 
-const API_URL = `${process.env.EXPO_PUBLIC_API_URL}/api/finance`;
+const API_URL = process.env.EXPO_PUBLIC_API_URL;
 
 export default function FinanceScreen() {
   const router = useRouter(); 
   const insets = useSafeAreaInsets();
+  
+  // Data State
   const [hospitals, setHospitals] = useState([]);
+  const [currentPlan, setCurrentPlan] = useState('free'); // Track User Plan
   const [loading, setLoading] = useState(true);
+  
+  // Modal State
   const [modalVisible, setModalVisible] = useState(false);
   
   // Form State
   const [newHospitalName, setNewHospitalName] = useState('');
   const [isWhtEnabled, setIsWhtEnabled] = useState(false);
 
-  // ✅ FIX: Use useFocusEffect to refresh data every time screen appears
+  // ✅ LOGIC: Check if limit reached (Free plan max 1)
+  const isLimitReached = currentPlan === 'free' && hospitals.length >= 1;
+
   useFocusEffect(
     useCallback(() => {
-      fetchHospitals();
+      fetchData();
     }, [])
   );
 
-  const fetchHospitals = async () => {
+  const fetchData = async () => {
     try {
       const token = await SecureStore.getItemAsync('token');
       
-      const res = await fetch(API_URL, {
+      // 1. Fetch Finance Data
+      const resFinance = await fetch(`${API_URL}/api/finance`, {
         headers: { Authorization: `Bearer ${token}` }
       });
-
-      if (res.ok) {
-        const data = await res.json();
+      if (resFinance.ok) {
+        const data = await resFinance.json();
         setHospitals(data);
-      } else {
-        console.error("Failed to fetch finance data");
       }
+
+      // 2. Fetch Profile to check Subscription Plan
+      const resProfile = await fetch(`${API_URL}/api/doctor/profile`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (resProfile.ok) {
+        const profile = await resProfile.json();
+        setCurrentPlan(profile.subscription?.plan || 'free');
+      }
+
     } catch (error) {
       console.error("Network Error:", error);
     } finally {
@@ -60,11 +76,27 @@ export default function FinanceScreen() {
     }
   };
 
+  // ✅ HANDLE ADD BUTTON PRESS
+  const handleAddPress = () => {
+    if (isLimitReached) {
+      Alert.alert(
+        "Limit Reached",
+        "The Free plan allows only 1 hospital. Upgrade to Premium for unlimited access.",
+        [
+          { text: "Cancel", style: "cancel" },
+          { text: "Upgrade Now", onPress: () => router.push('/subscription') }
+        ]
+      );
+    } else {
+      setModalVisible(true);
+    }
+  };
+
   const handleAddHospital = async () => {
     if (!newHospitalName.trim()) return;
     try {
       const token = await SecureStore.getItemAsync('token');
-      await fetch(`${API_URL}/add-hospital`, {
+      await fetch(`${API_URL}/api/finance/add-hospital`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ name: newHospitalName, whtEnabled: isWhtEnabled })
@@ -72,27 +104,31 @@ export default function FinanceScreen() {
       setModalVisible(false);
       setNewHospitalName('');
       setIsWhtEnabled(false);
-      fetchHospitals(); // Refresh list immediately
+      fetchData(); 
     } catch (error) {
       console.error(error);
     }
   };
 
   const handleDelete = async (id: string) => {
-    try {
-      const token = await SecureStore.getItemAsync('token');
-      await fetch(`${API_URL}/${id}`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      fetchHospitals();
-    } catch (error) {
-      console.error(error);
-    }
+    Alert.alert("Delete Hospital", "Are you sure? This will delete all financial records for this hospital.", [
+      { text: "Cancel", style: "cancel" },
+      { 
+        text: "Delete", style: 'destructive', onPress: async () => {
+          try {
+            const token = await SecureStore.getItemAsync('token');
+            await fetch(`${API_URL}/api/finance/${id}`, {
+              method: 'DELETE',
+              headers: { Authorization: `Bearer ${token}` }
+            });
+            fetchData();
+          } catch (error) { console.error(error); }
+        } 
+      }
+    ]);
   };
 
   const renderHospitalCard = ({ item }: any) => {
-    // ✅ VISUAL CHECK: Ensure WHT Logic is clear
     return (
       <View style={styles.card}>
         <View style={styles.cardHeader}>
@@ -151,6 +187,12 @@ export default function FinanceScreen() {
       <StatusBar barStyle="dark-content" backgroundColor="#fff" />
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Financial Dashboard</Text>
+        {currentPlan === 'premium' && (
+            <View style={styles.premiumTag}>
+                <Crown size={12} color="#b45309" fill="#f59e0b" />
+                <Text style={styles.premiumText}>PREMIUM</Text>
+            </View>
+        )}
       </View>
 
       {loading ? (
@@ -164,7 +206,7 @@ export default function FinanceScreen() {
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
                 <Text style={styles.emptyTitle}>No Hospitals Added</Text>
-                <TouchableOpacity style={styles.mainActionButton} onPress={() => setModalVisible(true)}>
+                <TouchableOpacity style={styles.mainActionButton} onPress={handleAddPress}>
                     <Text style={styles.mainActionButtonText}>Add Your First</Text>
                 </TouchableOpacity>
             </View>
@@ -172,13 +214,24 @@ export default function FinanceScreen() {
         />
       )}
 
+      {/* ✅ ADD BUTTON (Changes if Limit Reached) */}
       <TouchableOpacity 
-        style={[styles.fab, { bottom: Platform.OS === 'ios' ? insets.bottom + 90 : 100 }]} 
-        onPress={() => setModalVisible(true)}
+        style={[
+            styles.fab, 
+            { bottom: Platform.OS === 'ios' ? insets.bottom + 90 : 100 },
+            isLimitReached && styles.fabDisabled // Apply grey style if disabled
+        ]} 
+        onPress={handleAddPress}
+        activeOpacity={0.8}
       >
-        <Plus size={32} color="#fff" />
+        {isLimitReached ? (
+            <Lock size={28} color="#94a3b8" /> // Show Lock Icon
+        ) : (
+            <Plus size={32} color="#fff" />
+        )}
       </TouchableOpacity>
 
+      {/* Modal */}
       <Modal animationType="fade" transparent={true} visible={modalVisible} onRequestClose={() => setModalVisible(false)}>
         <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.modalOverlay}>
           <View style={styles.modalContent}>
@@ -209,8 +262,11 @@ export default function FinanceScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f8fafc' },
-  header: { paddingHorizontal: 20, paddingVertical: 16, backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#f1f5f9' },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 16, backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#f1f5f9' },
   headerTitle: { fontSize: 22, fontWeight: '700', color: '#0f172a' },
+  premiumTag: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#fef3c7', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 12 },
+  premiumText: { fontSize: 10, fontWeight: '800', color: '#b45309' },
+  
   listContent: { paddingTop: 20 },
   card: { backgroundColor: '#fff', borderRadius: 16, padding: 16, marginBottom: 16, marginHorizontal: 20, borderWidth: 1, borderColor: '#e2e8f0', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 2 },
   cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 },
@@ -229,7 +285,11 @@ const styles = StyleSheet.create({
   totalValue: { fontSize: 20, fontWeight: '800', color: '#1e3a8a' },
   cardFooter: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', borderTopWidth: 1, borderTopColor: '#f1f5f9', paddingTop: 16 },
   footerLink: { color: '#12a9acff', fontWeight: '600', marginRight: 4, fontSize: 14 },
-  fab: { position: 'absolute', right: 24, width: 56, height: 56, borderRadius: 28, backgroundColor: '#12a9acff', alignItems: 'center', justifyContent: 'center', elevation: 6 },
+  
+  // FAB Styles
+  fab: { position: 'absolute', right: 24, width: 56, height: 56, borderRadius: 28, backgroundColor: '#12a9acff', alignItems: 'center', justifyContent: 'center', elevation: 6, shadowColor: "#12a9acff", shadowOffset: {width:0, height:4}, shadowOpacity: 0.3, shadowRadius: 4 },
+  fabDisabled: { backgroundColor: '#e2e8f0', elevation: 0, shadowOpacity: 0 }, // Greyed out style
+
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', padding: 20 },
   modalContent: { backgroundColor: '#fff', borderRadius: 24, padding: 24, elevation: 5 },
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 },
