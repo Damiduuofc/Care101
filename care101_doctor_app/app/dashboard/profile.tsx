@@ -1,16 +1,29 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, Image, TouchableOpacity, ScrollView, ActivityIndicator,
   Alert, StatusBar, TextInput, Modal, KeyboardAvoidingView, Platform
 } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { User, Mail, Lock, LogOut, Edit3, ChevronRight, CreditCard, Clock, Camera, Save, X } from 'lucide-react-native';
+import { User, Lock, LogOut, Edit3, ChevronRight, CreditCard, Clock, Camera, Save, X } from 'lucide-react-native';
 import * as SecureStore from 'expo-secure-store';
 import * as ImagePicker from 'expo-image-picker';
 import BottomNavBar from '../../components/BottomNavBar'; 
 
 const API_URL = `${process.env.EXPO_PUBLIC_API_URL}/api/doctor`;
+
+// ✅ THEME COLORS
+const THEME = {
+  primary: '#0891b2', // Cyan 700
+  secondary: '#06b6d4', // Cyan 500
+  light: '#ecfeff', // Cyan 50
+  border: '#cffafe', // Cyan 100
+  text: '#0f172a',
+  subtext: '#64748b',
+  danger: '#ef4444',
+  gold: '#f59e0b',
+  bg: '#fff'
+};
 
 export default function ProfileScreen() {
   const router = useRouter();
@@ -53,9 +66,7 @@ export default function ProfileScreen() {
 
   // --- ACTIONS ---
 
-  // 1. Pick Profile Image
-const pickImage = async () => {
-    // 1. Check Permission
+  const pickImage = async () => {
     if (permissionResponse?.status !== 'granted') {
       const { granted } = await requestPermission();
       if (!granted) {
@@ -65,38 +76,27 @@ const pickImage = async () => {
     }
 
     try {
-      // 2. Launch Gallery
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images, // ✅ Use Options to be safe
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsEditing: true,
         aspect: [1, 1],
-        quality: 0.5, // Keep quality low to save bandwidth
-        base64: true, // ✅ THIS MUST BE TRUE
+        quality: 0.5,
+        base64: true,
       });
-
-      // 3. Debug Logs
-      console.log("Image Picker Result:", result.canceled ? "Canceled" : "Success");
       
       if (!result.canceled && result.assets && result.assets.length > 0) {
-        
-        // Check if base64 exists
         if (!result.assets[0].base64) {
-          Alert.alert("Error", "Could not generate image data. Try a different photo.");
+          Alert.alert("Error", "Could not generate image data.");
           return;
         }
-
         const base64Img = `data:image/jpeg;base64,${result.assets[0].base64}`;
-        console.log("Image Size:", base64Img.length); // Log size to terminal
-        
         setProfile({ ...profile, profileImage: base64Img }); 
       }
     } catch (error) {
-      console.error("Pick Image Error:", error);
       Alert.alert("Error", "Failed to pick image");
     }
   };
 
-  // 2. Save Profile Updates
   const handleSaveProfile = async () => {
     setSaving(true);
     try {
@@ -120,7 +120,6 @@ const pickImage = async () => {
     }
   };
 
-  // 3. Change Password
   const handleChangePassword = async () => {
     if (!passwords.current || !passwords.new) {
         Alert.alert("Error", "Please fill all fields");
@@ -146,8 +145,7 @@ const pickImage = async () => {
     }
   };
 
-  // 4. Logout
-const handleLogout = () => {
+  const handleLogout = () => {
     Alert.alert("Logout", "Are you sure you want to logout?", [
       { text: "Cancel", style: "cancel" },
       { 
@@ -155,16 +153,9 @@ const handleLogout = () => {
         style: "destructive", 
         onPress: async () => {
           try {
-            // 1. Delete token first
             await SecureStore.deleteItemAsync('token');
-            
-            // 2. Redirect specifically to the ADS screen
-            // using 'replace' so they can't go back
             router.replace('/ads' as any); 
-            
           } catch (error) {
-            console.error("Logout Error:", error);
-            // Fallback: Force navigation if secure store fails
             router.replace('/ads' as any);
           }
         }
@@ -172,15 +163,25 @@ const handleLogout = () => {
     ]);
   };
 
-  if (loading) return <ActivityIndicator style={{marginTop:50}} size="large" color="#06b6d4" />;
+  const getPlanName = () => {
+    const plan = profile.subscription?.plan;
+    if (plan === 'premium') return 'Premium Plan';
+    return 'Free Plan'; 
+  };
+
+  const getPlanColor = () => {
+    return profile.subscription?.plan === 'premium' ? THEME.gold : THEME.primary;
+  };
+
+  if (loading) return <ActivityIndicator style={{marginTop:50}} size="large" color={THEME.primary} />;
 
   return (
     <SafeAreaView edges={['top']} style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#fff" />
       
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         
-        {/* --- HEADER (Editable Image) --- */}
+        {/* --- HEADER --- */}
         <View style={styles.header}>
           <TouchableOpacity onPress={pickImage} disabled={!isEditing} style={styles.avatarContainer}>
             {profile?.profileImage ? (
@@ -198,18 +199,11 @@ const handleLogout = () => {
           </TouchableOpacity>
           
           <Text style={styles.greeting}>
-             {isEditing ? "Editing Profile" : `Hello Dr. ${profile.fullName ? profile.fullName.split(' ')[0] : 'Doctor'}`}
+             {isEditing ? "Edit Profile" : `Dr. ${profile.fullName ? profile.fullName.split(' ')[0] : 'User'}`}
           </Text>
-          {isEditing ? (
-             <TextInput 
-                style={styles.inputSpecialization} 
-                value={profile.specialization} 
-                onChangeText={(t) => setProfile({...profile, specialization: t})}
-                placeholder="Specialization"
-             />
-          ) : (
-             <Text style={styles.specialization}>{profile.specialization}</Text>
-          )}
+          
+          {/* ✅ SPECIALIZATION IS NOW READ-ONLY */}
+          <Text style={styles.specialization}>{profile.specialization || "General Practitioner"}</Text>
         </View>
 
          {/* --- DETAILS FORM --- */}
@@ -238,37 +232,46 @@ const handleLogout = () => {
             isEditing={isEditing} 
             onChange={(t: string) => setProfile({...profile, phone: t})} 
           />
-          
-          {/* Email is typically read-only */}
           <DetailRow label="Email" value={profile.email || ""} /> 
         </View>
 
         {/* --- SUBSCRIPTION CARD --- */}
         {!isEditing && (
             <View style={styles.subCard}>
-            <View style={styles.subHeader}>
-                <Clock size={20} color="#2563eb" style={{marginRight: 8}} />
-                <Text style={styles.subTitle}>{profile.subscriptionStatus || "Subscription: Trial"}</Text>
-            </View>
-            <Text style={styles.subStatus}>Status: {profile.status || "active"}</Text>
+                <View style={styles.subHeader}>
+                    <Clock size={20} color={getPlanColor()} style={{marginRight: 8}} />
+                    <Text style={styles.subTitle}>{getPlanName()}</Text>
+                </View>
+                <Text style={styles.subStatus}>
+                    Status: <Text style={{fontWeight:'bold', textTransform:'capitalize'}}>{profile.subscription?.status || "Active"}</Text>
+                </Text>
             </View>
         )}
 
         {/* --- MENU OPTIONS --- */}
         {!isEditing && (
             <View style={styles.menuContainer}>
-            <MenuOption icon={Lock} label="Change Password" color="#7c3aed" onPress={() => setPwdModalVisible(true)} />
-            <MenuOption icon={CreditCard} label="Manage Subscription" color="#2563eb" onPress={() => Alert.alert("Info", "Manage subscriptions via web portal.")} />
+                <MenuOption 
+                    icon={Lock} 
+                    label="Change Password" 
+                    color={THEME.primary} 
+                    onPress={() => setPwdModalVisible(true)} 
+                />
+                <MenuOption 
+                    icon={CreditCard} 
+                    label="Manage Subscription" 
+                    color={THEME.primary} 
+                    onPress={() => router.push('/subscription')} 
+                />
             </View>
         )}
 
         {/* --- FOOTER BUTTONS --- */}
         <View style={styles.footerActions}>
           {isEditing ? (
-             // SAVE & CANCEL BUTTONS
              <>
                 <TouchableOpacity style={styles.cancelBtn} onPress={() => setIsEditing(false)}>
-                    <X size={18} color="#64748b" style={{marginRight: 8}} />
+                    <X size={18} color={THEME.subtext} style={{marginRight: 8}} />
                     <Text style={styles.cancelText}>Cancel</Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={styles.saveBtn} onPress={handleSaveProfile} disabled={saving}>
@@ -281,7 +284,6 @@ const handleLogout = () => {
                 </TouchableOpacity>
              </>
           ) : (
-             // EDIT & LOGOUT BUTTONS
              <>
                 <TouchableOpacity style={styles.editProfileBtn} onPress={() => setIsEditing(true)}>
                     <Edit3 size={18} color="#fff" style={{marginRight: 8}} />
@@ -312,7 +314,7 @@ const handleLogout = () => {
 
                 <View style={styles.modalActions}>
                     <TouchableOpacity style={styles.modalCancel} onPress={() => setPwdModalVisible(false)}>
-                        <Text style={{color: '#64748b'}}>Cancel</Text>
+                        <Text style={{color: THEME.subtext}}>Cancel</Text>
                     </TouchableOpacity>
                     <TouchableOpacity style={styles.modalSave} onPress={handleChangePassword}>
                         <Text style={{color: '#fff', fontWeight:'600'}}>Change</Text>
@@ -350,7 +352,7 @@ const DetailRow = ({ label, value }: any) => (
   <View style={styles.detailRow}>
     <Text style={styles.detailLabel}>{label}</Text>
     <Text style={styles.detailSeparator}>:</Text>
-    <Text style={[styles.detailValue, {color: '#94a3b8'}]} numberOfLines={1}>{value || "N/A"}</Text>
+    <Text style={[styles.detailValue, {color: THEME.subtext}]} numberOfLines={1}>{value || "N/A"}</Text>
   </View>
 );
 
@@ -360,7 +362,7 @@ const MenuOption = ({ icon: Icon, label, color, onPress }: any) => (
       <Icon size={20} color={color} />
       <Text style={styles.menuText}>{label}</Text>
     </View>
-    <ChevronRight size={20} color="#94a3b8" />
+    <ChevronRight size={20} color={THEME.subtext} />
   </TouchableOpacity>
 );
 
@@ -373,42 +375,41 @@ const styles = StyleSheet.create({
   header: { alignItems: 'center', marginBottom: 30 },
   avatarContainer: { position: 'relative', marginBottom: 16 },
   avatar: { width: 100, height: 100, borderRadius: 50, backgroundColor: '#f1f5f9', borderWidth: 1, borderColor: '#e2e8f0' },
-  editBadge: { position: 'absolute', bottom: 0, right: 0, backgroundColor: '#2563eb', padding: 8, borderRadius: 20, borderWidth: 3, borderColor: '#fff' },
-  greeting: { fontSize: 20, fontWeight: '700', color: '#0f172a', marginBottom: 4 },
-  specialization: { fontSize: 14, color: '#64748b' },
-  inputSpecialization: { borderBottomWidth: 1, borderBottomColor: '#cbd5e1', width: 150, textAlign: 'center', fontSize: 14, color: '#0f172a' },
+  editBadge: { position: 'absolute', bottom: 0, right: 0, backgroundColor: THEME.primary, padding: 8, borderRadius: 20, borderWidth: 3, borderColor: '#fff' },
+  greeting: { fontSize: 20, fontWeight: '700', color: THEME.text, marginBottom: 4 },
+  specialization: { fontSize: 14, color: THEME.subtext },
 
   // Details
   detailsContainer: { marginBottom: 24 },
   detailRow: { flexDirection: 'row', marginBottom: 12, alignItems: 'center', height: 40 },
-  detailLabel: { flex: 4, fontSize: 14, color: '#64748b' },
-  detailSeparator: { flex: 1, fontSize: 14, color: '#64748b', textAlign: 'center' },
-  detailValue: { flex: 6, fontSize: 14, color: '#0f172a', fontWeight: '500' },
-  editInput: { flex: 6, borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 4, fontSize: 14, color: '#0f172a', backgroundColor: '#f8fafc' },
+  detailLabel: { flex: 4, fontSize: 14, color: THEME.subtext },
+  detailSeparator: { flex: 1, fontSize: 14, color: THEME.subtext, textAlign: 'center' },
+  detailValue: { flex: 6, fontSize: 14, color: THEME.text, fontWeight: '500' },
+  editInput: { flex: 6, borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 4, fontSize: 14, color: THEME.text, backgroundColor: '#f8fafc' },
 
   // Subscription
-  subCard: { backgroundColor: '#eff6ff', borderRadius: 12, padding: 16, marginBottom: 20, borderWidth: 1, borderColor: '#bfdbfe' },
+  subCard: { backgroundColor: THEME.light, borderRadius: 12, padding: 16, marginBottom: 20, borderWidth: 1, borderColor: THEME.border },
   subHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
-  subTitle: { fontSize: 14, fontWeight: '700', color: '#0f172a' },
-  subStatus: { fontSize: 12, color: '#475569', marginLeft: 28 },
+  subTitle: { fontSize: 14, fontWeight: '700', color: THEME.text },
+  subStatus: { fontSize: 12, color: THEME.subtext, marginLeft: 28 },
 
   // Menu
   menuContainer: { gap: 12, marginBottom: 30 },
   menuOption: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 16, backgroundColor: '#f8fafc', borderRadius: 12, borderWidth: 1, borderColor: '#e2e8f0' },
   menuLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  menuText: { fontSize: 15, fontWeight: '500', color: '#0f172a' },
+  menuText: { fontSize: 15, fontWeight: '500', color: THEME.text },
 
   // Footer Buttons
   footerActions: { flexDirection: 'row', gap: 12 },
-  editProfileBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#8b5cf6', padding: 14, borderRadius: 10 },
-  logoutBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#ef4444', padding: 14, borderRadius: 10 },
+  editProfileBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: THEME.primary, padding: 14, borderRadius: 10 },
+  logoutBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: THEME.danger, padding: 14, borderRadius: 10 },
   
-  saveBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#10b981', padding: 14, borderRadius: 10 },
+  saveBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: THEME.primary, padding: 14, borderRadius: 10 },
   cancelBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#f1f5f9', padding: 14, borderRadius: 10 },
   
   btnText: { color: '#fff', fontWeight: '600', fontSize: 16 },
   saveText: { color: '#fff', fontWeight: '600', fontSize: 16 },
-  cancelText: { color: '#64748b', fontWeight: '600', fontSize: 16 },
+  cancelText: { color: THEME.subtext, fontWeight: '600', fontSize: 16 },
 
   // Modal
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: 20 },
@@ -418,5 +419,5 @@ const styles = StyleSheet.create({
   modalInput: { borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 8, padding: 12, marginBottom: 16, fontSize: 16 },
   modalActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 12, marginTop: 10 },
   modalCancel: { padding: 12 },
-  modalSave: { backgroundColor: '#2563eb', paddingHorizontal: 20, paddingVertical: 12, borderRadius: 8 },
+  modalSave: { backgroundColor: THEME.primary, paddingHorizontal: 20, paddingVertical: 12, borderRadius: 8 },
 });
