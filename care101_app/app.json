@@ -1,11 +1,11 @@
 {
   "expo": {
-    "name": "carelink doctor app",
-    "slug": "carelink-doctor-app",
+    "name": "carelink",
+    "slug": "carelink_101",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "carelinkdoctorapp",
+    "scheme": "carelink",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
@@ -62,7 +62,7 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "3c296a21-755e-4eaf-9014-5e6446a6369c"
+        "projectId": "ba5b6baa-667b-49f9-a08a-4e230ea9507e"
       }
     }
   }
