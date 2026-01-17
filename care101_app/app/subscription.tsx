@@ -1,7 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, ActivityIndicator, StatusBar 
-} from 'react-native';
+import {View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, ActivityIndicator, StatusBar } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Check, ArrowLeft, Crown, XCircle, Calendar, ShieldCheck } from 'lucide-react-native';
@@ -11,7 +9,6 @@ import * as SecureStore from 'expo-secure-store';
 const API_URL = process.env.EXPO_PUBLIC_API_URL;
 const STRIPE_PUBLISHABLE_KEY = process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY;
 
-// ✅ THEME COLORS
 const THEME = {
   primary: '#0891b2', // Cyan-700
   secondary: '#06b6d4', // Cyan-500
