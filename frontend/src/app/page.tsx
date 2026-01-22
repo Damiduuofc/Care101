@@ -15,10 +15,13 @@ import {
   CarouselPrevious,
 } from "@/components/ui/carousel";
 import { motion, useScroll, useTransform } from "framer-motion";
-import  Header  from "@/components/layout/Header";
-import  Footer  from "@/components/layout/Footer";
+import Header from "@/components/layout/Header";
+import Footer from "@/components/layout/Footer";
 import AiAssistant from "@/components/layout/AiAssistant";
 
+// Define URLs
+// If API_URL is "https://.../api", BASE_URL is "https://..."
+const BASE_URL = process.env.NEXT_PUBLIC_API_URL?.replace('/api', '') || ''; 
 const API_URL = `${process.env.NEXT_PUBLIC_API_URL}/doctors/public`;
 
 export default function Home() {
@@ -26,19 +29,32 @@ export default function Home() {
   const y = useTransform(scrollY, [0, 500], [0, 200]);
   const opacity = useTransform(scrollY, [0, 300], [1, 0]);
 
-  // State to hold Real Database Data
   const [doctors, setDoctors] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Fetch Data from Backend
+  // ===============================================
+  // 1. FETCH DOCTORS
+  // ===============================================
   useEffect(() => {
     const fetchDoctors = async () => {
       try {
-        const res = await fetch(API_URL);
+        console.log("Fetching from:", API_URL);
+        
+        const res = await fetch(API_URL, {
+          method: "GET",
+          headers: {
+            "Content-Type": "application/json",
+            // ✅ FIX: Header to bypass Ngrok warning page
+            "ngrok-skip-browser-warning": "true",
+          },
+        });
+
         if (res.ok) {
           const data = await res.json();
           setDoctors(data);
-          console.log("Real Doctors Loaded:", data.length); // Debug log
+          console.log("Doctors Loaded:", data.length);
+        } else {
+            console.error("Server Error:", res.status);
         }
       } catch (error) {
         console.error("Failed to fetch doctors:", error);
@@ -49,9 +65,30 @@ export default function Home() {
     fetchDoctors();
   }, []);
 
+  // ===============================================
+  // 2. IMAGE URL HELPER (Handles Base64)
+  // ===============================================
+  const getProfileImage = (path: string) => {
+      if (!path) return null; // Frontend will show placeholder icon if null
+      
+      // ✅ Case 1: Base64 Image (Your DB has this)
+      if (path.startsWith("data:")) {
+          return path;
+      }
+      
+      // ✅ Case 2: External Link (Google/S3)
+      if (path.startsWith("http")) {
+          return path;
+      }
+      
+      // ✅ Case 3: Local File (in 'uploads' folder)
+      return `${BASE_URL}/uploads/${path}`; 
+  };
+
   return (
     <div className="flex flex-col min-h-screen bg-slate-50 font-sans selection:bg-cyan-100 selection:text-cyan-900">
       <Header />
+      
       {/* ================= HERO SECTION ================= */}
       <section className="relative h-[95vh] flex items-center justify-center overflow-hidden">
         <motion.div style={{ y, opacity }} className="absolute inset-0 z-0">
@@ -117,7 +154,6 @@ export default function Home() {
                 <CardContent className="p-8 flex items-center gap-6">
                   <div className="p-4 rounded-2xl bg-blue-50 text-blue-600"><Users className="w-8 h-8" /></div>
                   <div>
-                    {/* Shows real count from DB */}
                     <h3 className="text-3xl font-bold text-slate-800">{loading ? "..." : doctors.length}</h3>
                     <p className="font-semibold text-slate-600">Expert Doctors</p>
                     <p className="text-sm text-slate-400">Available now</p>
@@ -189,7 +225,9 @@ export default function Home() {
           </div>
         </div>
       </section>
-<AiAssistant />
+
+      <AiAssistant />
+
       {/* ================= REAL DOCTORS SECTION ================= */}
       <section className="py-24 bg-slate-900 text-white relative overflow-hidden">
         {/* Background Patterns */}
@@ -233,49 +271,53 @@ export default function Home() {
           {!loading && doctors.length > 0 && (
             <Carousel opts={{ align: "start", loop: true }} className="w-full">
                 <CarouselContent className="-ml-4">
-                {doctors.map((doctor) => (
-                    <CarouselItem key={doctor._id} className="pl-4 md:basis-1/2 lg:basis-1/3 xl:basis-1/4">
-                    <div className="group relative h-[420px] rounded-3xl overflow-hidden cursor-pointer bg-slate-800 border border-slate-700 hover:border-cyan-500/50 transition-colors">
-                        
-                        {/* Doctor Image */}
-                        <div className="h-full w-full relative">
-                            {doctor.profileImage ? (
-                                <img
-                                    src={doctor.profileImage} 
-                                    alt={doctor.name}
-                                    className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-110"
-                                />
-                            ) : (
-                                <div className="h-full w-full flex flex-col items-center justify-center bg-slate-800 text-slate-600">
-                                    <User className="h-20 w-20 mb-2" />
-                                    <span className="text-sm">No Image</span>
-                                </div>
-                            )}
-                        </div>
+                {doctors.map((doctor) => {
+                    const finalImage = getProfileImage(doctor.profileImage);
 
-                        {/* Overlay Gradient */}
-                        <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/60 to-transparent opacity-90 transition-opacity" />
-                        
-                        {/* Doctor Info */}
-                        <div className="absolute bottom-0 left-0 right-0 p-6 translate-y-2 group-hover:translate-y-0 transition-transform duration-300">
-                            <div className="bg-cyan-600 w-fit px-3 py-1 rounded-md text-xs font-bold uppercase tracking-wider mb-2">
-                                {doctor.specialization || "Doctor"}
-                            </div>
-                            <h3 className="text-2xl font-bold mb-1 text-white">{doctor.name}</h3>
-                            <p className="text-slate-300 text-sm mb-4 opacity-0 group-hover:opacity-100 transition-opacity duration-300 delay-100 line-clamp-2">
-                                {doctor.qualifications || "Specialist"}
-                            </p>
+                    return (
+                        <CarouselItem key={doctor._id} className="pl-4 md:basis-1/2 lg:basis-1/3 xl:basis-1/4">
+                        <div className="group relative h-[420px] rounded-3xl overflow-hidden cursor-pointer bg-slate-800 border border-slate-700 hover:border-cyan-500/50 transition-colors">
                             
-                            {/* Link to Booking with Pre-selection */}
-                            <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300 delay-150">
-                                <Link href={`/patient/appointments?preSelectedDocId=${doctor._id}`} className="w-full">
-                                    <Button size="sm" className="w-full bg-white text-slate-900 hover:bg-cyan-50">Book Now</Button>
-                                </Link>
+                            {/* Doctor Image */}
+                            <div className="h-full w-full relative">
+                                {finalImage ? (
+                                    <img
+                                        src={finalImage} 
+                                        alt={doctor.name}
+                                        className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-110"
+                                    />
+                                ) : (
+                                    <div className="h-full w-full flex flex-col items-center justify-center bg-slate-800 text-slate-600">
+                                        <User className="h-20 w-20 mb-2" />
+                                        <span className="text-sm">No Image</span>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Overlay Gradient */}
+                            <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/60 to-transparent opacity-90 transition-opacity" />
+                            
+                            {/* Doctor Info */}
+                            <div className="absolute bottom-0 left-0 right-0 p-6 translate-y-2 group-hover:translate-y-0 transition-transform duration-300">
+                                <div className="bg-cyan-600 w-fit px-3 py-1 rounded-md text-xs font-bold uppercase tracking-wider mb-2">
+                                    {doctor.specialization || "Doctor"}
+                                </div>
+                                <h3 className="text-2xl font-bold mb-1 text-white">{doctor.name}</h3>
+                                <p className="text-slate-300 text-sm mb-4 opacity-0 group-hover:opacity-100 transition-opacity duration-300 delay-100 line-clamp-2">
+                                    {doctor.qualifications || "Specialist"}
+                                </p>
+                                
+                                {/* Link to Booking with Pre-selection */}
+                                <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300 delay-150">
+                                    <Link href={`/patient/appointments?preSelectedDocId=${doctor._id}`} className="w-full">
+                                        <Button size="sm" className="w-full bg-white text-slate-900 hover:bg-cyan-50">Book Now</Button>
+                                    </Link>
+                                </div>
                             </div>
                         </div>
-                    </div>
-                    </CarouselItem>
-                ))}
+                        </CarouselItem>
+                    );
+                })}
                 </CarouselContent>
                 <div className="flex justify-end gap-2 mt-8">
                     <CarouselPrevious className="static translate-y-0 bg-slate-800 border-slate-700 hover:bg-cyan-500 hover:text-white" />
