@@ -35,7 +35,6 @@ export const chatWithAI = async (req, res) => {
 
     const today = new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
 
-    // ✅ FIX 2: Added "Symptom Mapping" to the prompt
     // This teaches the AI which department handles "Bleeding" if it can't find a Surgeon.
     const systemPrompt = `You are the Care101 Hospital Assistant AI. Today is ${today}.
 

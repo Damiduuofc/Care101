@@ -1,12 +1,9 @@
-import {
-  Stethoscope,
-  HeartPulse,
-  Brain,
-  Bone,
-  Baby,
-  Activity,
+import { 
+  Baby, Users, Scissors, Smile, Stethoscope, Microscope, Brain, Heart, 
+  Bone, Activity, Eye, Syringe, Pill, Apple,HeartPulse,
   type LucideIcon,
 } from "lucide-react";
+
 
 export type Service = {
   name: string;
@@ -47,134 +44,136 @@ export const services: Service[] = [
   },
 ];
 
-export type Department = {
-  slug: string;
-  name: string;
-  description: string;
-  longDescription: string;
-  services: string[];
-  operatingHours: string;
-  doctors: Doctor[];
-};
 
-export const departments: Department[] = [
+
+// lib/data.ts
+
+
+export const departments = [
+  // --- CHILD & MATERNAL ---
   {
-    slug: "cardiology",
-    name: "Cardiology",
-    description: "Expert care for heart and vascular conditions.",
-    longDescription: "Our Cardiology department offers state-of-the-art diagnostic and treatment services for all types of heart conditions. From preventative care and risk assessment to advanced surgical procedures, our team of renowned cardiologists is dedicated to your heart health.",
-    services: ["Echocardiography", "Stress Testing", "Cardiac Catheterization", "Heart Failure Management"],
-    operatingHours: "Mon-Fri, 8:00 AM - 5:00 PM",
-    doctors: [
-      { id: 1, name: "Dr. Emily Carter", specialty: "Cardiology", qualifications: "MD, FACC", imageId: "doctor-1" },
-      { id: 7, name: "Dr. Isabella Rodriguez", specialty: "Cardiology", qualifications: "MD, PhD", imageId: "doctor-7" },
-    ]
+    slug: "pediatrics",
+    name: "Paediatrics & Child Care",
+    description: "Comprehensive care for infants and children including neonatology, pediatric cardiology, neurology, and surgery.",
+    services: ["Neonatology", "Paediatric Surgery", "Paediatric Cardiology", "Paediatric Neurology", "Paediatric Nephrology"]
+  },
+  {
+    slug: "obgyn",
+    name: "Obstetrics & Gynaecology (VOG)",
+    description: "Women's health services including maternity, reproductive health, and gynecological onco-surgery.",
+    services: ["Maternity Care", "Gynaecological Oncology", "Reproductive Health", "Prenatal Care"]
+  },
+
+  // --- SURGERY GROUPS ---
+  {
+    slug: "surgery",
+    name: "General & Transplant Surgery",
+    description: "Advanced surgical interventions including vascular, transplant, and hepatopancreaticobiliary surgeries.",
+    services: ["General Surgery", "Transplant Surgery", "Vascular Surgery", "Hepatopancreaticobiliary Surgeon"]
+  },
+  {
+    slug: "plastic-surgery",
+    name: "Plastic & Reconstructive Surgery",
+    description: "Aesthetic and reconstructive procedures performed by specialized plastic surgeons.",
+    services: ["Cosmetic Surgery", "Reconstructive Surgery", "Burn Care"]
+  },
+
+  // --- SPECIALIZED MEDICINE ---
+  {
+    slug: "general-medicine",
+    name: "General Medicine & Physicians",
+    description: "Primary healthcare, elderly care, and community medicine for overall wellness.",
+    services: ["General Medicine", "Elderly Care", "Community Medicine", "Critical Care"]
+  },
+  {
+    slug: "dermatology",
+    name: "Dermatology & Skin Care",
+    description: "Diagnosis and treatment of skin, hair, and nail conditions.",
+    services: ["Clinical Dermatology", "Cosmetic Dermatology", "Skin Surgery"]
+  },
+  {
+    slug: "endocrinology",
+    name: "Endocrinology & Diabetes",
+    description: "Management of hormonal disorders, diabetes, and thyroid conditions.",
+    services: ["Diabetes Care", "Thyroid Disorders", "Hormonal Therapy"]
+  },
+  {
+    slug: "gastroenterology",
+    name: "Gastroenterology",
+    description: "Care for the digestive system, liver, and gastrointestinal tract.",
+    services: ["Endoscopy", "Liver Disease (Hepatology)", "Gastroenterological Surgery"]
+  },
+  {
+    slug: "urology",
+    name: "Urology & Renal Science",
+    description: "Treatment for urinary tract systems and male reproductive organs.",
+    services: ["Urology", "Nephrology (Kidney)", "Renal Transplant"]
+  },
+  
+  // --- HEAD, NECK & SENSORY ---
+  {
+    slug: "dental",
+    name: "Dental & Maxillofacial",
+    description: "Complete oral healthcare including orthodontics, restorative dentistry, and OMF surgery.",
+    services: ["Dental Surgery", "Orthodontics", "Restorative Dentistry", "OMF Surgery"]
+  },
+  {
+    slug: "ent",
+    name: "Ear, Nose & Throat (ENT)",
+    description: "Head and neck surgery and medical treatment for ENT disorders.",
+    services: ["Head & Neck Surgery", "ENT Services", "Audiology"]
+  },
+  {
+    slug: "ophthalmology",
+    name: "Eye Surgeons (Ophthalmology)",
+    description: "Advanced vision care and eye surgery.",
+    services: ["Cataract Surgery", "Vision Correction", "Eye Surgery"]
+  },
+
+  // --- CHRONIC & CRITICAL ---
+  {
+    slug: "oncology",
+    name: "Oncology (Cancer Center)",
+    description: "Integrated cancer care including surgical, medical, and hemato-oncology.",
+    services: ["Onco-Surgery", "Hemato-Oncology", "Medical Oncology", "Gynecologist Onco-Surgeon"]
   },
   {
     slug: "neurology",
-    name: "Neurology",
-    description: "Advanced treatment for brain and nervous system disorders.",
-    longDescription: "The Neurology department specializes in the diagnosis and treatment of disorders affecting the brain, spinal cord, and nerves. We handle conditions such as stroke, epilepsy, multiple sclerosis, and Parkinson's disease with a multidisciplinary approach.",
-    services: ["EEG & EMG", "Stroke Care", "Headache Clinic", "Movement Disorder Treatment"],
-    operatingHours: "Mon-Fri, 9:00 AM - 6:00 PM",
-    doctors: [
-      { id: 2, name: "Dr. James Anderson", specialty: "Neurology", qualifications: "MD, PhD", imageId: "doctor-2" }
-    ]
+    name: "Neurology & Neurosurgery",
+    description: "Brain and spine care provided by neurologists and neurosurgeons.",
+    services: ["Clinical Neurology", "Neuro-Surgery", "Neurophysiology"]
+  },
+  {
+    slug: "cardiology",
+    name: "Cardiology & Chest Medicine",
+    description: "Heart and lung care, including thoracic medicine and respiratory health.",
+    services: ["Cardiology", "Chest Physicians", "Thoracic Medicine"]
   },
   {
     slug: "orthopedics",
-    name: "Orthopedics",
-    description: "Comprehensive care for bones, joints, and muscles.",
-    longDescription: "From sports injuries to joint replacements, our Orthopedics department provides a full spectrum of care for musculoskeletal conditions. Our surgeons are leaders in minimally invasive techniques, ensuring faster recovery times.",
-    services: ["Joint Replacement", "Sports Medicine", "Spine Surgery", "Trauma Care"],
-    operatingHours: "Mon-Fri, 8:30 AM - 5:30 PM",
-    doctors: [
-      { id: 4, name: "Dr. Benjamin Lee", specialty: "Orthopedics", qualifications: "MD, FRCS", imageId: "doctor-4" }
-    ]
+    name: "Orthopaedics & Rheumatology",
+    description: "Bone, joint, and muscle care including sports medicine and rehabilitation.",
+    services: ["Orthopaedic Surgery", "Rheumatology", "Sports Medicine", "Rehabilitation"]
   },
   {
-    slug: "pediatrics",
-    name: "Pediatrics",
-    description: "Specialized care for infants, children, and adolescents.",
-    longDescription: "Our Pediatrics team is committed to providing a friendly and comforting environment for our youngest patients. We offer everything from routine check-ups and immunizations to specialized care for complex childhood illnesses.",
-    services: ["Well-Child Visits", "Vaccinations", "Developmental Screening", "Adolescent Medicine"],
-    operatingHours: "Mon-Sat, 8:00 AM - 7:00 PM",
-    doctors: [
-      { id: 3, name: "Dr. Olivia Garcia", specialty: "Pediatrics", qualifications: "MD, FAAP", imageId: "doctor-3" }
-    ]
+    slug: "mental-health",
+    name: "Psychiatry & Counselling",
+    description: "Mental health support, psychology, and behavioral therapy.",
+    services: ["Psychiatry", "Counseling", "Psychology"]
+  },
+  
+  // --- DIAGNOSTICS & OTHERS ---
+  {
+    slug: "diagnostics",
+    name: "Radiology & Laboratory",
+    description: "Advanced imaging and lab services.",
+    services: ["Radiology", "Interventional Radiology", "Haematology", "Microbiology"]
   },
   {
-    slug: "oncology",
-    name: "Oncology",
-    description: "Compassionate and advanced cancer treatment.",
-    longDescription: "The Oncology department provides comprehensive cancer care, from diagnosis to treatment and survivorship. We utilize the latest in chemotherapy, radiation therapy, and immunotherapy, all delivered with a patient-centered focus.",
-    services: ["Chemotherapy", "Radiation Therapy", "Immunotherapy", "Genetic Counseling"],
-    operatingHours: "Mon-Fri, 8:00 AM - 5:00 PM",
-    doctors: [
-      { id: 5, name: "Dr. Sophia Martinez", specialty: "Oncology", qualifications: "MD", imageId: "doctor-5" }
-    ]
-  },
-  {
-    slug: "general-surgery",
-    name: "General Surgery",
-    description: "A wide range of surgical procedures.",
-    longDescription: "Our General Surgery unit is equipped to handle a broad range of conditions. Our skilled surgeons perform both emergency and elective procedures with precision and care, using advanced laparoscopic and robotic techniques.",
-    services: ["Appendectomy", "Hernia Repair", "Gallbladder Removal", "Colon Surgery"],
-    operatingHours: "24/7 for emergencies",
-    doctors: [
-      { id: 6, name: "Dr. Michael Williams", specialty: "General Surgery", qualifications: "MD, FACS", imageId: "doctor-6" }
-    ]
-  },
-   {
-    slug: "dermatology",
-    name: "Dermatology",
-    description: "Complete skin care services.",
-    longDescription: "Our Dermatology department addresses all conditions related to skin, hair, and nails. We offer medical, surgical, and cosmetic dermatology services to help you achieve and maintain healthy skin.",
-    services: ["Acne Treatment", "Skin Cancer Screening", "Cosmetic Procedures", "Eczema Management"],
-    operatingHours: "Mon-Fri, 9:00 AM - 5:00 PM",
-    doctors: [
-       { id: 8, name: "Dr. David Chen", specialty: "Dermatology", qualifications: "MD", imageId: "doctor-8" }
-    ]
+    slug: "nutrition",
+    name: "Nutrition & Dietetics",
+    description: "Personalized dietary planning and nutritional support.",
+    services: ["Clinical Nutrition", "Diet Planning", "Weight Management"]
   }
 ];
 
-export type Doctor = {
-  id: number;
-  name: string;
-  specialty: string;
-  qualifications: string;
-  imageId: string;
-};
-
-export const allDoctors: Doctor[] = departments.flatMap(dep => dep.doctors).reduce((acc: Doctor[], current) => {
-  if (!acc.find(item => item.id === current.id)) {
-    acc.push(current);
-  }
-  return acc;
-}, []);
-
-export const featuredDoctors: Doctor[] = allDoctors.slice(0, 4);
-
-export type Testimonial = {
-  name: string;
-  quote: string;
-};
-
-export const testimonials: Testimonial[] = [
-  {
-    name: "Sarah L.",
-    quote: "The care I received at MediServe Hub was exceptional. The doctors and nurses were so attentive and made me feel completely at ease during a stressful time.",
-  },
-  {
-    name: "John D.",
-    quote: "From the moment I walked in, I was impressed by the professionalism and friendliness of the staff. The facility is modern and clean. Highly recommended!",
-  },
-  {
-    name: "Maria G.",
-    quote: "Dr. Carter saved my life. Her expertise and compassionate approach are second to none. I'm forever grateful to the entire cardiology team.",
-  },
-  {
-    name: "David P.",
-    quote: "My son's treatment in the pediatric ward was fantastic. They have a wonderful way with children and made the experience as positive as possible.",
-  },
-];

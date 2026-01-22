@@ -15,9 +15,11 @@ import {
 import { Search, Filter, MapPin, Star, Calendar, User, Loader2 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { departments } from '@/lib/data'; 
-import  Header  from "@/components/layout/Header";
-import  Footer  from "@/components/layout/Footer";
+import Header from "@/components/layout/Header";
+import Footer from "@/components/layout/Footer";
 
+// ✅ 1. Define URL Constants
+const BASE_URL = process.env.NEXT_PUBLIC_API_URL?.replace('/api', '') || ''; 
 const API_URL = `${process.env.NEXT_PUBLIC_API_URL}/doctors/public`;
 
 export default function DoctorsPage() {
@@ -26,17 +28,25 @@ export default function DoctorsPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [specialtyFilter, setSpecialtyFilter] = useState('all');
 
+  // ✅ 2. Fetch with Ngrok Headers
   useEffect(() => {
     const fetchDoctors = async () => {
       try {
-        const res = await fetch(API_URL, { cache: 'no-store' });
+        const res = await fetch(API_URL, { 
+          cache: 'no-store',
+          headers: {
+            "Content-Type": "application/json",
+            "ngrok-skip-browser-warning": "true", // <--- THE FIX
+          } 
+        });
+
         if (res.ok) {
             const data = await res.json();
             console.log("Doctors Loaded:", data.length);
             setDoctors(data);
         }
       } catch (error) {
-        console.error("Failed to load doctors");
+        console.error("Failed to load doctors", error);
       } finally {
         setLoading(false);
       }
@@ -44,31 +54,29 @@ export default function DoctorsPage() {
     fetchDoctors();
   }, []);
 
-  // ✅ FIXED: Simplified and working filter
+  // ✅ 3. Image Helper (Handles Base64, URLs, and Filenames)
+  const getProfileImage = (path: string) => {
+      if (!path) return null;
+      if (path.startsWith("data:")) return path; // Base64
+      if (path.startsWith("http")) return path;  // External URL
+      return `${BASE_URL}/uploads/${path}`;      // Local Filename
+  };
+
   const filteredDoctors = useMemo(() => {
     const filtered = doctors.filter(doctor => {
-      // 1. Search Logic
       const doctorName = (doctor.name || "").toLowerCase().trim();
       const search = searchTerm.toLowerCase().trim();
       const matchesSearch = !search || doctorName.includes(search);
       
-      // 2. Specialty Logic
-      if (specialtyFilter === 'all') {
-        return matchesSearch;
-      }
+      if (specialtyFilter === 'all') return matchesSearch;
       
       const docSpecialty = (doctor.specialization || "").toLowerCase().trim();
       const selectedSpecialty = specialtyFilter.toLowerCase().trim();
       
-      const exactMatch = docSpecialty === selectedSpecialty;
-      const containsMatch = docSpecialty.includes(selectedSpecialty) || selectedSpecialty.includes(docSpecialty);
-      
-      const matchesSpecialty = exactMatch || containsMatch;
+      const matchesSpecialty = docSpecialty.includes(selectedSpecialty) || selectedSpecialty.includes(docSpecialty);
                                
       return matchesSearch && matchesSpecialty;
     });
-    
-    console.log(`Filtered: ${filtered.length} doctors`);
     return filtered;
   }, [searchTerm, specialtyFilter, doctors]);
 
@@ -128,8 +136,6 @@ export default function DoctorsPage() {
                 </Select>
               </div>
             </div>
-            
-       
           </Card>
         </motion.div>
       </div>
@@ -143,79 +149,77 @@ export default function DoctorsPage() {
              </div>
           ) : filteredDoctors.length > 0 ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
-              {filteredDoctors.map((doctor, index) => (
-                <motion.div 
-                  key={`${doctor._id}-${index}`}
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: index * 0.1 }}
-                >
-                  <Card className="h-full border-0 shadow-md hover:shadow-2xl transition-all duration-300 group overflow-hidden rounded-3xl bg-white flex flex-col">
-                    
-                    <div className="relative h-64 w-full bg-slate-100 flex items-center justify-center overflow-hidden">
-                      {doctor.profileImage ? (
-                        <img
-                          src={doctor.profileImage.startsWith('data:') 
-                                ? doctor.profileImage 
-                                : `data:image/jpeg;base64,${doctor.profileImage}`}
-                          alt={doctor.name}
-                          className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
-                          onError={(e) => {
-                            e.currentTarget.style.display = 'none';
-                            const fallback = e.currentTarget.nextElementSibling;
-                            if (fallback) fallback.classList.remove('hidden');
-                          }}
-                        />
-                      ) : null}
-                      
-                      <div className={`absolute inset-0 flex items-center justify-center ${doctor.profileImage ? 'hidden' : ''}`}>
-                         <User className="h-20 w-20 text-slate-300" />
-                      </div>
-                      
-                      <div className="absolute top-4 right-4 bg-white/90 backdrop-blur text-xs font-bold px-3 py-1 rounded-full text-cyan-700 shadow-sm z-10">
-                        Available
-                      </div>
-                    </div>
+              {filteredDoctors.map((doctor, index) => {
+                // Get the correct image source
+                const finalImage = getProfileImage(doctor.profileImage);
 
-                    <CardContent className="p-6 flex-grow">
-                      <div className="flex justify-between items-start mb-2">
-                        <div>
-                          <p className="text-cyan-600 text-sm font-bold tracking-wide uppercase mb-1">
-                            {doctor.specialization}
-                          </p>
-                          <h3 className="text-xl font-bold text-slate-900 leading-tight">
-                            {doctor.name}
-                          </h3>
-                        </div>
-                        <div className="flex items-center gap-1 bg-yellow-50 px-2 py-1 rounded-md">
-                           <Star className="w-3 h-3 text-yellow-500 fill-yellow-500" />
-                           <span className="text-xs font-bold text-yellow-700">4.9</span>
+                return (
+                  <motion.div 
+                    key={`${doctor._id}-${index}`}
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: index * 0.1 }}
+                  >
+                    <Card className="h-full border-0 shadow-md hover:shadow-2xl transition-all duration-300 group overflow-hidden rounded-3xl bg-white flex flex-col">
+                      
+                      <div className="relative h-64 w-full bg-slate-100 flex items-center justify-center overflow-hidden">
+                        {finalImage ? (
+                          <img
+                            src={finalImage}
+                            alt={doctor.name}
+                            className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+                          />
+                        ) : (
+                          <div className="h-full w-full flex flex-col items-center justify-center bg-slate-100">
+                             <User className="h-20 w-20 text-slate-300" />
+                          </div>
+                        )}
+                        
+                        <div className="absolute top-4 right-4 bg-white/90 backdrop-blur text-xs font-bold px-3 py-1 rounded-full text-cyan-700 shadow-sm z-10">
+                          Available
                         </div>
                       </div>
 
-                      <p className="text-sm text-slate-500 mb-4 line-clamp-2">
-                        {doctor.qualifications || "Specialist Doctor"}
-                      </p>
+                      <CardContent className="p-6 flex-grow">
+                        <div className="flex justify-between items-start mb-2">
+                          <div>
+                            <p className="text-cyan-600 text-sm font-bold tracking-wide uppercase mb-1">
+                              {doctor.specialization}
+                            </p>
+                            <h3 className="text-xl font-bold text-slate-900 leading-tight">
+                              {doctor.name}
+                            </h3>
+                          </div>
+                          <div className="flex items-center gap-1 bg-yellow-50 px-2 py-1 rounded-md">
+                             <Star className="w-3 h-3 text-yellow-500 fill-yellow-500" />
+                             <span className="text-xs font-bold text-yellow-700">4.9</span>
+                          </div>
+                        </div>
 
-                      <div className="flex items-center gap-2 text-xs text-slate-400 mb-6">
-                        <MapPin className="w-3 h-3" />
-                        <span>Care 101 Hospital</span>
-                      </div>
-                    </CardContent>
+                        <p className="text-sm text-slate-500 mb-4 line-clamp-2">
+                          {doctor.qualifications || "Specialist Doctor"}
+                        </p>
 
-                    <CardFooter className="p-6 pt-0 mt-auto">
-                      <Link 
-                        href={`/patient/appointments?preSelectedDocId=${doctor._id}`} 
-                        className="w-full"
-                      >
-                        <Button className="w-full bg-slate-50 text-slate-900 hover:bg-cyan-500 hover:text-white border border-slate-200 transition-all font-semibold h-11 rounded-xl group-hover:shadow-lg shadow-cyan-200">
-                          <Calendar className="w-4 h-4 mr-2" /> Book Visit
-                        </Button>
-                      </Link>
-                    </CardFooter>
-                  </Card>
-                </motion.div>
-              ))}
+                        <div className="flex items-center gap-2 text-xs text-slate-400 mb-6">
+                          <MapPin className="w-3 h-3" />
+                          <span>Care 101 Hospital</span>
+                        </div>
+                      </CardContent>
+
+                      <CardFooter className="p-6 pt-0 mt-auto">
+                        <Link 
+                          href={`/patient/appointments?preSelectedDocId=${doctor._id}`} 
+                          className="w-full"
+                        >
+                          <Button className="w-full bg-slate-50 text-slate-900 hover:bg-cyan-500 hover:text-white border border-slate-200 transition-all font-semibold h-11 rounded-xl group-hover:shadow-lg shadow-cyan-200">
+                            <Calendar className="w-4 h-4 mr-2" /> Book Visit
+                          </Button>
+                        </Link>
+                      </CardFooter>
+                    </Card>
+                  </motion.div>
+                );
+              })}
             </div>
           ) : (
             <div className="text-center py-20 bg-white rounded-3xl shadow-sm border border-slate-100">

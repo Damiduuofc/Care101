@@ -1,6 +1,11 @@
 import express from "express";
-// ✅ IMPORT CORRECT NAMES (Matches Controller)
-import { registerDoctor, registerPatient, login } from "../controllers/authController.js";
+// ✅ FIXED: Added 'registerDoctorsBulk' to the import list
+import { 
+  registerDoctor, 
+  registerPatient, 
+  login, 
+  registerDoctorsBulk 
+} from "../controllers/authController.js";
 
 const router = express.Router();
 
@@ -8,15 +13,19 @@ const router = express.Router();
 // AUTH ROUTES
 // ==========================================
 
-// 1. Register Doctor
+// 1. Register Doctor (Single)
 // Endpoint: POST /api/auth/register-doctor
 router.post("/register-doctor", registerDoctor);
 
-// 2. Register Patient
+// 2. Register Doctors (Bulk - 150+ List)
+// Endpoint: POST /api/auth/register-doctors-bulk
+router.post("/register-doctors-bulk", registerDoctorsBulk);
+
+// 3. Register Patient
 // Endpoint: POST /api/auth/register-patient
 router.post("/register-patient", registerPatient);
 
-// 3. Login
+// 4. Login
 // Endpoint: POST /api/auth/login
 router.post("/login", login);
 
