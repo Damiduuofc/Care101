@@ -3,68 +3,33 @@ import Patient from "../models/Patient.js";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 
-// ==========================================
-// 1. REGISTER DOCTOR
-// ==========================================
+// 1. REGISTER SINGLE DOCTOR
 export const registerDoctor = async (req, res) => {
   try {
-    // 1. Destructure with Frontend Field Names
-    const { 
-      fullName,              // Frontend sends 'fullName'
-      email, 
-      password, 
-      specialization,
-      nicNumber,             // Frontend sends 'nicNumber'
-      phoneNumber, 
-      slmcRegistrationNumber,// Frontend sends 'slmcRegistrationNumber'
-      nameWithInitials
-    } = req.body;
+    const { fullName, email, password, specialization, nicNumber, phoneNumber, slmcRegistrationNumber, nameWithInitials } = req.body;
 
-    // 2. Check if user exists in EITHER collection
     const existingDoctor = await Doctor.findOne({ email });
-    const existingPatient = await Patient.findOne({ email });
+    if (existingDoctor) return res.status(400).json({ message: "Doctor already exists." });
 
-    if (existingDoctor || existingPatient) {
-      return res.status(400).json({ message: "User with this email already exists." });
-    }
-
-    // 3. Hash Password
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
-    // 4. Create Doctor (Map Frontend fields to Schema fields)
     const newDoctor = new Doctor({
-      name: fullName,                // Map fullName -> name
+      name: fullName,
       email,
       password: hashedPassword,
       specialization,
-      nic: nicNumber,                // Map nicNumber -> nic
-      phone: phoneNumber,            // Map phoneNumber -> phone
-      slmcReg: slmcRegistrationNumber, // Map -> slmcReg
-      nameWithInitials,
-      // Subscription defaults are handled by the Mongoose Schema
+      nic: nicNumber,
+      phone: phoneNumber,
+      slmcReg: slmcRegistrationNumber,
+      nameWithInitials
     });
 
     await newDoctor.save();
 
-    // 5. Create Token
-    const token = jwt.sign(
-      { id: newDoctor._id, role: 'doctor' }, 
-      process.env.JWT_SECRET, 
-      { expiresIn: "30d" }
-    );
+    const token = jwt.sign({ id: newDoctor._id, role: 'doctor' }, process.env.JWT_SECRET, { expiresIn: "30d" });
 
-    res.status(201).json({ 
-      token, 
-      user: { 
-        id: newDoctor._id, 
-        name: newDoctor.name, 
-        email: newDoctor.email,
-        role: "doctor"
-      },
-      message: "Doctor registered successfully"
-    });
-
+    res.status(201).json({ token, user: { id: newDoctor._id, name: newDoctor.name, role: "doctor" }, message: "Doctor registered successfully" });
   } catch (error) {
     console.error("Register Error:", error);
     res.status(500).json({ message: "Server Error" });
@@ -189,5 +154,33 @@ export const login = async (req, res) => {
   } catch (error) {
     console.error("Login Error:", error);
     res.status(500).json({ message: "Server Error" });
+  }
+};
+
+
+// 2. REGISTER DOCTORS BULK (For your JSON list)
+export const registerDoctorsBulk = async (req, res) => {
+  try {
+    const doctorsList = req.body;
+    if (!Array.isArray(doctorsList)) return res.status(400).json({ message: "Input must be an array." });
+
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash("Damidu12", salt);
+
+    const doctorsWithHashedPassword = doctorsList.map(doc => ({
+      ...doc,
+      password: hashedPassword,
+      // Map JSON fields to Schema if needed, assuming JSON matches Schema for bulk
+    }));
+
+    // ordered: false allows successful inserts even if some fail (duplicates)
+    const result = await Doctor.insertMany(doctorsWithHashedPassword, { ordered: false });
+
+    res.status(201).json({ message: "Bulk import successful!", count: result.length });
+  } catch (error) {
+    if (error.code === 11000) {
+        return res.status(400).json({ message: "Import partial/failed: Some emails or NICs already exist." });
+    }
+    res.status(500).json({ message: error.message });
   }
 };

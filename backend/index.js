@@ -27,11 +27,15 @@ const __dirname = path.resolve();
    MIDDLEWARE
 ========================= */
 
-// ✅ Allow ALL clients (APK, Expo, Browser, ngrok)
+// ✅ CORS FIX: Added "ngrok-skip-browser-warning" to allowedHeaders
 app.use(cors({
   origin: "*",
-  methods: ["GET", "POST", "PUT", "DELETE"],
-  allowedHeaders: ["Content-Type", "Authorization"]
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"], // Added OPTIONS for safety
+  allowedHeaders: [
+    "Content-Type", 
+    "Authorization", 
+    "ngrok-skip-browser-warning" // <--- THIS IS THE FIX
+  ]
 }));
 
 // Increase payload size (images, files)

@@ -24,7 +24,7 @@ const deleteAllDoctors = async () => {
     console.log("✅ Connected.");
 
     // 3. Delete
-    const result = await Doctor.deleteMany({});
+    const result = await doctors.deleteMany({});
     console.log(`🗑️  DELETED ${result.deletedCount} doctors.`);
 
     process.exit();

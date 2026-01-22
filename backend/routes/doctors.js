@@ -9,15 +9,18 @@ const router = express.Router();
 // ==========================================
 router.get("/public", async (req, res) => {
   try {
-    // 1. Fetch data including profileImage
+    // 1. Fetch data: Selecting specific fields to match your DB
     const doctors = await Doctor.find().select(
-      "name fullName specialization qualifications profileImage mobileNumber _id"
+      "name fullName nameWithInitials specialization qualifications profileImage mobileNumber phone _id"
     );
     
     // 2. Format data
     const formattedDoctors = doctors.map(doc => {
       // Logic to pick the best name available
-      const displayName = doc.fullName || doc.name || "Unknown Doctor";
+      const displayName = doc.fullName || doc.nameWithInitials || doc.name || "Unknown Doctor";
+
+      // Logic to pick the phone number (DB has 'phone', code might look for 'mobileNumber')
+      const displayPhone = doc.mobileNumber || doc.phone || "N/A";
 
       return {
         _id: doc._id,
@@ -25,11 +28,10 @@ router.get("/public", async (req, res) => {
         specialization: doc.specialization || "General",
         qualifications: doc.qualifications || "Medical Practitioner",
         
-        // ✅ CRITICAL CHECK: Ensure image exists, otherwise send empty string
-        // This prevents "undefined" errors on the frontend
+        // Pass the image string directly (whether it's base64 or a filename)
         profileImage: doc.profileImage ? doc.profileImage : "", 
         
-        mobileNumber: doc.mobileNumber || "N/A"
+        mobileNumber: displayPhone
       };
     });
 
@@ -41,17 +43,15 @@ router.get("/public", async (req, res) => {
   }
 });
 
-// ... (Keep your other routes /list, /:id, and PUT /:id exactly as they are) ...
-
 // ==========================================
 // 2. GET DOCTOR LIST (Authenticated)
 // ==========================================
 router.get("/list", auth, async (req, res) => {
   try {
-    const doctors = await Doctor.find().select("name fullName specialization qualifications profileImage _id");
+    const doctors = await Doctor.find().select("name fullName nameWithInitials specialization qualifications profileImage _id");
     const formattedDoctors = doctors.map(doc => ({
       _id: doc._id,
-      name: doc.fullName || doc.name || "Unknown Doctor", 
+      name: doc.fullName || doc.nameWithInitials || doc.name || "Unknown Doctor", 
       specialization: doc.specialization || "General",
       qualifications: doc.qualifications || "",
       profileImage: doc.profileImage || "" 
@@ -72,36 +72,14 @@ router.get("/:id", async (req, res) => {
 
     res.json({
       _id: doctor._id,
-      name: doctor.fullName || doctor.name,
+      name: doctor.fullName || doctor.nameWithInitials || doctor.name,
       specialization: doctor.specialization,
       qualifications: doctor.qualifications,
       profileImage: doctor.profileImage || "",
-      mobileNumber: doctor.mobileNumber,
+      mobileNumber: doctor.mobileNumber || doctor.phone || "N/A",
     });
   } catch (err) {
     if (err.kind === 'ObjectId') return res.status(404).json({ msg: "Doctor not found" });
-    res.status(500).send("Server Error");
-  }
-});
-
-// ==========================================
-// 4. UPDATE DOCTOR (Admin/Manual)
-// ==========================================
-router.put("/:id", auth, async (req, res) => {
-  try {
-    const { fullName, specialization, qualifications, profileImage, mobileNumber } = req.body;
-    let doctor = await Doctor.findById(req.params.id);
-    if (!doctor) return res.status(404).json({ msg: "Doctor not found" });
-
-    if (fullName) doctor.fullName = fullName;
-    if (specialization) doctor.specialization = specialization;
-    if (qualifications) doctor.qualifications = qualifications;
-    if (profileImage) doctor.profileImage = profileImage;
-    if (mobileNumber) doctor.mobileNumber = mobileNumber;
-
-    await doctor.save();
-    res.json({ msg: "Doctor Updated Successfully", doctor });
-  } catch (err) {
     res.status(500).send("Server Error");
   }
 });
