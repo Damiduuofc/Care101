@@ -22,11 +22,11 @@ import { useForm, Controller } from "react-hook-form";
 import { z } from "zod";
 
 // 2. Import Auth Context
-import { useAuth } from '../context/auth'; 
+import { useAuth } from '../context/auth';
 
 // 3. Define Validation Schema
 const loginSchema = z.object({
-  email: z.string().min(1, "Email is required").email("Invalid email address"),
+  email: z.string().min(1, "Email or Username is required"),
   password: z.string().min(1, "Password is required"),
 });
 
@@ -36,8 +36,8 @@ export default function LoginScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const router = useRouter();
-  
-  const { signIn } = useAuth(); 
+
+  const { signIn } = useAuth();
 
   // Assets
   const logoSource = require('../assets/logo1.png');
@@ -58,7 +58,7 @@ export default function LoginScreen() {
       // Attempt to sign in
       await signIn(data.email, data.password);
       // ✅ Success: The 'signIn' function in auth.tsx handles the redirect.
-      
+
     } catch (error: any) {
       console.log("Login Error in UI:", error);
 
@@ -66,8 +66,8 @@ export default function LoginScreen() {
 
       if (error.message) {
         errorMessage = error.message;
-      } 
-      
+      }
+
       // Handle Network Errors specifically
       if (error.toString().includes('Network request failed') || error.message.includes('fetch')) {
         errorMessage = "Cannot connect to server. Please check your IP address in auth.tsx and your internet connection.";
@@ -87,9 +87,9 @@ export default function LoginScreen() {
       render={({ field: { onChange, onBlur, value } }) => (
         <View style={styles.inputContainer}>
           <Text style={styles.label}>
-            {name === 'email' ? 'Email Address' : 'Password'}
+            {name === 'email' ? 'Email or Username' : 'Password'}
           </Text>
-          
+
           <View style={[styles.inputWrapper, errors[name as keyof LoginFormValues] && styles.inputError]}>
             <Ionicons name={icon} size={20} color="#64748b" style={styles.inputIcon} />
             <TextInput
@@ -116,7 +116,7 @@ export default function LoginScreen() {
               </TouchableOpacity>
             )}
           </View>
-          
+
           {errors[name as keyof LoginFormValues] && (
             <Text style={styles.errorText}>
               {errors[name as keyof LoginFormValues]?.message}
@@ -157,18 +157,18 @@ export default function LoginScreen() {
                     </Text>
                   </View>
 
-                  <FormInput 
-                    name="email" 
-                    placeholder="name@example.com" 
-                    icon="mail-outline" 
-                    keyboardType="email-address" 
+                  <FormInput
+                    name="email"
+                    placeholder="name@example.com or username"
+                    icon="mail-outline"
+                    keyboardType="email-address"
                   />
 
-                  <FormInput 
-                    name="password" 
-                    placeholder="••••••••" 
-                    icon="lock-closed-outline" 
-                    isPassword={true} 
+                  <FormInput
+                    name="password"
+                    placeholder="••••••••"
+                    icon="lock-closed-outline"
+                    isPassword={true}
                   />
 
                   <TouchableOpacity
@@ -191,7 +191,7 @@ export default function LoginScreen() {
 
                   <View style={styles.signupContainer}>
                     <Text style={styles.signupText}>Don't have an account? </Text>
-                    <TouchableOpacity onPress={() => router.push('/signup/doctor/step1' as any)}>
+                    <TouchableOpacity onPress={() => router.push('/signup' as any)}>
                       <Text style={styles.signupLink}>Sign up </Text>
                     </TouchableOpacity>
                   </View>
