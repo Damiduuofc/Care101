@@ -60,35 +60,10 @@ export default function DoctorSignupStep2() {
       email: "",
       phoneNumber: "",
       password: "",
-      slmcCertificate: null,
     },
   });
 
-  // --- HANDLERS ---
-  const pickCertificate = async () => {
-    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) {
-      Alert.alert("Permission required", "Please allow access to your photos.");
-      return;
-    }
 
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: false,
-      quality: 0.8,
-    });
-
-    if (!result.canceled && result.assets[0]) {
-      const uri = result.assets[0].uri;
-      setCertificateUri(uri);
-      form.setValue("slmcCertificate", { uri });
-    }
-  };
-
-  const removeCertificate = () => {
-    setCertificateUri(null);
-    form.setValue("slmcCertificate", null);
-  };
 
   // --- ✅ SUBMIT HANDLER (CONNECTED TO BACKEND) ---
   const onSubmit = async (values: FormValues) => {
@@ -201,36 +176,7 @@ export default function DoctorSignupStep2() {
         isPassword={true}
       />
 
-      {/* Certificate Upload */}
-      <View style={styles.inputContainer}>
-        <Text style={styles.label}>SLMC Certificate Photo</Text>
-        <TouchableOpacity onPress={pickCertificate} style={styles.uploadBox}>
-          {certificateUri ? (
-            <View style={styles.uploadedContainer}>
-              <Image source={{ uri: certificateUri }} style={styles.uploadedImage} resizeMode="cover" />
-              <View style={styles.uploadOverlay}>
-                <Text style={styles.changeText}>Tap to change</Text>
-              </View>
-            </View>
-          ) : (
-            <View style={styles.uploadPlaceholder}>
-              <View style={styles.uploadIconCircle}>
-                <Ionicons name="cloud-upload-outline" size={24} color="#06b6d4" />
-              </View>
-              <Text style={styles.uploadText}>Tap to upload photo</Text>
-              <Text style={styles.uploadSubtext}>JPG or PNG (Max 5MB)</Text>
-            </View>
-          )}
-        </TouchableOpacity>
-        
-        {certificateUri && (
-          <TouchableOpacity onPress={removeCertificate} style={styles.removeButton}>
-            <Ionicons name="trash-outline" size={16} color="#ef4444" style={{marginRight: 4}} />
-            <Text style={styles.removeText}>Remove file</Text>
-          </TouchableOpacity>
-        )}
-      </View>
-
+ 
       {/* Buttons */}
       <View style={styles.buttonRow}>
         <TouchableOpacity 

@@ -1,28 +1,24 @@
 import express from "express";
 import Instruction from "../models/Instruction.js";
 import { auth } from "../middleware/auth.js";
-import multer from "multer"; // ✅ IMPORTED
-import path from "path";     // ✅ IMPORTED
+import multer from "multer"; 
+import path from "path";     
 
 const router = express.Router();
 
 // ==========================================
-// 1. MULTER CONFIG (Must be at the TOP)
+// 1. MULTER CONFIG
 // ==========================================
 const storage = multer.diskStorage({
   destination(req, file, cb) {
-    // Save to 'uploads' folder in the root directory
     cb(null, "uploads/"); 
   },
   filename(req, file, cb) {
-    // Generate unique filename: fieldname-timestamp.ext
     cb(null, `${file.fieldname}-${Date.now()}${path.extname(file.originalname)}`);
   },
 });
 
-// Initialize Multer Middleware
 const upload = multer({ storage });
-
 
 // ==========================================
 // 2. ROUTES
@@ -36,7 +32,7 @@ router.get("/", auth, async (req, res) => {
   } catch (err) { res.status(500).send("Server Error"); }
 });
 
-// CREATE New Instruction
+// CREATE New Instruction (Limit Removed)
 router.post("/", auth, async (req, res) => {
   try {
     const { surgeryName, description } = req.body;
@@ -59,17 +55,33 @@ router.get("/:id", auth, async (req, res) => {
   } catch (err) { res.status(500).send("Server Error"); }
 });
 
-// DELETE Instruction
+// ✅ ADDED: DELETE ENTIRE INSTRUCTION
+// This fixes the "Delete Surgery" button in your app
+router.delete("/:id", auth, async (req, res) => {
+  try {
+    const instruction = await Instruction.findById(req.params.id);
+    if (!instruction) return res.status(404).json({ msg: "Not found" });
+
+    // Optional: Add logic here to delete the associated files from 'uploads/' folder using fs.unlink
+    
+    await Instruction.findByIdAndDelete(req.params.id);
+    res.json({ msg: "Instruction deleted" });
+  } catch (err) {
+    console.error(err);
+    res.status(500).send("Server Error");
+  }
+});
+
+// DELETE Specific File (Video/Audio/Doc)
 router.delete("/:id/:section/:type", auth, async (req, res) => {
   try {
     const { id, section, type } = req.params;
     
-    // Determine field to clear (e.g., preOp.video)
     const updateField = section === "preOp" ? `preOp.${type}` : `postOp.${type}`;
 
     const updated = await Instruction.findByIdAndUpdate(
       id,
-      { $set: { [updateField]: null } }, // Set value to null
+      { $set: { [updateField]: null } }, 
       { new: true }
     );
 
@@ -80,20 +92,14 @@ router.delete("/:id/:section/:type", auth, async (req, res) => {
   }
 });
 
-// UPDATE: Upload Route (Now works because 'upload' is defined above)
+// UPDATE: Upload Route
 router.put("/:id/:section/:type", auth, upload.single("file"), async (req, res) => {
   try {
     const { id, section, type } = req.params;
     
-    // Check if file exists
-    if (!req.file) {
-      return res.status(400).send("No file uploaded");
-    }
+    if (!req.file) return res.status(400).send("No file uploaded");
 
-    // Construct the file URL
     const fileUrl = `${req.protocol}://${req.get("host")}/uploads/${req.file.filename}`;
-
-    // Determine if it updates preOp or postOp
     const updateField = section === "preOp" ? `preOp.${type}` : `postOp.${type}`;
 
     const updated = await Instruction.findByIdAndUpdate(

@@ -17,7 +17,7 @@ import financeRoutes from "./routes/finance.js";
 import surgeryRecordRoutes from "./routes/surgeryRecords.js";
 import chatRoutes from "./routes/chatRoutes.js";
 import adminRoutes from "./routes/adminRoutes.js";
-import paymentRoutes from "./routes/paymentRoutes.js";
+
 import instructionRoutes from "./routes/instructionRoutes.js";
 
 const app = express();
@@ -65,7 +65,7 @@ app.use("/api/finance", financeRoutes);
 app.use("/api/surgery-records", surgeryRecordRoutes);
 app.use("/api/chat", chatRoutes);
 app.use("/api/admin", adminRoutes);
-app.use("/api/payment", paymentRoutes);
+
 app.use("/api/instructions", instructionRoutes);
 
 /* =========================

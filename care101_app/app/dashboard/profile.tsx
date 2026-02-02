@@ -163,15 +163,7 @@ export default function ProfileScreen() {
     ]);
   };
 
-  const getPlanName = () => {
-    const plan = profile.subscription?.plan;
-    if (plan === 'premium') return 'Premium Plan';
-    return 'Free Plan'; 
-  };
 
-  const getPlanColor = () => {
-    return profile.subscription?.plan === 'premium' ? THEME.gold : THEME.primary;
-  };
 
   if (loading) return <ActivityIndicator style={{marginTop:50}} size="large" color={THEME.primary} />;
 
@@ -235,19 +227,6 @@ export default function ProfileScreen() {
           <DetailRow label="Email" value={profile.email || ""} /> 
         </View>
 
-        {/* --- SUBSCRIPTION CARD --- */}
-        {!isEditing && (
-            <View style={styles.subCard}>
-                <View style={styles.subHeader}>
-                    <Clock size={20} color={getPlanColor()} style={{marginRight: 8}} />
-                    <Text style={styles.subTitle}>{getPlanName()}</Text>
-                </View>
-                <Text style={styles.subStatus}>
-                    Status: <Text style={{fontWeight:'bold', textTransform:'capitalize'}}>{profile.subscription?.status || "Active"}</Text>
-                </Text>
-            </View>
-        )}
-
         {/* --- MENU OPTIONS --- */}
         {!isEditing && (
             <View style={styles.menuContainer}>
@@ -257,12 +236,7 @@ export default function ProfileScreen() {
                     color={THEME.primary} 
                     onPress={() => setPwdModalVisible(true)} 
                 />
-                <MenuOption 
-                    icon={CreditCard} 
-                    label="Manage Subscription" 
-                    color={THEME.primary} 
-                    onPress={() => router.push('/subscription')} 
-                />
+          
             </View>
         )}
 
@@ -386,12 +360,6 @@ const styles = StyleSheet.create({
   detailSeparator: { flex: 1, fontSize: 14, color: THEME.subtext, textAlign: 'center' },
   detailValue: { flex: 6, fontSize: 14, color: THEME.text, fontWeight: '500' },
   editInput: { flex: 6, borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 4, fontSize: 14, color: THEME.text, backgroundColor: '#f8fafc' },
-
-  // Subscription
-  subCard: { backgroundColor: THEME.light, borderRadius: 12, padding: 16, marginBottom: 20, borderWidth: 1, borderColor: THEME.border },
-  subHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
-  subTitle: { fontSize: 14, fontWeight: '700', color: THEME.text },
-  subStatus: { fontSize: 12, color: THEME.subtext, marginLeft: 28 },
 
   // Menu
   menuContainer: { gap: 12, marginBottom: 30 },

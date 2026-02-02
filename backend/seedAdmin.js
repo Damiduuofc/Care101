@@ -11,8 +11,7 @@ const seedSystemAdmin = async () => {
     console.log("MongoDB Connected");
 
     const email = "root@care101.com";
-    const password = "Care@101"; // ✅ New Password
-
+    const password = "Care@101"; 
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
