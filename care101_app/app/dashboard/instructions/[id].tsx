@@ -4,7 +4,7 @@ import {
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { ArrowLeft, Trash2, Video, Mic, FileText, CloudUpload, QrCode, Lock, Eye, X } from 'lucide-react-native';
+import { ArrowLeft, Trash2, Video, Mic, FileText, CloudUpload, QrCode, Eye, X } from 'lucide-react-native'; // Removed Lock icon
 import * as SecureStore from 'expo-secure-store';
 import * as DocumentPicker from 'expo-document-picker';
 import QRCode from 'react-native-qrcode-svg'; 
@@ -18,7 +18,6 @@ export default function InstructionDetailScreen() {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
-  const [currentPlan, setCurrentPlan] = useState('free');
   const [qrVisible, setQrVisible] = useState(false);
 
   useEffect(() => { fetchData(); }, [id]);
@@ -26,18 +25,17 @@ export default function InstructionDetailScreen() {
   const fetchData = async () => {
     try {
       const token = await SecureStore.getItemAsync('token');
+      // Only fetch instruction data (Profile/Plan check removed)
       const res = await fetch(`${API_URL}/api/instructions/${id}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       const instructionData = await res.json();
       setData(instructionData);
-
-      const resProfile = await fetch(`${API_URL}/api/doctor/profile`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      const profileData = await resProfile.json();
-      setCurrentPlan(profileData.subscription?.plan || 'free');
-    } catch (error) { console.error(error); } finally { setLoading(false); }
+    } catch (error) { 
+        console.error(error); 
+    } finally { 
+        setLoading(false); 
+    }
   };
 
   // ✅ DELETE ENTIRE INSTRUCTION
@@ -54,14 +52,13 @@ export default function InstructionDetailScreen() {
     ]);
   };
 
-  // ✅ DELETE SPECIFIC FILE (Video/Audio/Doc)
+  // ✅ DELETE SPECIFIC FILE
   const handleRemoveFile = async (section: string, type: string) => {
     Alert.alert("Remove File", "Are you sure you want to remove this file?", [
         { text: "Cancel", style: "cancel" },
         { text: "Remove", style: "destructive", onPress: async () => {
             try {
                 const token = await SecureStore.getItemAsync('token');
-                // Call the new DELETE route
                 const res = await fetch(`${API_URL}/api/instructions/${id}/${section}/${type}`, {
                     method: 'DELETE',
                     headers: { Authorization: `Bearer ${token}` }
@@ -75,14 +72,9 @@ export default function InstructionDetailScreen() {
     ]);
   };
 
+  // ✅ UPLOAD FILE (No Limits)
   const handleUpload = async (section: 'preOp' | 'postOp', type: 'video' | 'audio' | 'document') => {
-    if (currentPlan === 'free' && type !== 'document') {
-      Alert.alert("Premium Feature", "Upgrade to upload Video/Audio.", [
-        { text: "Cancel", style: "cancel" },
-        { text: "Upgrade", onPress: () => router.push('/subscription') }
-      ]);
-      return;
-    }
+    // Removed subscription check logic here
 
     const result = await DocumentPicker.getDocumentAsync({
       type: type === 'video' ? 'video/*' : type === 'audio' ? 'audio/*' : 'application/pdf',
@@ -147,7 +139,6 @@ export default function InstructionDetailScreen() {
             title="Pre-Operative" color="#3b82f6"
             onQrPress={() => setQrVisible(true)}
             files={data.preOp}
-            plan={currentPlan}
             onUpload={(type: any) => handleUpload('preOp', type)}
             onRemove={(type: any) => handleRemoveFile('preOp', type)}
             onView={(url: string) => handleOpenLink(url)}
@@ -158,7 +149,6 @@ export default function InstructionDetailScreen() {
             title="Post-Operative" color="#10b981"
             onQrPress={() => setQrVisible(true)}
             files={data.postOp}
-            plan={currentPlan}
             onUpload={(type: any) => handleUpload('postOp', type)}
             onRemove={(type: any) => handleRemoveFile('postOp', type)}
             onView={(url: string) => handleOpenLink(url)}
@@ -194,7 +184,8 @@ export default function InstructionDetailScreen() {
 
 // --- SUB-COMPONENTS ---
 
-const InstructionSection = ({ title, color, onQrPress, files, plan, onUpload, onRemove, onView }: any) => (
+// Removed 'plan' prop
+const InstructionSection = ({ title, color, onQrPress, files, onUpload, onRemove, onView }: any) => (
     <View style={styles.card}>
         <View style={styles.sectionHeader}>
             <View style={[styles.accentBar, { backgroundColor: color }]} />
@@ -204,20 +195,21 @@ const InstructionSection = ({ title, color, onQrPress, files, plan, onUpload, on
             </TouchableOpacity>
         </View>
         
-        <MediaRow type="video" label="Video" url={files.video} isLocked={plan === 'free'} onUpload={() => onUpload('video')} onRemove={() => onRemove('video')} onView={() => onView(files.video)} />
-        <MediaRow type="audio" label="Audio" url={files.audio} isLocked={plan === 'free'} onUpload={() => onUpload('audio')} onRemove={() => onRemove('audio')} onView={() => onView(files.audio)} />
-        <MediaRow type="document" label="Document" url={files.document} isLocked={false} onUpload={() => onUpload('document')} onRemove={() => onRemove('document')} onView={() => onView(files.document)} />
+        {/* Removed 'isLocked' prop */}
+        <MediaRow type="video" label="Video" url={files.video} onUpload={() => onUpload('video')} onRemove={() => onRemove('video')} onView={() => onView(files.video)} />
+        <MediaRow type="audio" label="Audio" url={files.audio} onUpload={() => onUpload('audio')} onRemove={() => onRemove('audio')} onView={() => onView(files.audio)} />
+        <MediaRow type="document" label="Document" url={files.document} onUpload={() => onUpload('document')} onRemove={() => onRemove('document')} onView={() => onView(files.document)} />
     </View>
 );
 
-const MediaRow = ({ type, label, url, isLocked, onUpload, onRemove, onView }: any) => {
+const MediaRow = ({ type, label, url, onUpload, onRemove, onView }: any) => {
     const Icon = type === 'video' ? Video : type === 'audio' ? Mic : FileText;
     const color = type === 'video' ? '#3b82f6' : type === 'audio' ? '#8b5cf6' : '#64748b';
     const bg = type === 'video' ? '#eff6ff' : type === 'audio' ? '#f5f3ff' : '#f1f5f9';
     const hasFile = !!url;
 
     return (
-        <View style={[styles.mediaRow, isLocked && { opacity: 0.6 }]}>
+        <View style={styles.mediaRow}>
             <View style={[styles.iconBox, { backgroundColor: bg }]}>
                 <Icon size={20} color={color} />
             </View>
@@ -229,7 +221,7 @@ const MediaRow = ({ type, label, url, isLocked, onUpload, onRemove, onView }: an
                 </Text>
             </View>
 
-            {/* ✅ LOGIC: Show Upload if empty. Show View + Delete if file exists */}
+            {/* Buttons: Upload vs (View + Delete) */}
             {hasFile ? (
                 <View style={{flexDirection: 'row', gap: 8}}>
                      <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#10b981' }]} onPress={onView}>
@@ -241,11 +233,10 @@ const MediaRow = ({ type, label, url, isLocked, onUpload, onRemove, onView }: an
                 </View>
             ) : (
                 <TouchableOpacity 
-                    style={[styles.actionBtn, { backgroundColor: isLocked ? '#f1f5f9' : '#3b82f6' }]} 
+                    style={[styles.actionBtn, { backgroundColor: '#3b82f6' }]} // Always blue (active)
                     onPress={onUpload}
-                    disabled={isLocked}
                 >
-                    {isLocked ? <Lock size={18} color="#94a3b8" /> : <CloudUpload size={20} color="#fff" />}
+                    <CloudUpload size={20} color="#fff" />
                 </TouchableOpacity>
             )}
         </View>

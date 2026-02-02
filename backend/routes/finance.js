@@ -1,7 +1,7 @@
 import express from "express";
 import HospitalFinance from "../models/Finance.js";
 import { auth } from "../middleware/auth.js";
-import { checkPlanLimits } from "../utils/checkLimits.js"; // ✅ Import
+// ✅ DELETED: import { checkPlanLimits } ...
 
 const router = express.Router();
 
@@ -41,21 +41,24 @@ router.get("/", auth, async (req, res) => {
   }
 });
 
-// 2. ADD HOSPITAL (Apply Limit: Max 1)
+// 2. ADD HOSPITAL (✅ LIMIT REMOVED HERE)
 router.post("/add-hospital", auth, async (req, res) => {
   try {
-    // 🛑 CHECK LIMIT
-    try {
-      await checkPlanLimits(req.user.id, 'add_hospital');
-    } catch (limitErr) {
-      return res.status(403).json({ msg: limitErr.message, upgradeRequired: true });
+    // 🛑 I removed the checkPlanLimits() block here.
+    
+    const { name, whtEnabled } = req.body;
+
+    // Check for duplicate names (Optional but recommended)
+    const existing = await HospitalFinance.findOne({ doctorId: req.user.id, name });
+    if (existing) {
+        return res.status(400).json({ msg: "A hospital with this name already exists." });
     }
 
-    const { name, whtEnabled } = req.body;
     const newHospital = new HospitalFinance({ doctorId: req.user.id, name, whtEnabled });
     await newHospital.save();
     res.json(newHospital);
   } catch (err) {
+    console.error(err);
     res.status(500).json({ msg: "Server Error" });
   }
 });
@@ -82,7 +85,7 @@ router.delete("/:id", auth, async (req, res) => {
   }
 });
 
-// 5. ADD RECORD (No limit specified for finance entries inside a hospital, so leaving as is)
+// 5. ADD RECORD
 router.post("/:id/add-record", auth, async (req, res) => {
   try {
     const { type, date, patients, income, bht, amount } = req.body;
@@ -90,9 +93,7 @@ router.post("/:id/add-record", auth, async (req, res) => {
     
     if (!hospital) return res.status(404).json({ msg: "Hospital not found" });
 
-    hospital.records.unshift({
-      type, date, patients, income, bht, amount
-    }); 
+    hospital.records.unshift({ type, date, patients, income, bht, amount }); 
     
     await hospital.save();
     res.json(hospital);
