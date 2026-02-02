@@ -146,7 +146,7 @@ export default function DoctorSignupStep1() {
             <TouchableOpacity 
               style={[styles.inputWrapper, error && styles.inputError]} 
               onPress={() => setModalVisible(true)}
-            >
+              >
               <Ionicons name="medkit-outline" size={20} color="#64748b" style={styles.inputIcon} />
               <Text style={[styles.input, { paddingVertical: 14, color: value ? '#0f172a' : '#94a3b8' }]}>
                 {value || "Select your field"}

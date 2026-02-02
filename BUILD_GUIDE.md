@@ -585,3 +585,7 @@ pm2 list
 - [Expo EAS Build](https://docs.expo.dev/build/introduction/)
 - [PM2 Documentation](https://pm2.keymetrics.io/)
 - [Docker Best Practices](https://docs.docker.com/develop/dev-best-practices/)
+
+
+
+ngrok http 5000
