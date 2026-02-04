@@ -23,17 +23,28 @@ export default function ManageStatus() {
       const token = localStorage.getItem("adminToken");
       try {
         const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/admin/stats`, {
-          headers: { "x-auth-token": token || "" }
+          headers: {
+            "x-auth-token": token || "",
+            "ngrok-skip-browser-warning": "true" // Bypass ngrok warning page
+          }
         });
-        
+
         // ✅ SAFETY CHECK: If server errors (404/500), stop here to prevent crash
         if (!res.ok) {
-            console.error("Server Error:", res.status);
-            return;
+          console.error("Server Error:", res.status);
+          return;
+        }
+
+        // Check if response is JSON before parsing
+        const contentType = res.headers.get("content-type");
+        if (!contentType || !contentType.includes("application/json")) {
+          const text = await res.text();
+          console.error("Expected JSON but got:", contentType, text);
+          return;
         }
 
         const data = await res.json();
-        
+
         // Populate form if data exists
         if (data && data.status) {
           setFormData({
@@ -59,9 +70,10 @@ export default function ManageStatus() {
       const token = localStorage.getItem("adminToken");
       const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/admin/status`, {
         method: "PUT",
-        headers: { 
-            "Content-Type": "application/json",
-            "x-auth-token": token || "" 
+        headers: {
+          "Content-Type": "application/json",
+          "x-auth-token": token || "",
+          "ngrok-skip-browser-warning": "true" // Bypass ngrok warning page
         },
         body: JSON.stringify(formData),
       });
@@ -70,7 +82,14 @@ export default function ManageStatus() {
         alert("✅ Hospital Status Saved to Database!");
         router.push("/admin/dashboard"); // Go back to dashboard
       } else {
-        alert("Failed to update status. Please try again.");
+        // Check if response is JSON for error message
+        const contentType = res.headers.get("content-type");
+        if (contentType && contentType.includes("application/json")) {
+          const errorData = await res.json();
+          alert(`Failed to update: ${errorData.msg || 'Unknown error'}`);
+        } else {
+          alert("Failed to update status. Please try again.");
+        }
       }
     } catch (err) {
       console.error(err);
@@ -82,7 +101,7 @@ export default function ManageStatus() {
 
   return (
     <div className="max-w-2xl mx-auto space-y-6">
-      
+
       {/* Back Button */}
       <Button variant="ghost" onClick={() => router.back()} className="text-slate-500">
         <ArrowLeft className="h-4 w-4 mr-2" /> Back to Dashboard
@@ -100,15 +119,15 @@ export default function ManageStatus() {
         </CardHeader>
         <CardContent className="p-6">
           <form onSubmit={handleUpdate} className="space-y-6">
-            
+
             {/* General Ward Status */}
             <div className="space-y-2">
               <label className="text-sm font-medium text-slate-700">General Ward Status</label>
               <div className="relative">
-                <select 
+                <select
                   className="w-full h-10 px-3 pl-3 rounded-md border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-600 appearance-none"
                   value={formData.generalWard}
-                  onChange={(e) => setFormData({...formData, generalWard: e.target.value})}
+                  onChange={(e) => setFormData({ ...formData, generalWard: e.target.value })}
                 >
                   <option value="Available">🟢 Available</option>
                   <option value="Limited Beds">🟡 Limited Beds</option>
@@ -126,10 +145,10 @@ export default function ManageStatus() {
             {/* ICU Beds Input */}
             <div className="space-y-2">
               <label className="text-sm font-medium text-slate-700">ICU Beds Available</label>
-              <Input 
+              <Input
                 type="number"
                 value={formData.icuBeds}
-                onChange={(e) => setFormData({...formData, icuBeds: Number(e.target.value)})}
+                onChange={(e) => setFormData({ ...formData, icuBeds: Number(e.target.value) })}
                 className="bg-slate-50"
               />
             </div>
@@ -137,10 +156,10 @@ export default function ManageStatus() {
             {/* Emergency Unit Select */}
             <div className="space-y-2">
               <label className="text-sm font-medium text-slate-700">Emergency Unit Status</label>
-              <select 
+              <select
                 className="w-full h-10 px-3 rounded-md border border-slate-200 bg-slate-50 text-sm"
                 value={formData.emergencyUnit}
-                onChange={(e) => setFormData({...formData, emergencyUnit: e.target.value})}
+                onChange={(e) => setFormData({ ...formData, emergencyUnit: e.target.value })}
               >
                 <option value="Normal">🟢 Normal</option>
                 <option value="Busy">🟡 Busy</option>
@@ -151,10 +170,10 @@ export default function ManageStatus() {
             {/* Pharmacy Select */}
             <div className="space-y-2">
               <label className="text-sm font-medium text-slate-700">Pharmacy Status</label>
-              <select 
+              <select
                 className="w-full h-10 px-3 rounded-md border border-slate-200 bg-slate-50 text-sm"
                 value={formData.pharmacy}
-                onChange={(e) => setFormData({...formData, pharmacy: e.target.value})}
+                onChange={(e) => setFormData({ ...formData, pharmacy: e.target.value })}
               >
                 <option value="Open">🟢 Open</option>
                 <option value="Closed">🔴 Closed</option>
