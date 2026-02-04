@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState } from 'react';
 import {
     View,
     Text,
@@ -12,8 +12,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useRouter, useFocusEffect } from 'expo-router';
-import * as SecureStore from 'expo-secure-store';
+import { useRouter } from 'expo-router';
 import {
     ChevronRight,
     Calendar,
@@ -25,11 +24,12 @@ import {
 
 import PatientBottomNavBar from '../../components/PatientBottomNavBar';
 import { useAuth } from '@/context/auth';
+import AiAssistant from '@/components/ui/AiAssistant';
 
 export default function PatientDashboardScreen() {
     const router = useRouter();
     const { user, isLoading } = useAuth();
-    const [loading, setLoading] = useState(false); // Set to false for now as we have no API yet
+    const [loading, setLoading] = useState(false);
 
     // Session Check
     React.useEffect(() => {
@@ -96,6 +96,7 @@ export default function PatientDashboardScreen() {
                 </View>
             </SafeAreaView>
 
+            {/* --- SCROLLABLE CONTENT --- */}
             <ScrollView
                 showsVerticalScrollIndicator={false}
                 contentContainerStyle={styles.scrollContent}
@@ -167,8 +168,17 @@ export default function PatientDashboardScreen() {
                         <Text style={styles.infoText}>Ensure your medical history needs are up to date for better care.</Text>
                     </View>
                 </View>
-
+                
+                {/* Add some padding at the bottom so content isn't hidden by the floating button */}
+                <View style={{ height: 80 }} /> 
             </ScrollView>
+
+            {/* --- FLOATING AI ASSISTANT --- */}
+            {/* Moved OUTSIDE the ScrollView so it stays fixed on screen */}
+            {/* Ensure zIndex is high enough to float above the BottomNavBar if needed */}
+            <View style={{ zIndex: 100 }}>
+                <AiAssistant />
+            </View>
 
             <PatientBottomNavBar />
         </View>
@@ -219,7 +229,7 @@ const styles = StyleSheet.create({
         color: '#0f172a',
     },
     scrollContent: {
-        paddingBottom: 100,
+        paddingBottom: 20, // Reduced padding here, added spacer View inside ScrollView instead
     },
     heroContainer: {
         margin: 20,
@@ -303,7 +313,6 @@ const styles = StyleSheet.create({
         fontSize: 12,
         color: '#94a3b8',
     },
-    // Appointment Card Styles
     appointmentCard: {
         backgroundColor: '#fff',
         borderRadius: 16,
@@ -375,7 +384,6 @@ const styles = StyleSheet.create({
         fontWeight: '600',
         color: '#475569',
     },
-    // Info Card
     infoCard: {
         backgroundColor: '#ecfdf5',
         borderRadius: 16,

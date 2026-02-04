@@ -86,7 +86,6 @@ router.get("/stats", protect, async (req, res) => {
     // B. FETCH HOSPITAL STATUS
     let status = await HospitalStatus.findOne();
     if (!status) {
-      // Return default values if DB is empty, but don't save them yet to keep DB clean
       status = { generalWard: "Available", icuBeds: 0, emergencyUnit: "Normal", pharmacy: "Open" };
     }
 

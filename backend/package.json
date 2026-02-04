@@ -12,6 +12,7 @@
   "license": "ISC",
   "type": "module",
   "dependencies": {
+    "@google/generative-ai": "^0.24.1",
     "@openrouter/sdk": "^0.2.11",
     "bcryptjs": "^3.0.3",
     "cors": "^2.8.5",
