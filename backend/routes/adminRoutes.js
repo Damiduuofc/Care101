@@ -25,6 +25,13 @@ router.post("/login", async (req, res) => {
     if (!isMatch) return res.status(400).json({ msg: "Invalid Credentials" });
 
     const payload = { id: admin.id, role: admin.role };
+    
+    // Ensure JWT_SECRET exists
+    if (!process.env.JWT_SECRET) {
+       console.error("JWT_SECRET is missing in .env");
+       return res.status(500).send("Server Configuration Error");
+    }
+
     const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: "1d" });
 
     res.json({
@@ -54,8 +61,12 @@ router.get("/stats", protect, async (req, res) => {
     const totalPatients = await Patient.countDocuments();
     
     // Appointments Today
-    const startOfDay = new Date(); startOfDay.setHours(0, 0, 0, 0);
-    const endOfDay = new Date(); endOfDay.setHours(23, 59, 59, 999);
+    const startOfDay = new Date();
+    startOfDay.setHours(0, 0, 0, 0);
+    
+    const endOfDay = new Date();
+    endOfDay.setHours(23, 59, 59, 999);
+
     const appointmentsToday = await Appointment.countDocuments({
       date: { $gte: startOfDay, $lte: endOfDay }
     });
@@ -65,7 +76,7 @@ router.get("/stats", protect, async (req, res) => {
       status: { $regex: /^pending$/i } 
     });
 
-    // Revenue
+    // Revenue Calculation
     const revenueResult = await Appointment.aggregate([
       { $match: { paymentStatus: { $regex: /^paid$/i } } },
       { $group: { _id: null, total: { $sum: "$amount" } } }
@@ -75,6 +86,7 @@ router.get("/stats", protect, async (req, res) => {
     // B. FETCH HOSPITAL STATUS
     let status = await HospitalStatus.findOne();
     if (!status) {
+      // Return default values if DB is empty, but don't save them yet to keep DB clean
       status = { generalWard: "Available", icuBeds: 0, emergencyUnit: "Normal", pharmacy: "Open" };
     }
 
@@ -84,7 +96,6 @@ router.get("/stats", protect, async (req, res) => {
       patients: { total: totalPatients, today: appointmentsToday },
       appointments: { pending: pendingAppointments },
       revenue: totalRevenue,
-      // Map DB fields to Frontend expected fields
       status: {
         generalWard: status.generalWard,
         icuBeds: status.icuBeds,
@@ -105,6 +116,7 @@ router.get("/stats", protect, async (req, res) => {
 router.put("/status", protect, authorize(["system_admin"]), async (req, res) => {
   try {
     const { generalWard, icuBeds, emergencyUnit, pharmacy } = req.body;
+    
     let status = await HospitalStatus.findOne();
 
     if (status) {
@@ -137,7 +149,7 @@ router.get("/appointments", protect, async (req, res) => {
       .sort({ date: -1 });
     res.json(appointments);
   } catch (err) {
-    console.error(err);
+    console.error("Fetch Appointments Error:", err);
     res.status(500).send("Server Error");
   }
 });
@@ -150,23 +162,27 @@ router.put("/appointments/:id", protect, async (req, res) => {
     if (!appointment) return res.status(404).json({ msg: "Not found" });
 
     // Prevent editing cancelled appointments
-    if (appointment.status.toLowerCase() === "cancelled") {
+    if (appointment.status && appointment.status.toLowerCase() === "cancelled") {
       return res.status(400).json({ msg: "Cannot edit a Cancelled appointment" });
     }
 
     if (status) appointment.status = status;
+    
     if (paymentStatus) {
       appointment.paymentStatus = paymentStatus;
       // Sync with Bill if marked Paid
       if (paymentStatus.toLowerCase() === "paid") {
-        await Bill.findOneAndUpdate({ appointmentId: appointment._id }, { status: "Paid" });
+        await Bill.findOneAndUpdate(
+            { appointmentId: appointment._id }, 
+            { status: "Paid" }
+        );
       }
     }
 
     await appointment.save();
     res.json(appointment);
   } catch (err) {
-    console.error(err);
+    console.error("Update Appointment Error:", err);
     res.status(500).send("Server Error");
   }
 });
@@ -177,7 +193,7 @@ router.delete("/appointments/:id", protect, authorize(["system_admin", "receptio
     await Bill.findOneAndDelete({ appointmentId: req.params.id });
     res.json({ msg: "Appointment removed" });
   } catch (err) {
-    console.error(err);
+    console.error("Delete Appointment Error:", err);
     res.status(500).send("Server Error");
   }
 });
@@ -188,18 +204,38 @@ router.delete("/appointments/:id", protect, authorize(["system_admin", "receptio
 router.post("/create-staff", protect, authorize(["system_admin"]), async (req, res) => {
   try {
     const { name, email, password, role, department } = req.body;
-    // ... (Your staff creation logic remains here) ...
-    // Note: I'm keeping this brief for readability, but paste your existing logic here if needed
-    if (!["receptionist", "nurse", "system_admin"].includes(role)) return res.status(400).json({ msg: "Invalid Role" });
+
+    // 1. Check for valid role
+    const validRoles = ["receptionist", "nurse", "system_admin"];
+    if (!validRoles.includes(role)) {
+        return res.status(400).json({ msg: "Invalid Role. Must be one of: " + validRoles.join(", ") });
+    }
+
+    // 2. Check if user already exists
     let user = await Admin.findOne({ email });
-    if (user) return res.status(400).json({ msg: "User exists" });
+    if (user) {
+        return res.status(400).json({ msg: "User with this email already exists" });
+    }
     
+    // 3. Hash Password
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
-    user = new Admin({ name, email, password: hashedPassword, role, department });
+
+    // 4. Save to DB
+    user = new Admin({ 
+        name, 
+        email, 
+        password: hashedPassword, 
+        role, 
+        department 
+    });
+    
     await user.save();
-    res.json({ msg: `New ${role} created` });
+    
+    res.json({ msg: `New ${role} created successfully` });
+
   } catch (err) {
+    console.error("Create Staff Error:", err);
     res.status(500).send("Server Error");
   }
 });
@@ -209,6 +245,7 @@ router.get("/staff", protect, authorize(["system_admin"]), async (req, res) => {
     const staff = await Admin.find().select("-password");
     res.json(staff);
   } catch (err) {
+    console.error("Fetch Staff Error:", err);
     res.status(500).send("Server Error");
   }
 });
@@ -219,17 +256,21 @@ router.get("/staff", protect, authorize(["system_admin"]), async (req, res) => {
 router.delete("/staff/:id", protect, authorize(["system_admin"]), async (req, res) => {
   try {
     // Prevent deleting yourself
+    // Note: req.user.id comes from the token, req.params.id comes from the URL
     if (req.params.id === req.user.id) {
       return res.status(400).json({ msg: "You cannot delete your own account." });
     }
 
-    await Admin.findByIdAndDelete(req.params.id);
+    const result = await Admin.findByIdAndDelete(req.params.id);
+    if (!result) {
+        return res.status(404).json({ msg: "Staff member not found" });
+    }
+
     res.json({ msg: "Staff member removed" });
   } catch (err) {
-    console.error(err);
+    console.error("Delete Staff Error:", err);
     res.status(500).send("Server Error");
   }
 });
-
 
 export default router;

@@ -9,9 +9,14 @@ export default function AdminGatekeeper() {
   useEffect(() => {
     const token = localStorage.getItem("adminToken");
     
-    if (token) {
+    // SAFETY CHECK: Ensure token is a string and looks like a JWT (3 parts)
+    const isValidStructure = token && typeof token === "string" && token.split('.').length === 3;
+    
+    if (isValidStructure) {
       router.replace("/admin/dashboard");
     } else {
+      // If token is garbage/corrupt, clear it so we don't crash the app later
+      if (token) localStorage.removeItem("adminToken");
       router.replace("/admin/login");
     }
   }, [router]);
