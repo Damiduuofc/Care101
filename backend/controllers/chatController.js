@@ -71,10 +71,17 @@ Hours: ${JSON.stringify(hospitalData.hours)}`;
 
     const lastUserMessage = messages[messages.length - 1].content;
 
-    const history = messages.slice(0, -1).map(msg => ({
+    // Build history, but skip the initial assistant greeting
+    // Google requires history to start with "user", not "model"
+    let history = messages.slice(0, -1).map(msg => ({
       role: msg.role === "assistant" ? "model" : "user",
       parts: [{ text: msg.content }]
     }));
+
+    // Remove any leading "model" messages (like the welcome message)
+    while (history.length > 0 && history[0].role === "model") {
+      history.shift();
+    }
 
     // 5. Start Chat Session
     const chat = model.startChat({

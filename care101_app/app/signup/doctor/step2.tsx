@@ -21,7 +21,6 @@ import { Ionicons } from '@expo/vector-icons';
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm, Controller } from "react-hook-form";
 import { z } from "zod";
-import * as ImagePicker from "expo-image-picker";
 import { useAuth } from '../../../context/auth'; // Import Auth Context
 
 // --- VALIDATION SCHEMA ---
