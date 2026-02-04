@@ -27,14 +27,14 @@ const __dirname = path.resolve();
    MIDDLEWARE
 ========================= */
 
-// ✅ CORS FIX: Added "ngrok-skip-browser-warning" to allowedHeaders
 app.use(cors({
-  origin: "*",
-  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"], // Added OPTIONS for safety
+  origin: "*", // Or specific origins like "http://localhost:3000"
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"], 
   allowedHeaders: [
     "Content-Type", 
     "Authorization", 
-    "ngrok-skip-browser-warning" // <--- THIS IS THE FIX
+    "ngrok-skip-browser-warning",
+    "x-auth-token" // <--- ADD THIS LINE
   ]
 }));
 

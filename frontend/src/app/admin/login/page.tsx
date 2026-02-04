@@ -21,10 +21,21 @@ export default function AdminLogin() {
         `${process.env.NEXT_PUBLIC_API_URL}/admin/login`,
         {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            "ngrok-skip-browser-warning": "true" // Bypass ngrok warning page
+          },
           body: JSON.stringify({ email, password }),
         }
       );
+
+      // Check if response is JSON before parsing
+      const contentType = res.headers.get("content-type");
+      if (!contentType || !contentType.includes("application/json")) {
+        const text = await res.text();
+        console.error("Expected JSON but got:", contentType, text);
+        throw new Error("Server returned invalid response. Please check your connection.");
+      }
 
       const data = await res.json();
       if (!res.ok) throw new Error(data.msg || "Login failed");

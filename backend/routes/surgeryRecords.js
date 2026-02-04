@@ -1,7 +1,6 @@
 import express from "express";
 import SurgeryRecord from "../models/SurgeryRecord.js"; 
 import { auth } from "../middleware/auth.js";
-import { checkPlanLimits } from "../utils/checkLimits.js"; // ✅ Import
 
 const router = express.Router();
 
