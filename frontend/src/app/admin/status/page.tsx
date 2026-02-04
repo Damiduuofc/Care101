@@ -73,16 +73,15 @@ export default function ManageStatus() {
         headers: {
           "Content-Type": "application/json",
           "x-auth-token": token || "",
-          "ngrok-skip-browser-warning": "true" // Bypass ngrok warning page
+          "ngrok-skip-browser-warning": "true"
         },
         body: JSON.stringify(formData),
       });
 
       if (res.ok) {
         alert("✅ Hospital Status Saved to Database!");
-        router.push("/admin/dashboard"); // Go back to dashboard
+        router.push("/admin/dashboard");
       } else {
-        // Check if response is JSON for error message
         const contentType = res.headers.get("content-type");
         if (contentType && contentType.includes("application/json")) {
           const errorData = await res.json();

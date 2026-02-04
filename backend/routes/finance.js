@@ -1,7 +1,6 @@
 import express from "express";
 import HospitalFinance from "../models/Finance.js";
 import { auth } from "../middleware/auth.js";
-// ✅ DELETED: import { checkPlanLimits } ...
 
 const router = express.Router();
 
@@ -44,7 +43,6 @@ router.get("/", auth, async (req, res) => {
 // 2. ADD HOSPITAL (✅ LIMIT REMOVED HERE)
 router.post("/add-hospital", auth, async (req, res) => {
   try {
-    // 🛑 I removed the checkPlanLimits() block here.
     
     const { name, whtEnabled } = req.body;
 
