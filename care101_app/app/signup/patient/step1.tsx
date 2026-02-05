@@ -27,7 +27,7 @@ const formSchema = z.object({
     fullName: z.string().min(2, { message: "Full name is required." }),
     dateOfBirth: z.date(),
     gender: z.enum(["Male", "Female", "Other"]),
-    nationalId: z.string().min(5, { message: "National ID is required." }),
+    nicNumber: z.string().min(5, { message: "National ID is required." }),
 });
 
 type FormValues = z.infer<typeof formSchema>;
@@ -47,7 +47,7 @@ export default function PatientSignupStep1() {
         resolver: zodResolver(formSchema),
         defaultValues: {
             fullName: "",
-            nationalId: "",
+            nicNumber: "",
             // dateOfBirth is undefined initially
         },
     });
@@ -189,7 +189,7 @@ export default function PatientSignupStep1() {
             {/* National ID */}
             <FormInput
                 control={form.control}
-                name="nationalId"
+                name="nicNumber"
                 placeholder="National ID Number"
                 icon="card-outline"
             />

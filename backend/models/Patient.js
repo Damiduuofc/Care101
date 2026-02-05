@@ -1,23 +1,74 @@
 import mongoose from "mongoose";
 
 const PatientSchema = new mongoose.Schema({
-  // ... existing fields (fullName, email, nic, etc) ...
-  fullName: { type: String, required: true },
-  email: { type: String, required: true, unique: true },
-  password: { type: String, required: true },
-  nicNumber: { type: String, primaryKey: true, unique: true },
-  mobileNumber: { type: String },
-  dateOfBirth: { type: String },
-  gender: { type: String },
+  fullName: { 
+    type: String, 
+    required: true,
+    trim: true 
+  },
   
-  
-  emergencyContact: { type: String },
+  // --- UNIQUE FIELDS ---
+  username: { 
+    type: String, 
+    required: true, 
+    unique: true, // Ensures no two users have the same username
+    trim: true 
+  },
+  email: { 
+    type: String, 
+    required: true, 
+    unique: true, // Ensures no two users have the same email
+    lowercase: true,
+    trim: true 
+  },
+  nicNumber: { 
+    type: String, 
+    required: true, 
+    unique: true, // Ensures no two users have the same NIC
+    trim: true 
+  },
+
+  password: { 
+    type: String, 
+    required: true 
+  },
+
+  // --- DEMOGRAPHICS ---
+  mobileNumber: { 
+    type: String, 
+    required: true 
+  },
+  dateOfBirth: { 
+    type: Date, // Better to store as Date object (frontend sends ISO string)
+    required: true 
+  },
+  gender: { 
+    type: String, 
+    enum: ["Male", "Female", "Other"],
+    required: true 
+  },
+  district: { 
+    type: String, 
+    required: true 
+  },
+
+  // --- OPTIONAL MEDICAL DATA ---
+  emergencyContact: { type: String, default: "" },
   medicalConditions: { type: String, default: "" },
   allergies: { type: String, default: "" },
   insuranceProvider: { type: String, default: "" },
   policyNumber: { type: String, default: "" },
   profileImage: { type: String, default: "" },
-  createdAt: { type: Date, default: Date.now },
+  
+  role: { 
+    type: String, 
+    default: "patient" 
+  },
+  
+  createdAt: { 
+    type: Date, 
+    default: Date.now 
+  },
 });
 
 export default mongoose.model("Patient", PatientSchema);
