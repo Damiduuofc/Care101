@@ -11,13 +11,13 @@ import appointmentRoutes from "./routes/appointments.js";
 import doctorsListRoutes from "./routes/doctors.js";
 import doctorDashboardRoutes from "./routes/doctor.js";
 import medicalRoutes from "./routes/medicalRecords.js";
+import doctorRoutes from "./routes/doctors.js"; 
 import notificationRoutes from "./routes/notifications.js";
-import billingRoutes from "./routes/billing.js";
 import financeRoutes from "./routes/finance.js";
 import surgeryRecordRoutes from "./routes/surgeryRecords.js";
 import chatRoutes from "./routes/chatRoutes.js";
 import adminRoutes from "./routes/adminRoutes.js";
-
+import paymentRoutes from "./routes/payments.js"; // <--- Import this
 import instructionRoutes from "./routes/instructionRoutes.js";
 
 const app = express();
@@ -28,7 +28,7 @@ const __dirname = path.resolve();
 ========================= */
 
 app.use(cors({
-  origin: "*", // Or specific origins like "http://localhost:3000"
+  origin: "*", 
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"], 
   allowedHeaders: [
     "Content-Type", 
@@ -60,14 +60,13 @@ app.use("/api/doctors", doctorsListRoutes);
 app.use("/api/doctor", doctorDashboardRoutes);
 app.use("/api/medical-records", medicalRoutes);
 app.use("/api/notifications", notificationRoutes);
-app.use("/api/billing", billingRoutes);
 app.use("/api/finance", financeRoutes);
 app.use("/api/surgery-records", surgeryRecordRoutes);
 app.use("/api/chat", chatRoutes);
 app.use("/api/admin", adminRoutes);
-
+app.use("/api/doctors", doctorRoutes); 
 app.use("/api/instructions", instructionRoutes);
-
+app.use("/api/payments", paymentRoutes); 
 /* =========================
    SERVER START
 ========================= */

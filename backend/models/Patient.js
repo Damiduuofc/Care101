@@ -5,7 +5,7 @@ const PatientSchema = new mongoose.Schema({
   fullName: { type: String, required: true },
   email: { type: String, required: true, unique: true },
   password: { type: String, required: true },
-  nicNumber: { type: String },
+  nicNumber: { type: String, primaryKey: true, unique: true },
   mobileNumber: { type: String },
   dateOfBirth: { type: String },
   gender: { type: String },

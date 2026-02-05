@@ -26,7 +26,7 @@ export default function CreateInstructionScreen() {
     setLoading(true);
     try {
       // ✅ 2. Debugging: Print URL to Console
-      const fullUrl = `${API_URL}/api/instructions`;
+      const fullUrl = `${API_URL}/instructions`;
       console.log("🚀 Attempting to connect to:", fullUrl);
 
       // Check if API_URL is missing

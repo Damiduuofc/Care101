@@ -48,7 +48,7 @@ export default function FinanceScreen() {
     try {
       const token = await SecureStore.getItemAsync('token');
       
-      const resFinance = await fetch(`${API_URL}/api/finance`, {
+      const resFinance = await fetch(`${API_URL}/finance`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       

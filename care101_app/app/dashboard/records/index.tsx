@@ -35,7 +35,7 @@ export default function RecordsScreen() {
       const token = await SecureStore.getItemAsync('token');
       
       // 1. Fetch Records
-      const resRecords = await fetch(`${API_URL}/api/surgery-records`, {
+      const resRecords = await fetch(`${API_URL}/surgery-records`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       if (resRecords.ok) {
@@ -59,21 +59,7 @@ export default function RecordsScreen() {
     }
   };
 
-  // ✅ HANDLE ADD BUTTON
-  const handleAddPress = () => {
-    if (isLimitReached) {
-      Alert.alert(
-        "Limit Reached",
-        "Free plan allows only 4 records. Upgrade to Premium for unlimited access.",
-        [
-          { text: "Cancel", style: "cancel" },
-          { text: "Upgrade Now", onPress: () => router.push('/subscription') }
-        ]
-      );
-    } else {
-      router.push('/dashboard/records/create');
-    }
-  };
+
 
   const filteredRecords = records.filter((r: any) => 
     r.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
@@ -150,22 +136,7 @@ export default function RecordsScreen() {
         />
       )}
 
-      {/* ✅ FAB (LOCKS IF LIMIT REACHED) */}
-      <TouchableOpacity 
-        style={[
-            styles.fab, 
-            { bottom: Platform.OS === 'ios' ? insets.bottom + 90 : 100 },
-            isLimitReached && styles.fabDisabled
-        ]}
-        onPress={handleAddPress}
-        activeOpacity={0.8}
-      >
-        {isLimitReached ? (
-            <Lock size={28} color="#94a3b8" />
-        ) : (
-            <Plus size={32} color="#fff" />
-        )}
-      </TouchableOpacity>
+  
 
       <BottomNavBar />
     </SafeAreaView>

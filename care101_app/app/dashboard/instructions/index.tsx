@@ -27,7 +27,7 @@ export default function InstructionsList() {
   const fetchAll = async () => {
     try {
       const token = await SecureStore.getItemAsync('token');
-      const res = await fetch(`${API_URL}/api/instructions`, { 
+      const res = await fetch(`${API_URL}/instructions`, { 
         headers: { Authorization: `Bearer ${token}` }
       });
       

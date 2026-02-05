@@ -26,7 +26,7 @@ export default function InstructionDetailScreen() {
     try {
       const token = await SecureStore.getItemAsync('token');
       // Only fetch instruction data (Profile/Plan check removed)
-      const res = await fetch(`${API_URL}/api/instructions/${id}`, {
+      const res = await fetch(`${API_URL}/instructions/${id}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       const instructionData = await res.json();
