@@ -5,8 +5,8 @@ import {
 } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Search, Plus, Image as ImageIcon, ChevronRight, Lock, Crown } from 'lucide-react-native';
-import BottomNavBar from '@/components/BottomNavBar'; 
+import { Search, Plus, Image as ImageIcon, ChevronRight } from 'lucide-react-native';
+import BottomNavBar from '@/components/BottomNavBar';
 import * as SecureStore from 'expo-secure-store';
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL;
@@ -14,15 +14,11 @@ const API_URL = process.env.EXPO_PUBLIC_API_URL;
 export default function RecordsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  
+
   // Data State
   const [records, setRecords] = useState([]);
-  const [currentPlan, setCurrentPlan] = useState('free');
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
-
-  // ✅ LOGIC: Check if limit reached (Free plan max 4)
-  const isLimitReached = currentPlan === 'free' && records.length >= 4;
 
   useFocusEffect(
     useCallback(() => {
@@ -33,23 +29,14 @@ export default function RecordsScreen() {
   const fetchData = async () => {
     try {
       const token = await SecureStore.getItemAsync('token');
-      
-      // 1. Fetch Records
+
+      // Fetch Records
       const resRecords = await fetch(`${API_URL}/surgery-records`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       if (resRecords.ok) {
         const data = await resRecords.json();
         setRecords(data);
-      }
-
-      // 2. Fetch Profile (to check plan)
-      const resProfile = await fetch(`${API_URL}/api/doctor/profile`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      if (resProfile.ok) {
-        const profile = await resProfile.json();
-        setCurrentPlan(profile.subscription?.plan || 'free');
       }
 
     } catch (error) {
@@ -61,13 +48,13 @@ export default function RecordsScreen() {
 
 
 
-  const filteredRecords = records.filter((r: any) => 
-    r.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
+  const filteredRecords = records.filter((r: any) =>
+    r.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
     (r.nic && r.nic.includes(searchQuery))
   );
 
   const renderRecordItem = ({ item }: any) => (
-    <TouchableOpacity 
+    <TouchableOpacity
       style={styles.card}
       onPress={() => router.push(`/dashboard/records/${item._id}` as any)}
     >
@@ -75,7 +62,7 @@ export default function RecordsScreen() {
         <Text style={styles.patientName}>{item.name}</Text>
         <ChevronRight size={20} color="#cbd5e1" />
       </View>
-      
+
       <View style={styles.cardContent}>
         <Text style={styles.detailText}>NIC: {item.nic || 'N/A'}</Text>
         <Text style={styles.detailText}>Hospital: {item.hospital || 'N/A'}</Text>
@@ -94,22 +81,16 @@ export default function RecordsScreen() {
   return (
     <SafeAreaView edges={['top']} style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#fff" />
-      
-      {/* Header with Premium Tag */}
+
+      {/* Header */}
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Surgery Records</Text>
-        {currentPlan === 'premium' && (
-            <View style={styles.premiumTag}>
-                <Crown size={12} color="#b45309" fill="#f59e0b" />
-                <Text style={styles.premiumText}>PREMIUM</Text>
-            </View>
-        )}
       </View>
 
       <View style={styles.searchContainer}>
         <View style={styles.searchBar}>
           <Search size={20} color="#94a3b8" />
-          <TextInput 
+          <TextInput
             style={styles.searchInput}
             placeholder="Search by patient name..."
             placeholderTextColor="#94a3b8"
@@ -119,7 +100,7 @@ export default function RecordsScreen() {
         </View>
       </View>
 
-      {loading ? <ActivityIndicator size="large" color="#0d9488" style={{marginTop: 50}} /> : (
+      {loading ? <ActivityIndicator size="large" color="#0d9488" style={{ marginTop: 50 }} /> : (
         <FlatList
           data={filteredRecords}
           keyExtractor={(item: any) => item._id}
@@ -128,15 +109,18 @@ export default function RecordsScreen() {
           ListEmptyComponent={
             <View style={styles.emptyState}>
               <Text style={styles.emptyText}>No records found</Text>
-              {currentPlan === 'free' && (
-                  <Text style={styles.emptySubText}>Free Plan: {records.length}/4 used</Text>
-              )}
             </View>
           }
         />
       )}
 
-  
+      {/* Floating Action Button */}
+      <TouchableOpacity
+        style={styles.fab}
+        onPress={() => router.push('/dashboard/records/create')}
+      >
+        <Plus size={24} color="#fff" />
+      </TouchableOpacity>
 
       <BottomNavBar />
     </SafeAreaView>
@@ -147,8 +131,6 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f8fafc' },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 20, backgroundColor: '#fff' },
   headerTitle: { fontSize: 24, fontWeight: '700', color: '#0f172a' },
-  premiumTag: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#fef3c7', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 12 },
-  premiumText: { fontSize: 10, fontWeight: '800', color: '#b45309' },
 
   searchContainer: { paddingHorizontal: 20, paddingBottom: 16, backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#f1f5f9' },
   searchBar: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 12, paddingHorizontal: 12, height: 48 },
@@ -166,9 +148,22 @@ const styles = StyleSheet.create({
   badgeText: { fontSize: 12, color: '#64748b', fontWeight: '500' },
   emptyState: { alignItems: 'center', justifyContent: 'center', marginTop: 60, paddingHorizontal: 40 },
   emptyText: { fontSize: 18, fontWeight: '600', color: '#94a3b8' },
-  emptySubText: { fontSize: 14, color: '#64748b', marginTop: 8 },
 
   // FAB Styles
-  fab: { position: 'absolute', right: 20, width: 56, height: 56, borderRadius: 28, backgroundColor: '#0d9488', alignItems: 'center', justifyContent: 'center', elevation: 6, shadowColor: "#0d9488", shadowOffset: {width:0, height:4}, shadowOpacity: 0.3, shadowRadius: 4 },
-  fabDisabled: { backgroundColor: '#e2e8f0', elevation: 0, shadowOpacity: 0 },
+  fab: {
+    position: 'absolute',
+    bottom: 90,
+    right: 20,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#0d9488',
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 6,
+    shadowColor: '#0d9488',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4
+  },
 });

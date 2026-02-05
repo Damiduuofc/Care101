@@ -10,18 +10,21 @@ const AppointmentSchema = new mongoose.Schema({
   date: { type: Date, required: true },
   visitType: { type: String, default: 'Channeling' },
   reason: { type: String },
+
+
+  tokenNumber: { type: Number }, 
   
   status: { 
-    type: String, 
-    enum: ["pending", "confirmed", "completed", "cancelled"], 
+    type: String,
+    enum: ["pending", "confirmed", "scheduled", "completed", "cancelled"], 
     default: "pending" 
   },
   
-  
   amount: { type: Number, default: 0 }, 
+  
   paymentStatus: { 
     type: String, 
-    enum: ["pending", "paid"], 
+    enum: ["pending", "paid", "failed"], 
     default: "pending" 
   },
   

@@ -21,6 +21,32 @@ router.post("/upload", auth, async (req, res) => {
     });
 
     await newRecord.save();
+
+    // ✅ CREATE NOTIFICATION based on record type
+    try {
+      const Notification = (await import("../models/Notification.js")).default;
+
+      let notificationType = 'report';
+      let notificationMessage = `New ${type} uploaded: ${title}`;
+
+      if (type === 'prescriptions') {
+        notificationType = 'prescription';
+        notificationMessage = `New prescription added by ${doctorName || 'your doctor'}: ${title}`;
+      } else if (type === 'lab_tests' || type === 'reports') {
+        notificationType = 'lab_report';
+        notificationMessage = `New lab report available: ${title}`;
+      }
+
+      await Notification.create({
+        userId: req.user.id,
+        type: notificationType,
+        message: notificationMessage,
+        metadata: { recordId: newRecord._id, recordType: type }
+      });
+    } catch (notifError) {
+      console.error("Notification Error:", notifError);
+    }
+
     res.json(newRecord);
   } catch (err) {
     console.error("Upload Error:", err.message);

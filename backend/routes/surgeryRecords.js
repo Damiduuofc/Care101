@@ -1,5 +1,5 @@
 import express from "express";
-import SurgeryRecord from "../models/SurgeryRecord.js"; 
+import SurgeryRecord from "../models/SurgeryRecord.js";
 import { auth } from "../middleware/auth.js";
 
 const router = express.Router();
@@ -15,16 +15,9 @@ router.get("/", auth, async (req, res) => {
   }
 });
 
-// 2. CREATE NEW RECORD (Apply Limit: Max 4)
+// 2. CREATE NEW RECORD
 router.post("/create", auth, async (req, res) => {
   try {
-    // 🛑 CHECK LIMIT
-    try {
-      await checkPlanLimits(req.user.id, 'create_record');
-    } catch (limitErr) {
-      return res.status(403).json({ msg: limitErr.message, upgradeRequired: true });
-    }
-
     const { name, nic, hospital, surgeryCardImage } = req.body;
 
     if (!name || !surgeryCardImage) {
@@ -51,9 +44,19 @@ router.post("/create", auth, async (req, res) => {
 // 3. GET SINGLE RECORD
 router.get("/:id", auth, async (req, res) => {
   try {
-    const record = await SurgeryRecord.findById(req.params.id);
+    const record = await SurgeryRecord.findById(req.params.id)
+      .populate('doctorId', 'name email specialization');
+
     if (!record) return res.status(404).json({ msg: "Record not found" });
-    res.json(record);
+
+    // Add doctor name to response
+    const recordWithDoctor = {
+      ...record.toObject(),
+      doctorName: record.doctorId?.name || 'Unknown Doctor',
+      doctorSpecialization: record.doctorId?.specialization || null
+    };
+
+    res.json(recordWithDoctor);
   } catch (err) {
     res.status(500).json({ msg: "Server Error" });
   }
@@ -69,16 +72,9 @@ router.delete("/:id", auth, async (req, res) => {
   }
 });
 
-// 5. ADD PROGRESS ENTRY (Apply Limit: Max 3 per patient)
+// 5. ADD PROGRESS ENTRY
 router.post("/:id/entry", auth, async (req, res) => {
   try {
-    // 🛑 CHECK LIMIT
-    try {
-      await checkPlanLimits(req.user.id, 'add_entry', req.params.id);
-    } catch (limitErr) {
-      return res.status(403).json({ msg: limitErr.message, upgradeRequired: true });
-    }
-
     const { notes, images } = req.body;
     const record = await SurgeryRecord.findById(req.params.id);
 
@@ -87,16 +83,49 @@ router.post("/:id/entry", auth, async (req, res) => {
     const newEntry = {
       date: new Date(),
       notes: notes || "",
-      images: images || [] 
+      images: images || []
     };
 
     record.entries.unshift(newEntry);
-    
+
     await record.save();
     res.json(record);
 
   } catch (err) {
     console.error("Add Entry Error:", err.message);
+    res.status(500).json({ msg: "Server Error" });
+  }
+});
+
+// 6. GET PATIENT'S OWN RECORDS BY NIC (For Patient App - Read Only)
+router.get("/patient/my-records", auth, async (req, res) => {
+  try {
+    const { nic } = req.query;
+
+    if (!nic) {
+      return res.status(400).json({ msg: "NIC is required" });
+    }
+
+    // Find all surgery records matching the NIC (case-insensitive)
+    const records = await SurgeryRecord.find({
+      nic: { $regex: new RegExp(`^${nic.trim()}$`, 'i') }
+    })
+      .populate('doctorId', 'name email specialization')  // Populate doctor info
+      .select("name hospital surgeryCardImage entries createdAt doctorId")
+      .sort({ createdAt: -1 })
+      .lean();
+
+    // Transform to include doctor name
+    const recordsWithDoctor = records.map(record => ({
+      ...record,
+      doctorName: record.doctorId?.name || 'Unknown Doctor',
+      doctorSpecialization: record.doctorId?.specialization || null
+    }));
+
+    res.json(recordsWithDoctor);
+
+  } catch (err) {
+    console.error("Get Patient Records Error:", err.message);
     res.status(500).json({ msg: "Server Error" });
   }
 });

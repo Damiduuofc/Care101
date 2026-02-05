@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -12,55 +12,96 @@ import {
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
-  Alert
+  Alert,
+  RefreshControl
 } from 'react-native';
-import { useRouter, useFocusEffect } from 'expo-router'; 
+import { useRouter, useFocusEffect } from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Plus, Trash2, ChevronRight, CheckCircle2, X } from 'lucide-react-native';
-import BottomNavBar from '../../components/BottomNavBar'; 
+import BottomNavBar from '../../components/BottomNavBar';
 import * as SecureStore from 'expo-secure-store';
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL;
+const REFRESH_INTERVAL = 30000; // Auto-refresh every 30 seconds
 
 export default function FinanceScreen() {
-  const router = useRouter(); 
+  const router = useRouter();
   const insets = useSafeAreaInsets();
-  
+  const intervalRef = useRef<NodeJS.Timeout | null>(null);
+
   // Data State
   const [hospitals, setHospitals] = useState([]);
   const [loading, setLoading] = useState(true);
-  
+  const [refreshing, setRefreshing] = useState(false);
+
   // Modal State
   const [modalVisible, setModalVisible] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  
+
   // Form State
   const [newHospitalName, setNewHospitalName] = useState('');
   const [isWhtEnabled, setIsWhtEnabled] = useState(false);
 
+  // Auto-refresh when screen is focused
   useFocusEffect(
     useCallback(() => {
       fetchData();
+
+      // Start polling when screen is focused
+      intervalRef.current = setInterval(() => {
+        fetchData(true); // Silent refresh (no loading indicator)
+      }, REFRESH_INTERVAL);
+
+      // Cleanup interval when screen loses focus
+      return () => {
+        if (intervalRef.current) {
+          clearInterval(intervalRef.current);
+          intervalRef.current = null;
+        }
+      };
     }, [])
   );
 
-  const fetchData = async () => {
+  const fetchData = async (silent = false) => {
     try {
+      if (!silent) {
+        setLoading(true);
+      }
+
       const token = await SecureStore.getItemAsync('token');
-      
+
+      console.log('Fetching finance data from:', `${API_URL}/finance`);
+
       const resFinance = await fetch(`${API_URL}/finance`, {
-        headers: { Authorization: `Bearer ${token}` }
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'ngrok-skip-browser-warning': 'true'
+        }
       });
-      
+
+      console.log('Finance API response status:', resFinance.status);
+
       if (resFinance.ok) {
         const data = await resFinance.json();
+        console.log('Finance data fetched:', data);
         setHospitals(data);
+      } else {
+        const errorText = await resFinance.text();
+        console.error('Finance API error:', resFinance.status, errorText);
       }
     } catch (error) {
       console.error("Network Error:", error);
     } finally {
-      setLoading(false);
+      if (!silent) {
+        setLoading(false);
+      }
+      setRefreshing(false);
     }
+  };
+
+  const onRefresh = () => {
+    setRefreshing(true);
+    fetchData();
   };
 
   const handleAddHospital = async () => {
@@ -68,21 +109,21 @@ export default function FinanceScreen() {
       Alert.alert("Required", "Please enter a hospital name.");
       return;
     }
-    
+
     setIsSubmitting(true);
 
     try {
       const token = await SecureStore.getItemAsync('token');
-      
+
       const response = await fetch(`${API_URL}/api/finance/add-hospital`, {
         method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json', 
-          Authorization: `Bearer ${token}` 
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
         },
-        body: JSON.stringify({ 
-          name: newHospitalName, 
-          whtEnabled: isWhtEnabled 
+        body: JSON.stringify({
+          name: newHospitalName,
+          whtEnabled: isWhtEnabled
         })
       });
 
@@ -91,7 +132,7 @@ export default function FinanceScreen() {
 
       if (response.ok) {
         // Success: Refresh data and close modal
-        await fetchData(); 
+        await fetchData();
         setModalVisible(false);
         setNewHospitalName('');
         setIsWhtEnabled(false);
@@ -112,7 +153,7 @@ export default function FinanceScreen() {
   const handleDelete = async (id) => {
     Alert.alert("Delete Hospital", "Are you sure? This will delete all financial records for this hospital.", [
       { text: "Cancel", style: "cancel" },
-      { 
+      {
         text: "Delete", style: 'destructive', onPress: async () => {
           try {
             const token = await SecureStore.getItemAsync('token');
@@ -122,7 +163,7 @@ export default function FinanceScreen() {
             });
             fetchData();
           } catch (error) { console.error(error); }
-        } 
+        }
       }
     ]);
   };
@@ -140,11 +181,11 @@ export default function FinanceScreen() {
               </View>
             )}
           </View>
-          <TouchableOpacity 
-              style={styles.iconBtn} 
-              onPress={() => handleDelete(item.id)}
-            >
-              <Trash2 size={18} color="#ef4444" />
+          <TouchableOpacity
+            style={styles.iconBtn}
+            onPress={() => handleDelete(item.id)}
+          >
+            <Trash2 size={18} color="#ef4444" />
           </TouchableOpacity>
         </View>
 
@@ -164,13 +205,13 @@ export default function FinanceScreen() {
           <View>
             <Text style={styles.totalLabel}>Total Payable</Text>
             {item.whtEnabled && (
-               <Text style={styles.taxLabel}>(After 5% Tax Deduction)</Text>
+              <Text style={styles.taxLabel}>(After 5% Tax Deduction)</Text>
             )}
           </View>
           <Text style={styles.totalValue}>{Math.round(item.totalPayable || 0).toLocaleString()} LKR</Text>
         </View>
 
-        <TouchableOpacity 
+        <TouchableOpacity
           style={styles.cardFooter}
           onPress={() => router.push(`/dashboard/finance/${item.id}`)}
         >
@@ -184,34 +225,42 @@ export default function FinanceScreen() {
   return (
     <SafeAreaView edges={['top']} style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#fff" />
-      
+
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Financial Dashboard</Text>
       </View>
 
       {loading ? (
-        <ActivityIndicator size="large" color="#12a9acff" style={{marginTop: 50}} />
+        <ActivityIndicator size="large" color="#12a9acff" style={{ marginTop: 50 }} />
       ) : (
-        <FlatList 
+        <FlatList
           data={hospitals}
           renderItem={renderHospitalCard}
           keyExtractor={(item) => item.id.toString()}
           contentContainerStyle={styles.listContent}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              colors={['#12a9acff']}
+              tintColor="#12a9acff"
+            />
+          }
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
               <Text style={styles.emptyTitle}>No Hospitals Added</Text>
-              <Text style={{color: '#64748b', marginBottom: 20}}>Add a hospital to start tracking finances.</Text>
+              <Text style={{ color: '#64748b', marginBottom: 20 }}>Add a hospital to start tracking finances.</Text>
             </View>
           }
         />
       )}
 
       {/* FAB */}
-      <TouchableOpacity 
+      <TouchableOpacity
         style={[
-            styles.fab, 
-            { bottom: Platform.OS === 'ios' ? insets.bottom + 90 : 100 }
-        ]} 
+          styles.fab,
+          { bottom: Platform.OS === 'ios' ? insets.bottom + 90 : 100 }
+        ]}
         onPress={() => setModalVisible(true)}
         activeOpacity={0.8}
       >
@@ -226,32 +275,32 @@ export default function FinanceScreen() {
               <Text style={styles.modalTitle}>Add Hospital</Text>
               <TouchableOpacity onPress={() => setModalVisible(false)}><X size={24} color="#64748b" /></TouchableOpacity>
             </View>
-            
+
             <View style={styles.inputGroup}>
               <Text style={styles.label}>Hospital Name</Text>
-              <TextInput 
-                style={styles.input} 
-                placeholder="Enter name" 
-                value={newHospitalName} 
-                onChangeText={setNewHospitalName} 
+              <TextInput
+                style={styles.input}
+                placeholder="Enter name"
+                value={newHospitalName}
+                onChangeText={setNewHospitalName}
               />
             </View>
-            
+
             <View style={styles.switchContainer}>
-              <View style={{flex: 1}}>
+              <View style={{ flex: 1 }}>
                 <Text style={styles.switchLabel}>Enable WHT (5%)</Text>
                 <Text style={styles.switchSubLabel}>5% will be automatically deducted from Total Payable</Text>
               </View>
-              <Switch 
-                trackColor={{ false: "#e2e8f0", true: "#bfdbfe" }} 
-                thumbColor={isWhtEnabled ? "#2563eb" : "#f4f4f5"} 
-                onValueChange={setIsWhtEnabled} 
-                value={isWhtEnabled} 
+              <Switch
+                trackColor={{ false: "#e2e8f0", true: "#bfdbfe" }}
+                thumbColor={isWhtEnabled ? "#2563eb" : "#f4f4f5"}
+                onValueChange={setIsWhtEnabled}
+                value={isWhtEnabled}
               />
             </View>
-            
-            <TouchableOpacity 
-              style={[styles.addBtn, isSubmitting && { opacity: 0.7 }]} 
+
+            <TouchableOpacity
+              style={[styles.addBtn, isSubmitting && { opacity: 0.7 }]}
               onPress={handleAddHospital}
               disabled={isSubmitting}
             >
@@ -274,7 +323,7 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f8fafc' },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 16, backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#f1f5f9' },
   headerTitle: { fontSize: 22, fontWeight: '700', color: '#0f172a' },
-  
+
   listContent: { paddingTop: 20, paddingBottom: 150 },
   card: { backgroundColor: '#fff', borderRadius: 16, padding: 16, marginBottom: 16, marginHorizontal: 20, borderWidth: 1, borderColor: '#e2e8f0', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 2 },
   cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 },
@@ -293,8 +342,8 @@ const styles = StyleSheet.create({
   totalValue: { fontSize: 20, fontWeight: '800', color: '#1e3a8a' },
   cardFooter: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', borderTopWidth: 1, borderTopColor: '#f1f5f9', paddingTop: 16 },
   footerLink: { color: '#12a9acff', fontWeight: '600', marginRight: 4, fontSize: 14 },
-  
-  fab: { position: 'absolute', right: 24, width: 56, height: 56, borderRadius: 28, backgroundColor: '#12a9acff', alignItems: 'center', justifyContent: 'center', elevation: 6, shadowColor: "#12a9acff", shadowOffset: {width:0, height:4}, shadowOpacity: 0.3, shadowRadius: 4 },
+
+  fab: { position: 'absolute', right: 24, width: 56, height: 56, borderRadius: 28, backgroundColor: '#12a9acff', alignItems: 'center', justifyContent: 'center', elevation: 6, shadowColor: "#12a9acff", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 4 },
 
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', padding: 20 },
   modalContent: { backgroundColor: '#fff', borderRadius: 24, padding: 24, elevation: 5 },

@@ -7,10 +7,15 @@ const router = express.Router();
 // 1. GET ALL HOSPITALS
 router.get("/", auth, async (req, res) => {
   try {
+    console.log('Finance GET request - Doctor ID:', req.user.id);
+
     const hospitals = await HospitalFinance.find({ doctorId: req.user.id });
-    
+
+    console.log('Found hospitals:', hospitals.length);
+    console.log('Hospitals data:', JSON.stringify(hospitals, null, 2));
+
     const data = hospitals.map(hospital => {
-      let channelingIncome = 0; 
+      let channelingIncome = 0;
       let surgicalIncome = 0;
 
       if (hospital.records) {
@@ -21,21 +26,22 @@ router.get("/", auth, async (req, res) => {
       }
 
       let total = channelingIncome + surgicalIncome;
-      if (hospital.whtEnabled) total = total * 0.95; 
+      if (hospital.whtEnabled) total = total * 0.95;
 
       return {
         id: hospital._id,
         name: hospital.name,
         whtEnabled: hospital.whtEnabled,
-        channelingIncome, 
-        surgicalIncome,   
+        channelingIncome,
+        surgicalIncome,
         totalPayable: total
       };
     });
 
+    console.log('Sending response:', data);
     res.json(data);
   } catch (err) {
-    console.error(err);
+    console.error('Finance GET error:', err);
     res.status(500).json({ msg: "Server Error" });
   }
 });
@@ -43,13 +49,13 @@ router.get("/", auth, async (req, res) => {
 // 2. ADD HOSPITAL (✅ LIMIT REMOVED HERE)
 router.post("/add-hospital", auth, async (req, res) => {
   try {
-    
+
     const { name, whtEnabled } = req.body;
 
     // Check for duplicate names (Optional but recommended)
     const existing = await HospitalFinance.findOne({ doctorId: req.user.id, name });
     if (existing) {
-        return res.status(400).json({ msg: "A hospital with this name already exists." });
+      return res.status(400).json({ msg: "A hospital with this name already exists." });
     }
 
     const newHospital = new HospitalFinance({ doctorId: req.user.id, name, whtEnabled });
@@ -88,11 +94,11 @@ router.post("/:id/add-record", auth, async (req, res) => {
   try {
     const { type, date, patients, income, bht, amount } = req.body;
     const hospital = await HospitalFinance.findById(req.params.id);
-    
+
     if (!hospital) return res.status(404).json({ msg: "Hospital not found" });
 
-    hospital.records.unshift({ type, date, patients, income, bht, amount }); 
-    
+    hospital.records.unshift({ type, date, patients, income, bht, amount });
+
     await hospital.save();
     res.json(hospital);
   } catch (err) {
