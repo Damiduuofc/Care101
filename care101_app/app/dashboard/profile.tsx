@@ -10,7 +10,7 @@ import * as SecureStore from 'expo-secure-store';
 import * as ImagePicker from 'expo-image-picker';
 import BottomNavBar from '../../components/BottomNavBar'; 
 
-const API_URL = `${process.env.EXPO_PUBLIC_API_URL}/api/doctor`;
+const API_URL = `${process.env.EXPO_PUBLIC_API_URL}/doctor`;
 
 // ✅ THEME COLORS
 const THEME = {

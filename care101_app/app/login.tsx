@@ -57,7 +57,6 @@ export default function LoginScreen() {
     try {
       // Attempt to sign in
       await signIn(data.email, data.password);
-      // ✅ Success: The 'signIn' function in auth.tsx handles the redirect.
 
     } catch (error: any) {
       console.log("Login Error in UI:", error);
@@ -68,7 +67,6 @@ export default function LoginScreen() {
         errorMessage = error.message;
       }
 
-      // Handle Network Errors specifically
       if (error.toString().includes('Network request failed') || error.message.includes('fetch')) {
         errorMessage = "Cannot connect to server. Please check your IP address in auth.tsx and your internet connection.";
       }

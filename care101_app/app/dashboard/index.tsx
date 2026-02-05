@@ -27,7 +27,7 @@ import {
 
 import BottomNavBar from '../../components/BottomNavBar'; 
 
-const API_URL = `${process.env.EXPO_PUBLIC_API_URL}/api/doctor`;
+const API_URL = `${process.env.EXPO_PUBLIC_API_URL}/doctor`;
 
 export default function DashboardScreen() {
   const router = useRouter(); 

@@ -9,7 +9,7 @@ import { ArrowLeft, Trash2, Calendar, Plus, Camera, Info, X } from 'lucide-react
 import * as SecureStore from 'expo-secure-store';
 import * as ImagePicker from 'expo-image-picker'; 
 
-const API_URL = `${process.env.EXPO_PUBLIC_API_URL}/api/surgery-records`;
+const API_URL = `${process.env.EXPO_PUBLIC_API_URL}/surgery-records`;
 
 export default function RecordDetailsScreen() {
   const router = useRouter();

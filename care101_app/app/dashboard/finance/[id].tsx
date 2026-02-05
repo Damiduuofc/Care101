@@ -10,7 +10,7 @@ import BottomNavBar from '@/components/BottomNavBar';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as SecureStore from 'expo-secure-store';
 
-const API_URL = `${process.env.EXPO_PUBLIC_API_URL}/api/finance`;
+const API_URL = `${process.env.EXPO_PUBLIC_API_URL}/finance`;
 
 export default function HospitalDetailsScreen() {
   const router = useRouter();

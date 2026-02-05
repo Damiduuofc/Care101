@@ -3,10 +3,11 @@ import * as SecureStore from 'expo-secure-store';
 import { useRouter, useSegments } from 'expo-router';
 
 // Ensure this points to /api/auth in your .env
-const API_URL = `${process.env.EXPO_PUBLIC_API_URL}/api/auth`;
+const API_URL = `${process.env.EXPO_PUBLIC_API_URL}/auth`;
 
 interface AuthProps {
   user: any;
+  token: string | null; // <--- ✅ ADDED: Expose token in interface
   isLoading: boolean;
   signIn: (emailOrUsername: string, pass: string) => Promise<void>;
   signUp: (userData: any) => Promise<void>;
@@ -26,6 +27,7 @@ export function useAuth() {
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<any>(null);
+  const [token, setToken] = useState<string | null>(null); // <--- ✅ ADDED: State for token
   const [isLoading, setIsLoading] = useState(true);
   const router = useRouter();
   const segments = useSegments();
@@ -34,11 +36,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const checkUser = async () => {
       try {
-        const token = await SecureStore.getItemAsync('token');
-        const userData = await SecureStore.getItemAsync('user_data');
+        const storedToken = await SecureStore.getItemAsync('token');
+        const storedUserData = await SecureStore.getItemAsync('user_data');
 
-        if (token && userData) {
-          setUser(JSON.parse(userData));
+        if (storedToken && storedUserData) {
+          setToken(storedToken); // <--- ✅ Load token into state
+          setUser(JSON.parse(storedUserData));
         }
       } catch (e) {
         console.error("Session Restoration Failed:", e);
@@ -57,7 +60,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const response = await fetch(`${API_URL}/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: email, password }), // Sending 'email' key as backend likely expects 'email' for identifier
+        body: JSON.stringify({ email: email, password }),
       });
 
       const contentType = response.headers.get("content-type");
@@ -70,19 +73,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const data = await response.json();
 
       if (!response.ok) {
-        // ✅ FIX: Check 'message' first (New Backend), then 'msg' (Old Backend)
         throw new Error(data.message || data.msg || 'Login failed');
       }
-
-      // 🚨 RESTRICTION REMOVED: Allow both Doctors and Patients
-      // if (data.user.role !== 'doctor') {
-      //   throw new Error("Access Denied. This app is for Doctors only.");
-      // }
 
       // ✅ SUCCESS: Save Session & Redirect
       await SecureStore.setItemAsync('token', data.token);
       await SecureStore.setItemAsync('user_data', JSON.stringify(data.user));
 
+      setToken(data.token); // <--- ✅ Update token state
       setUser(data.user);
 
       // Navigate based on role
@@ -98,29 +96,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  // 3. SIGN UP ACTION
+  // 3. SIGN UP ACTION (Doctor)
   const signUp = async (userData: any) => {
     try {
       console.log(`Registering doctor at: ${API_URL}/register-doctor`);
 
-      // ✅ FIX: Do NOT rename fields here. 
-      // The backend controller expects: fullName, nicNumber, etc.
-      // Pass 'userData' directly since the form already uses the correct names.
-
       const response = await fetch(`${API_URL}/register-doctor`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(userData), // <--- Send raw form data
+        body: JSON.stringify(userData),
       });
 
       const data = await response.json();
 
       if (!response.ok) {
-        // ✅ FIX: Catch the specific backend error message
         throw new Error(data.message || data.msg || 'Registration failed');
       }
 
-      // ✅ AUTO-LOGIN: Log them in immediately after signup
+      // ✅ AUTO-LOGIN
       await signIn(userData.email, userData.password);
 
     } catch (error: any) {
@@ -146,7 +139,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         throw new Error(data.message || data.msg || 'Registration failed');
       }
 
-      // ✅ AUTO-LOGIN: Use email (preferred) or username
+      // ✅ AUTO-LOGIN
       await signIn(userData.email || userData.username, userData.password);
 
     } catch (error: any) {
@@ -161,6 +154,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       await SecureStore.deleteItemAsync('token');
       await SecureStore.deleteItemAsync('user_data');
       setUser(null);
+      setToken(null); // <--- ✅ Clear token state
       router.replace('/');
     } catch (error) {
       console.error("Sign Out Error:", error);
@@ -168,7 +162,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, isLoading, signIn, signUp, registerPatient, signOut }}>
+    <AuthContext.Provider value={{ user, token, isLoading, signIn, signUp, registerPatient, signOut }}>
       {children}
     </AuthContext.Provider>
   );
