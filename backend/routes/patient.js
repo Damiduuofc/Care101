@@ -1,8 +1,8 @@
 import express from "express";
 import bcrypt from "bcryptjs";
 import Patient from "../models/Patient.js";
-import Appointment from "../models/Appointment.js"; 
-import { auth } from "../middleware/auth.js"; 
+import Appointment from "../models/Appointment.js";
+import { auth } from "../middleware/auth.js";
 
 const router = express.Router();
 
@@ -25,10 +25,10 @@ router.get("/profile", auth, async (req, res) => {
 // ==========================================
 router.put("/profile", auth, async (req, res) => {
   try {
-    const { 
-      fullName, dateOfBirth, gender, emergencyContact, 
-      mobileNumber, profileImage, medicalConditions, 
-      allergies, insuranceProvider, policyNumber 
+    const {
+      fullName, dateOfBirth, gender, emergencyContact,
+      mobileNumber, profileImage, medicalConditions,
+      allergies, insuranceProvider, policyNumber
     } = req.body;
 
     const patient = await Patient.findById(req.user.id);
@@ -143,14 +143,135 @@ router.get("/dashboard", auth, async (req, res) => {
       stats: {
         appointments: upcomingAppointments,
         prescriptions: completedAppointments,
-        reports: 0, 
-        vitals: "Good" 
+        reports: 0,
+        vitals: "Good"
       },
       activities: activities
     });
 
   } catch (err) {
     console.error("Dashboard Error:", err);
+    res.status(500).send("Server Error");
+  }
+});
+
+// ==========================================
+// 6. SEARCH PATIENTS (For Doctors)
+// ==========================================
+router.get("/search", auth, async (req, res) => {
+  try {
+    const { query } = req.query;
+
+    if (!query || query.trim().length === 0) {
+      return res.status(400).json({ msg: "Search query is required" });
+    }
+
+    // Build search criteria
+    const searchCriteria = {
+      $or: [
+        { username: { $regex: query, $options: 'i' } },
+        { nic: { $regex: query, $options: 'i' } },
+        { fullName: { $regex: query, $options: 'i' } },
+        { email: { $regex: query, $options: 'i' } }
+      ]
+    };
+
+    // If query looks like an ObjectId, also search by _id
+    if (query.match(/^[0-9a-fA-F]{24}$/)) {
+      searchCriteria.$or.push({ _id: query });
+    }
+
+    // Find patients
+    const patients = await Patient.find(searchCriteria)
+      .select("username fullName nic mobileNumber email dateOfBirth gender profileImage createdAt")
+      .limit(20)
+      .lean();
+
+    // Get last appointment for each patient
+    const patientsWithLastVisit = await Promise.all(
+      patients.map(async (patient) => {
+        const lastAppointment = await Appointment.findOne({
+          patientId: patient._id
+        })
+          .sort({ date: -1 })
+          .select("date doctorName status")
+          .lean();
+
+        return {
+          ...patient,
+          lastVisit: lastAppointment ? {
+            date: lastAppointment.date,
+            doctor: lastAppointment.doctorName,
+            status: lastAppointment.status
+          } : null
+        };
+      })
+    );
+
+    res.json(patientsWithLastVisit);
+
+  } catch (err) {
+    console.error("Patient Search Error:", err);
+    res.status(500).send("Server Error");
+  }
+});
+
+// ==========================================
+// 7. GET PATIENT MEDICAL HISTORY (For Doctors)
+// ==========================================
+router.get("/:id/medical-history", auth, async (req, res) => {
+  try {
+    const patientId = req.params.id;
+
+    // Get patient details
+    const patient = await Patient.findById(patientId)
+      .select("-password")
+      .lean();
+
+    if (!patient) {
+      return res.status(404).json({ msg: "Patient not found" });
+    }
+
+    // Get appointments
+    const appointments = await Appointment.find({ patientId })
+      .sort({ date: -1 })
+      .limit(10)
+      .lean();
+
+    // Get medical records
+    const MedicalRecord = (await import("../models/MedicalRecord.js")).default;
+    const medicalRecords = await MedicalRecord.find({ patientId })
+      .select("-fileData") // Don't send large file data
+      .sort({ date: -1 })
+      .limit(10)
+      .lean();
+
+    // Get surgery records if available
+    let surgeryRecords = [];
+    try {
+      const SurgeryRecord = (await import("../models/SurgeryRecord.js")).default;
+      surgeryRecords = await SurgeryRecord.find({ patientId })
+        .sort({ date: -1 })
+        .limit(10)
+        .lean();
+    } catch (err) {
+      console.log("Surgery records not available");
+    }
+
+    res.json({
+      patient,
+      appointments,
+      medicalRecords,
+      surgeryRecords,
+      summary: {
+        totalAppointments: appointments.length,
+        totalRecords: medicalRecords.length,
+        totalSurgeries: surgeryRecords.length
+      }
+    });
+
+  } catch (err) {
+    console.error("Medical History Error:", err);
     res.status(500).send("Server Error");
   }
 });

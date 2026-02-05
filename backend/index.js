@@ -11,7 +11,7 @@ import appointmentRoutes from "./routes/appointments.js";
 import doctorsListRoutes from "./routes/doctors.js";
 import doctorDashboardRoutes from "./routes/doctor.js";
 import medicalRoutes from "./routes/medicalRecords.js";
-import doctorRoutes from "./routes/doctors.js"; 
+import doctorRoutes from "./routes/doctors.js";
 import notificationRoutes from "./routes/notifications.js";
 import financeRoutes from "./routes/finance.js";
 import surgeryRecordRoutes from "./routes/surgeryRecords.js";
@@ -19,6 +19,7 @@ import chatRoutes from "./routes/chatRoutes.js";
 import adminRoutes from "./routes/adminRoutes.js";
 import paymentRoutes from "./routes/payments.js"; // <--- Import this
 import instructionRoutes from "./routes/instructionRoutes.js";
+import patientsRoutes from "./routes/patients.js"; // <--- NEW: Patients management
 
 const app = express();
 const __dirname = path.resolve();
@@ -28,11 +29,11 @@ const __dirname = path.resolve();
 ========================= */
 
 app.use(cors({
-  origin: "*", 
-  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"], 
+  origin: "*",
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
   allowedHeaders: [
-    "Content-Type", 
-    "Authorization", 
+    "Content-Type",
+    "Authorization",
     "ngrok-skip-browser-warning",
     "x-auth-token" // <--- ADD THIS LINE
   ]
@@ -64,9 +65,10 @@ app.use("/api/finance", financeRoutes);
 app.use("/api/surgery-records", surgeryRecordRoutes);
 app.use("/api/chat", chatRoutes);
 app.use("/api/admin", adminRoutes);
-app.use("/api/doctors", doctorRoutes); 
+app.use("/api/doctors", doctorRoutes);
 app.use("/api/instructions", instructionRoutes);
-app.use("/api/payments", paymentRoutes); 
+app.use("/api/payments", paymentRoutes);
+app.use("/api/patients", patientsRoutes); // <--- NEW: Patients management
 /* =========================
    SERVER START
 ========================= */

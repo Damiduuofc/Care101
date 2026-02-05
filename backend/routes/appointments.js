@@ -1,26 +1,34 @@
 import express from "express";
 import Appointment from "../models/Appointment.js";
-import Bill from "../models/Bill.js"; 
+import Bill from "../models/Bill.js";
 import Notification from "../models/Notification.js";
+import HospitalFinance from "../models/Finance.js";
 import { auth } from "../middleware/auth.js";
 
 const router = express.Router();
 
 // ==========================================
-// 1. BOOK APPOINTMENT & CREATE BILL (Updated with Token)
+// 1. BOOK APPOINTMENT (With Notifications & Payment Logic)
 // ==========================================
 router.post("/book", auth, async (req, res) => {
   try {
-    const { doctorId, doctorName, department, date, visitType, reason, amount } = req.body;
+    const {
+      doctorId,
+      doctorName,
+      department,
+      date,
+      visitType,
+      reason,
+      amount,
+      paymentStatus, // ✅ Get payment status from frontend
+      hospitalName // ✅ Optional: Hospital name for finance tracking
+    } = req.body;
 
     if (!doctorId || !date) {
       return res.status(400).json({ msg: "Doctor and Date are required" });
     }
 
-    // --- NEW: GENERATE TOKEN NUMBER ---
-    // Count existing appointments for this doctor on this specific date to assign the next token
-    // We assume 'date' is passed as a string (YYYY-MM-DD) or ISO object. 
-    // We strictly check the start/end of that day.
+    // --- GENERATE TOKEN NUMBER ---
     const startOfDay = new Date(date);
     startOfDay.setHours(0, 0, 0, 0);
     const endOfDay = new Date(date);
@@ -30,9 +38,8 @@ router.post("/book", auth, async (req, res) => {
       doctorId,
       date: { $gte: startOfDay, $lte: endOfDay }
     });
-    
+
     const tokenNumber = count + 1;
-    // ----------------------------------
 
     // 1. Create Appointment
     const newAppointment = new Appointment({
@@ -41,12 +48,12 @@ router.post("/book", auth, async (req, res) => {
       doctorName,
       department,
       date,
-      tokenNumber, // <--- Save the token
+      tokenNumber,
       visitType,
       reason,
       amount: amount || 2000,
-      status: 'pending',
-      paymentStatus: 'pending'
+      status: 'scheduled',
+      paymentStatus: paymentStatus || 'pending' // ✅ Save 'paid' or 'pending'
     });
 
     const savedAppointment = await newAppointment.save();
@@ -59,7 +66,8 @@ router.post("/book", auth, async (req, res) => {
         title: `Consultation - ${doctorName}`,
         type: "Appointment",
         amount: amount || 2000,
-        status: "Pending",
+        // ✅ Mark bill as Paid if appointment is paid
+        status: paymentStatus === 'paid' ? "Paid" : "Pending",
         date: new Date()
       });
       await newBill.save();
@@ -67,15 +75,64 @@ router.post("/book", auth, async (req, res) => {
       console.error("Bill Creation Failed:", billError);
     }
 
-    // 3. Notify User
+    // 3. ✅ ADD TO CHANNELING INCOME (If Paid)
+    if (paymentStatus === 'paid') {
+      try {
+        // Find or create hospital finance record
+        const hospital = hospitalName || "Suwasevana"; // Default to Suwasevana
+
+        let hospitalFinance = await HospitalFinance.findOne({
+          doctorId: doctorId,
+          name: hospital
+        });
+
+        // If hospital doesn't exist, create it
+        if (!hospitalFinance) {
+          hospitalFinance = new HospitalFinance({
+            doctorId: doctorId,
+            name: hospital,
+            whtEnabled: false,
+            records: []
+          });
+        }
+
+        // Add channeling record
+        hospitalFinance.records.unshift({
+          type: 'channeling',
+          date: new Date(date),
+          patients: 1,
+          income: amount || 2000
+        });
+
+        await hospitalFinance.save();
+        console.log(`✅ Channeling income added: ${amount || 2000} LKR to ${hospital}`);
+
+      } catch (financeError) {
+        console.error("Finance Update Failed:", financeError);
+        // Don't fail the appointment if finance update fails
+      }
+    }
+
+    // 4. ✅ CREATE NOTIFICATIONS
     try {
+      // Notification A: Booking Confirmed
       await Notification.create({
         userId: req.user.id,
         type: 'appointment',
-        message: `Booking request sent for Dr. ${doctorName}. Your Token is #${tokenNumber}`
+        message: `Booking Confirmed! Token #${tokenNumber} for Dr. ${doctorName}.`
       });
+
+      // Notification B: Payment Received (Only if paid)
+      if (paymentStatus === 'paid') {
+        await Notification.create({
+          userId: req.user.id,
+          type: 'payment', // Ensure 'payment' is in your Notification Enum
+          message: `Payment of LKR ${amount || 2000} received successfully.`
+        });
+      }
+
     } catch (notifError) {
-      // Ignore notification errors
+      console.error("Notification Error:", notifError);
     }
 
     res.json(savedAppointment);
@@ -100,19 +157,18 @@ router.get("/my-appointments", auth, async (req, res) => {
 });
 
 // ==========================================
-// 3. GET UPCOMING APPOINTMENT (New)
+// 3. GET UPCOMING APPOINTMENT
 // ==========================================
 router.get("/upcoming", auth, async (req, res) => {
   try {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    // Find the first appointment in the future (or today) that isn't cancelled
     const upcoming = await Appointment.findOne({
       patientId: req.user.id,
       date: { $gte: today },
       status: { $ne: 'cancelled' }
-    }).sort({ date: 1 }); // Sort by date ascending (closest first)
+    }).sort({ date: 1 });
 
     if (!upcoming) {
       return res.status(200).json({ appointment: null });
@@ -126,7 +182,7 @@ router.get("/upcoming", auth, async (req, res) => {
 });
 
 // ==========================================
-// 4. GET QUEUE STATUS (New)
+// 4. GET QUEUE STATUS
 // ==========================================
 router.get("/queue-status/:id", auth, async (req, res) => {
   try {
@@ -137,12 +193,8 @@ router.get("/queue-status/:id", auth, async (req, res) => {
       return res.status(404).json({ msg: "Appointment not found" });
     }
 
-    // 1. Get My Token
     const myToken = myAppointment.tokenNumber || 0;
 
-    // 2. Calculate Current Ongoing Token
-    // Logic: Count how many appointments for this doctor on this day are 'completed' or 'in-progress'
-    // This gives us an approximation of where the queue is.
     const startOfDay = new Date(myAppointment.date);
     startOfDay.setHours(0, 0, 0, 0);
     const endOfDay = new Date(myAppointment.date);
@@ -151,17 +203,12 @@ router.get("/queue-status/:id", auth, async (req, res) => {
     const completedCount = await Appointment.countDocuments({
       doctorId: myAppointment.doctorId,
       date: { $gte: startOfDay, $lte: endOfDay },
-      status: 'completed' 
+      status: 'completed'
     });
 
-    const currentToken = completedCount + 1; // The next person is current
-
-    // 3. Calculate People Ahead & Wait Time
-    // Ensure we don't show negative numbers if I'm late or status is weird
+    const currentToken = completedCount + 1;
     const peopleAhead = Math.max(0, myToken - currentToken);
-    
-    // Assume 15 mins per patient (you can make this dynamic if you have a Doctor config)
-    const estimatedWait = peopleAhead * 15; 
+    const estimatedWait = peopleAhead * 15;
 
     res.json({
       myToken,
@@ -189,8 +236,20 @@ router.put("/cancel/:id", auth, async (req, res) => {
       return res.status(401).json({ msg: "Not Authorized" });
     }
 
-    appointment.status = "cancelled"; 
+    appointment.status = "cancelled";
     await appointment.save();
+
+    // ✅ CREATE CANCELLATION NOTIFICATION
+    try {
+      await Notification.create({
+        userId: req.user.id,
+        type: 'cancellation',
+        message: `Appointment with ${appointment.doctorName} on ${new Date(appointment.date).toLocaleDateString()} has been cancelled.`,
+        metadata: { appointmentId: appointment._id }
+      });
+    } catch (notifError) {
+      console.error("Notification Error:", notifError);
+    }
 
     res.json({ msg: "Cancelled Successfully" });
   } catch (err) {

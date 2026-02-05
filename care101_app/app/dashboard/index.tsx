@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react'; 
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -12,27 +12,27 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useRouter, useFocusEffect } from 'expo-router'; 
+import { useRouter, useFocusEffect } from 'expo-router';
 import * as SecureStore from 'expo-secure-store';
-import { 
-  ChevronRight, 
-  Wallet, 
-  Activity, 
-  BarChart3, 
-  FileText, 
+import {
+  ChevronRight,
+  Wallet,
+  Activity,
+  BarChart3,
+  FileText,
   User,
   Calendar,
   Stethoscope,
 } from 'lucide-react-native';
 
-import BottomNavBar from '../../components/BottomNavBar'; 
+import BottomNavBar from '../../components/BottomNavBar';
 
 const API_URL = `${process.env.EXPO_PUBLIC_API_URL}/doctor`;
 
 export default function DashboardScreen() {
-  const router = useRouter(); 
+  const router = useRouter();
   const [loading, setLoading] = useState(true);
-  
+
   // State for Dynamic Data
   const [stats, setStats] = useState({
     name: "Doctor",
@@ -45,13 +45,22 @@ export default function DashboardScreen() {
 
   const quickActions = [
     {
+      id: 5,
+      title: 'Patients',
+      subtitle: 'Manage and add patients',
+      icon: User,
+      link: '/dashboard/patients',
+      color: '#ec4899',
+      bg: '#fdf2f8',
+    },
+    {
       id: 4,
       title: 'Appointments',
       subtitle: 'View schedule and manage bookings',
-      icon: Calendar, 
+      icon: Calendar,
       link: '/dashboard/appointment',
-      color: '#f59e0b', 
-      bg: '#fffbeb', 
+      color: '#f59e0b',
+      bg: '#fffbeb',
     },
     {
       id: 1,
@@ -59,7 +68,7 @@ export default function DashboardScreen() {
       subtitle: 'Track channeling and surgical finances',
       icon: BarChart3,
       link: '/dashboard/finance',
-      color: '#10b981', 
+      color: '#10b981',
       bg: '#ecfdf5',
     },
     {
@@ -68,7 +77,7 @@ export default function DashboardScreen() {
       subtitle: 'Manage patient surgery records',
       icon: Activity,
       link: '/dashboard/records',
-      color: '#06b6d4', 
+      color: '#06b6d4',
       bg: '#cffafe',
     },
     {
@@ -77,7 +86,7 @@ export default function DashboardScreen() {
       subtitle: 'Create and manage pre/post-op instructions',
       icon: FileText,
       link: '/dashboard/instructions',
-      color: '#8b5cf6', 
+      color: '#8b5cf6',
       bg: '#f5f3ff',
     },
 
@@ -90,22 +99,22 @@ export default function DashboardScreen() {
       const fetchDashboard = async () => {
         try {
           const token = await SecureStore.getItemAsync("token");
-          
+
           if (!token) {
             console.log("No token found, redirecting to login");
             router.replace("/");
             return;
           }
-  
+
           const response = await fetch(`${API_URL}/dashboard-stats`, {
             headers: { Authorization: `Bearer ${token}` }
           });
-  
+
           if (response.ok) {
             const data = await response.json();
             setStats(data);
           } else {
-             console.log("Failed to fetch stats, status:", response.status);
+            console.log("Failed to fetch stats, status:", response.status);
           }
         } catch (error) {
           console.error("Network Error:", error);
@@ -113,14 +122,14 @@ export default function DashboardScreen() {
           setLoading(false);
         }
       };
-  
+
       fetchDashboard();
     }, [])
   );
 
   if (loading) {
     return (
-      <View style={[styles.container, {justifyContent: 'center', alignItems: 'center'}]}>
+      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
         <ActivityIndicator size="large" color="#06b6d4" />
       </View>
     );
@@ -129,7 +138,7 @@ export default function DashboardScreen() {
   return (
     <View style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent />
-      
+
       <SafeAreaView edges={['top']} style={styles.headerSafeArea}>
         <View style={styles.headerContainer}>
           <View style={styles.profileSection}>
@@ -145,7 +154,7 @@ export default function DashboardScreen() {
         </View>
       </SafeAreaView>
 
-      <ScrollView 
+      <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
       >
@@ -165,7 +174,7 @@ export default function DashboardScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Overview</Text>
           <View style={styles.overviewGrid}>
-            
+
             {/* INCOME CARD */}
             <View style={styles.overviewCard}>
               <View style={[styles.iconCircle, { backgroundColor: '#ecfdf5' }]}>
@@ -195,10 +204,10 @@ export default function DashboardScreen() {
           <Text style={styles.sectionTitle}>Quick Actions</Text>
           <View style={styles.actionList}>
             {quickActions.map((action) => (
-              <TouchableOpacity 
-                key={action.id} 
+              <TouchableOpacity
+                key={action.id}
                 style={styles.actionCard}
-                onPress={() => router.push(action.link as any)} 
+                onPress={() => router.push(action.link as any)}
               >
                 <View style={[styles.actionIconBox, { backgroundColor: action.bg }]}>
                   <action.icon size={24} color={action.color} />
@@ -229,7 +238,7 @@ const styles = StyleSheet.create({
   headerSafeArea: {
     backgroundColor: '#fff',
     zIndex: 10,
-    paddingTop: Platform.OS === 'android' ? 10 : 0, 
+    paddingTop: Platform.OS === 'android' ? 10 : 0,
   },
   headerContainer: {
     paddingHorizontal: 20,
@@ -269,7 +278,7 @@ const styles = StyleSheet.create({
     color: '#64748b',
   },
   scrollContent: {
-    paddingBottom: 100, 
+    paddingBottom: 100,
   },
   heroContainer: {
     margin: 20,

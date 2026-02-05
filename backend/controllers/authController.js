@@ -41,9 +41,9 @@ export const registerDoctor = async (req, res) => {
 // ==========================================
 export const registerPatient = async (req, res) => {
   try {
-    const { 
+    const {
       fullName, dateOfBirth, gender, nicNumber,
-      mobileNumber, email, district, username, password 
+      mobileNumber, email, district, username, password
     } = req.body;
 
     // 1. Check uniqueness across BOTH collections
@@ -75,19 +75,20 @@ export const registerPatient = async (req, res) => {
 
     // 4. Create Token
     const token = jwt.sign(
-      { id: newPatient._id, role: 'patient' }, 
-      process.env.JWT_SECRET, 
+      { id: newPatient._id, role: 'patient' },
+      process.env.JWT_SECRET,
       { expiresIn: "30d" }
     );
 
-    res.status(201).json({ 
-      token, 
-      user: { 
-        id: newPatient._id, 
-        name: newPatient.fullName, 
+    res.status(201).json({
+      token,
+      user: {
+        id: newPatient._id,
+        name: newPatient.fullName,
         email: newPatient.email,
+        nicNumber: newPatient.nicNumber,
         role: "patient"
-      } 
+      }
     });
 
   } catch (error) {
@@ -102,7 +103,7 @@ export const registerPatient = async (req, res) => {
 export const login = async (req, res) => {
   try {
     const { email, password } = req.body;
-    
+
     let user = null;
     let role = null;
 
@@ -135,20 +136,21 @@ export const login = async (req, res) => {
 
     // 5. Generate Token
     const token = jwt.sign(
-      { id: user._id, role: role }, 
-      process.env.JWT_SECRET, 
+      { id: user._id, role: role },
+      process.env.JWT_SECRET,
       { expiresIn: "30d" }
     );
 
-    res.json({ 
-      token, 
-      user: { 
-        id: user._id, 
-        name: user.name || user.fullName, 
-        email: user.email, 
+    res.json({
+      token,
+      user: {
+        id: user._id,
+        name: user.name || user.fullName,
+        email: user.email,
         role: role,
-        specialization: user.specialization || null 
-      } 
+        specialization: user.specialization || null,
+        nicNumber: user.nicNumber || user.nic || null  // Include NIC for patients/doctors
+      }
     });
 
   } catch (error) {
@@ -179,7 +181,7 @@ export const registerDoctorsBulk = async (req, res) => {
     res.status(201).json({ message: "Bulk import successful!", count: result.length });
   } catch (error) {
     if (error.code === 11000) {
-        return res.status(400).json({ message: "Import partial/failed: Some emails or NICs already exist." });
+      return res.status(400).json({ message: "Import partial/failed: Some emails or NICs already exist." });
     }
     res.status(500).json({ message: error.message });
   }
@@ -206,10 +208,10 @@ export const getMe = async (req, res) => {
 // 1. UPDATE PROFILE (Handles Text + Base64 Image)
 export const updateProfile = async (req, res) => {
   try {
-    const { 
-      fullName, mobileNumber, district, 
-      emergencyContact, medicalConditions, allergies, 
-      insuranceProvider, policyNumber, profileImage 
+    const {
+      fullName, mobileNumber, district,
+      emergencyContact, medicalConditions, allergies,
+      insuranceProvider, policyNumber, profileImage
     } = req.body;
 
     const patient = await Patient.findById(req.user.id);
@@ -247,7 +249,7 @@ export const changePassword = async (req, res) => {
     // Hash new password
     const salt = await bcrypt.genSalt(10);
     patient.password = await bcrypt.hash(newPassword, salt);
-    
+
     await patient.save();
     res.json({ msg: "Password updated successfully" });
   } catch (err) {

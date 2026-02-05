@@ -6,7 +6,7 @@ import {
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { ArrowLeft, Plus, Calendar, X, Trash2 } from 'lucide-react-native';
-import BottomNavBar from '@/components/BottomNavBar'; 
+import BottomNavBar from '@/components/BottomNavBar';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as SecureStore from 'expo-secure-store';
 
@@ -14,10 +14,10 @@ const API_URL = `${process.env.EXPO_PUBLIC_API_URL}/finance`;
 
 export default function HospitalDetailsScreen() {
   const router = useRouter();
-  const { id } = useLocalSearchParams(); 
+  const { id } = useLocalSearchParams();
   const [loading, setLoading] = useState(true);
   const [hospital, setHospital] = useState<any>(null);
-  
+
   const [activeTab, setActiveTab] = useState<'channeling' | 'surgical'>('channeling');
   const [modalVisible, setModalVisible] = useState(false);
   const [date, setDate] = useState(new Date());
@@ -33,11 +33,11 @@ export default function HospitalDetailsScreen() {
     fetchDetails();
   }, []);
 
-const fetchDetails = async () => {
+  const fetchDetails = async () => {
     try {
-      console.log(`Fetching details for ID: ${id}`); 
+      console.log(`Fetching details for ID: ${id}`);
       const token = await SecureStore.getItemAsync('token');
-      
+
       const res = await fetch(`${API_URL}/${id}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
@@ -164,35 +164,35 @@ const fetchDetails = async () => {
             <Text style={styles.modalTitle}>Add Record</Text>
             {/* Inputs based on activeTab */}
             {activeTab === 'channeling' ? (
-                <>
-                    <TextInput style={styles.input} placeholder="Patients" keyboardType="numeric" value={patients} onChangeText={setPatients} />
-                    <TextInput style={styles.input} placeholder="Income" keyboardType="numeric" value={income} onChangeText={setIncome} />
-                </>
+              <>
+                <TextInput style={styles.input} placeholder="Patients" keyboardType="numeric" value={patients} onChangeText={setPatients} />
+                <TextInput style={styles.input} placeholder="Income" keyboardType="numeric" value={income} onChangeText={setIncome} />
+              </>
             ) : (
-                <>
-                    <TextInput style={styles.input} placeholder="BHT Number" value={bht} onChangeText={setBht} />
-                    <TextInput style={styles.input} placeholder="Amount" keyboardType="numeric" value={amount} onChangeText={setAmount} />
-                </>
+              <>
+                <TextInput style={styles.input} placeholder="BHT Number" value={bht} onChangeText={setBht} />
+                <TextInput style={styles.input} placeholder="Amount" keyboardType="numeric" value={amount} onChangeText={setAmount} />
+              </>
             )}
-            
+
             {/* Date Picker Trigger */}
             <TouchableOpacity style={styles.dateInputWrapper} onPress={() => setShowDatePicker(true)}>
-                <Text>{date.toDateString()}</Text>
-                <Calendar size={20} color="#64748b" />
+              <Text>{date.toDateString()}</Text>
+              <Calendar size={20} color="#64748b" />
             </TouchableOpacity>
-            
+
             {showDatePicker && (
-                <DateTimePicker 
-                    value={date} 
-                    mode="date" 
-                    display="default" 
-                    onChange={(e, d) => { setShowDatePicker(Platform.OS === 'ios'); if(d) setDate(d); }} 
-                />
+              <DateTimePicker
+                value={date}
+                mode="date"
+                display="default"
+                onChange={(e, d) => { setShowDatePicker(Platform.OS === 'ios'); if (d) setDate(d); }}
+              />
             )}
 
             <View style={styles.modalActions}>
-                <TouchableOpacity style={styles.cancelBtn} onPress={() => setModalVisible(false)}><Text>Cancel</Text></TouchableOpacity>
-                <TouchableOpacity style={styles.saveBtn} onPress={handleAddRecord}><Text style={{color:'#fff'}}>Save</Text></TouchableOpacity>
+              <TouchableOpacity style={styles.cancelBtn} onPress={() => setModalVisible(false)}><Text>Cancel</Text></TouchableOpacity>
+              <TouchableOpacity style={styles.saveBtn} onPress={handleAddRecord}><Text style={{ color: '#fff' }}>Save</Text></TouchableOpacity>
             </View>
           </View>
         </KeyboardAvoidingView>
