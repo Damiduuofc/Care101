@@ -2,7 +2,7 @@ import Doctor from "../models/Doctor.js";
 import Patient from "../models/Patient.js";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
-
+import Notification from "../models/Notification.js";
 // 1. REGISTER SINGLE DOCTOR
 export const registerDoctor = async (req, res) => {
   try {
@@ -184,3 +184,86 @@ export const registerDoctorsBulk = async (req, res) => {
     res.status(500).json({ message: error.message });
   }
 };
+
+
+export const getMe = async (req, res) => {
+  try {
+    // req.user.id comes from the auth middleware decoding the token
+    const patient = await Patient.findById(req.user.id).select("-password");
+
+    if (!patient) {
+      return res.status(404).json({ msg: "User not found" });
+    }
+
+    res.json(patient);
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).send("Server Error");
+  }
+};
+
+
+// 1. UPDATE PROFILE (Handles Text + Base64 Image)
+export const updateProfile = async (req, res) => {
+  try {
+    const { 
+      fullName, mobileNumber, district, 
+      emergencyContact, medicalConditions, allergies, 
+      insuranceProvider, policyNumber, profileImage 
+    } = req.body;
+
+    const patient = await Patient.findById(req.user.id);
+    if (!patient) return res.status(404).json({ msg: "User not found" });
+
+    // Update fields if provided
+    if (fullName) patient.fullName = fullName;
+    if (mobileNumber) patient.mobileNumber = mobileNumber;
+    if (district) patient.district = district;
+    if (emergencyContact) patient.emergencyContact = emergencyContact;
+    if (medicalConditions) patient.medicalConditions = medicalConditions;
+    if (allergies) patient.allergies = allergies;
+    if (insuranceProvider) patient.insuranceProvider = insuranceProvider;
+    if (policyNumber) patient.policyNumber = policyNumber;
+    if (profileImage) patient.profileImage = profileImage; // Expecting Base64 string
+
+    await patient.save();
+    res.json({ msg: "Profile updated successfully", patient });
+  } catch (err) {
+    console.error(err);
+    res.status(500).send("Server Error");
+  }
+};
+
+// 2. CHANGE PASSWORD
+export const changePassword = async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+    const patient = await Patient.findById(req.user.id);
+
+    // Verify current password
+    const isMatch = await bcrypt.compare(currentPassword, patient.password);
+    if (!isMatch) return res.status(400).json({ msg: "Incorrect current password" });
+
+    // Hash new password
+    const salt = await bcrypt.genSalt(10);
+    patient.password = await bcrypt.hash(newPassword, salt);
+    
+    await patient.save();
+    res.json({ msg: "Password updated successfully" });
+  } catch (err) {
+    console.error(err);
+    res.status(500).send("Server Error");
+  }
+};
+
+// 3. GET NOTIFICATIONS
+export const getNotifications = async (req, res) => {
+  try {
+    const notifications = await Notification.find({ userId: req.user.id }).sort({ timestamp: -1 });
+    res.json(notifications);
+  } catch (err) {
+    console.error(err);
+    res.status(500).send("Server Error");
+  }
+};
+

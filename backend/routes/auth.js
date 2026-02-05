@@ -1,11 +1,17 @@
 import express from "express";
-// ✅ FIXED: Added 'registerDoctorsBulk' to the import list
+// ✅ FIXED: Added all missing controller functions to the import
 import { 
   registerDoctor, 
   registerPatient, 
   login, 
-  registerDoctorsBulk 
+  registerDoctorsBulk,
+  getMe,             // <--- Added
+  updateProfile,     // <--- Added
+  changePassword,    // <--- Added
+  getNotifications   // <--- Added
 } from "../controllers/authController.js";
+
+import { auth } from "../middleware/auth.js";
 
 const router = express.Router();
 
@@ -14,19 +20,31 @@ const router = express.Router();
 // ==========================================
 
 // 1. Register Doctor (Single)
-// Endpoint: POST /api/auth/register-doctor
 router.post("/register-doctor", registerDoctor);
 
-// 2. Register Doctors (Bulk - 150+ List)
-// Endpoint: POST /api/auth/register-doctors-bulk
+// 2. Register Doctors (Bulk)
 router.post("/register-doctors-bulk", registerDoctorsBulk);
 
 // 3. Register Patient
-// Endpoint: POST /api/auth/register-patient
 router.post("/register-patient", registerPatient);
 
 // 4. Login
-// Endpoint: POST /api/auth/login
 router.post("/login", login);
+
+// ==========================================
+// PROTECTED ROUTES (Require Token)
+// ==========================================
+
+// 5. Get Current User Profile
+router.get("/me", auth, getMe);
+
+// 6. Update Profile
+router.put("/update-profile", auth, updateProfile);
+
+// 7. Change Password
+router.put("/change-password", auth, changePassword);
+
+// 8. Get Notifications
+router.get("/notifications", auth, getNotifications);
 
 export default router;
