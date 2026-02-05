@@ -42,13 +42,87 @@ router.get("/", auth, async (req, res) => {
   }
 });
 
-// MARK READ
+// GET UNREAD COUNT
+router.get("/unread-count", auth, async (req, res) => {
+  try {
+    const count = await Notification.countDocuments({
+      userId: req.user.id,
+      read: false
+    });
+    res.json({ count });
+  } catch (err) {
+    console.error(err);
+    res.status(500).send("Server Error");
+  }
+});
+
+// MARK READ (Single)
 router.put("/read/:id", auth, async (req, res) => {
   try {
     if (req.params.id.startsWith("rem-")) return res.json({ msg: "Ok" });
-    await Notification.findByIdAndUpdate(req.params.id, { read: true });
+
+    const notification = await Notification.findOne({
+      _id: req.params.id,
+      userId: req.user.id
+    });
+
+    if (!notification) {
+      return res.status(404).json({ msg: "Notification not found" });
+    }
+
+    notification.read = true;
+    await notification.save();
+
     res.json({ msg: "Marked as read" });
   } catch (err) {
+    res.status(500).send("Server Error");
+  }
+});
+
+// MARK ALL AS READ
+router.put("/read-all", auth, async (req, res) => {
+  try {
+    await Notification.updateMany(
+      { userId: req.user.id, read: false },
+      { read: true }
+    );
+    res.json({ msg: "All notifications marked as read" });
+  } catch (err) {
+    console.error(err);
+    res.status(500).send("Server Error");
+  }
+});
+
+// DELETE NOTIFICATION
+router.delete("/:id", auth, async (req, res) => {
+  try {
+    if (req.params.id.startsWith("rem-")) {
+      return res.json({ msg: "Cannot delete reminder" });
+    }
+
+    const result = await Notification.findOneAndDelete({
+      _id: req.params.id,
+      userId: req.user.id
+    });
+
+    if (!result) {
+      return res.status(404).json({ msg: "Notification not found" });
+    }
+
+    res.json({ msg: "Notification deleted" });
+  } catch (err) {
+    console.error(err);
+    res.status(500).send("Server Error");
+  }
+});
+
+// CLEAR ALL NOTIFICATIONS
+router.delete("/clear-all", auth, async (req, res) => {
+  try {
+    await Notification.deleteMany({ userId: req.user.id });
+    res.json({ msg: "All notifications cleared" });
+  } catch (err) {
+    console.error(err);
     res.status(500).send("Server Error");
   }
 });

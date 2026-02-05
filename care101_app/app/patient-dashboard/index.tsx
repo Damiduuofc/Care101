@@ -10,7 +10,8 @@ import {
     Platform,
     ActivityIndicator,
     Modal,
-    Alert
+    Alert,
+    FlatList // Added FlatList
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -24,8 +25,9 @@ import {
     ShieldCheck,
     Users,
     X,
-    AlertCircle,
-    CreditCard // <--- Added this for the Payment Icon
+    CreditCard,
+    Bell,
+    Activity
 } from 'lucide-react-native';
 
 import PatientBottomNavBar from '../../components/PatientBottomNavBar';
@@ -33,17 +35,22 @@ import { useAuth } from '@/context/auth';
 import AiAssistant from '@/components/ui/AiAssistant';
 
 // Replace with your actual API URL
-const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.1.100:5000/api'; 
+const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.1.100:5000/api';
 
 export default function PatientDashboardScreen() {
     const router = useRouter();
-    const { user, isLoading: authLoading, token } = useAuth(); 
+    const { user, isLoading: authLoading, token } = useAuth();
 
     // --- STATE MANAGEMENT ---
     const [loading, setLoading] = useState(true);
     const [upcomingAppointment, setUpcomingAppointment] = useState<any>(null);
     const [queueData, setQueueData] = useState<any>(null);
+
+    // Modals
     const [isQueueVisible, setQueueVisible] = useState(false);
+    const [isNotifVisible, setNotifVisible] = useState(false); // ✅ Notification Modal State
+    const [notifications, setNotifications] = useState<any[]>([]); // ✅ Notification Data
+    const [unreadCount, setUnreadCount] = useState(0); // ✅ Unread notification count
 
     // Session Check
     useEffect(() => {
@@ -52,12 +59,10 @@ export default function PatientDashboardScreen() {
         }
     }, [user, authLoading]);
 
-    // --- FETCH DATA ---
+    // --- FETCH DASHBOARD DATA ---
     const fetchDashboardData = async () => {
         try {
             setLoading(true);
-            
-            // 1. Fetch Upcoming Appointment
             const response = await fetch(`${API_URL}/appointments/upcoming`, {
                 method: 'GET',
                 headers: {
@@ -68,7 +73,7 @@ export default function PatientDashboardScreen() {
 
             if (response.ok) {
                 const data = await response.json();
-                setUpcomingAppointment(data.appointment || null); 
+                setUpcomingAppointment(data.appointment || null);
             } else {
                 setUpcomingAppointment(null);
             }
@@ -77,6 +82,47 @@ export default function PatientDashboardScreen() {
             console.error("Dashboard Fetch Error:", error);
         } finally {
             setLoading(false);
+        }
+    };
+
+    // --- FETCH NOTIFICATIONS ---
+    const fetchNotifications = async (openModal = true) => {
+        try {
+            const response = await fetch(`${API_URL}/notifications`, {
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'ngrok-skip-browser-warning': 'true'
+                }
+            });
+            if (response.ok) {
+                const data = await response.json();
+                setNotifications(data);
+                if (openModal) {
+                    setNotifVisible(true); // Open Modal
+                }
+            } else {
+                console.log("Failed to fetch notifications");
+            }
+        } catch (error) {
+            console.error("Notification Error:", error);
+        }
+    };
+
+    // --- FETCH UNREAD COUNT ---
+    const fetchUnreadCount = async () => {
+        try {
+            const response = await fetch(`${API_URL}/notifications/unread-count`, {
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'ngrok-skip-browser-warning': 'true'
+                }
+            });
+            if (response.ok) {
+                const data = await response.json();
+                setUnreadCount(data.count || 0);
+            }
+        } catch (error) {
+            console.error("Unread Count Error:", error);
         }
     };
 
@@ -94,7 +140,7 @@ export default function PatientDashboardScreen() {
             if (response.ok) {
                 const data = await response.json();
                 setQueueData(data);
-                setQueueVisible(true); 
+                setQueueVisible(true);
             } else {
                 Alert.alert("Error", "Unable to fetch live queue status.");
             }
@@ -107,26 +153,25 @@ export default function PatientDashboardScreen() {
     useEffect(() => {
         if (user && token) {
             fetchDashboardData();
+            fetchUnreadCount();
+
+            // Auto-refresh notifications every 30 seconds
+            const notifInterval = setInterval(() => {
+                fetchNotifications(false); // Don't open modal on auto-refresh
+                fetchUnreadCount();
+            }, 30000);
+
+            return () => clearInterval(notifInterval);
         }
     }, [user, token]);
 
-    // ✅ UPDATED HELPER: Robust Name Formatter
     const getFormattedName = () => {
         if (!user) return "Patient";
-        
-        // 1. Get Title (Mr./Mrs.)
         const title = user.title ? `${user.title}. ` : '';
-        
-        // 2. Find the best available name
-        const name = user.fullName || 
-                     user.name || 
-                     user.username || 
-                     (user.email ? user.email.split('@')[0] : "Patient");
-                     
+        const name = user.fullName || user.name || user.username || (user.email ? user.email.split('@')[0] : "Patient");
         return `${title}${name}`;
     };
 
-    // Helper to format date
     const formatDate = (dateString: string) => {
         const date = new Date(dateString);
         return {
@@ -160,21 +205,21 @@ export default function PatientDashboardScreen() {
             title: 'Medical Records',
             subtitle: 'View your history and prescriptions',
             icon: FileText,
-            link: '/patient-dashboard/records',
+            link: '/patient-dashboard/surgery-records',
             color: '#8b5cf6',
             bg: '#f5f3ff',
         },
-         {
-            id: 3, // ✅ Unique ID
+        {
+            id: 4,
             title: 'Payment',
             subtitle: 'Manage your billing and invoices',
-            icon: CreditCard, // ✅ Changed Icon
+            icon: CreditCard,
             link: '/patient-dashboard/billing',
-            color: '#ec4899', // ✅ Changed Color to Pink (Distinct from Profile)
+            color: '#ec4899',
             bg: '#fdf2f8',
         },
         {
-            id: 4, // ✅ Unique ID (Must be different from 3)
+            id: 5,
             title: 'Update Profile',
             subtitle: 'Manage your personal information',
             icon: User,
@@ -190,6 +235,7 @@ export default function PatientDashboardScreen() {
 
             <SafeAreaView edges={['top']} style={styles.headerSafeArea}>
                 <View style={styles.headerContainer}>
+                    {/* LEFT: Profile */}
                     <View style={styles.profileSection}>
                         <View style={styles.avatarContainer}>
                             <User size={24} color="#06b6d4" />
@@ -199,20 +245,29 @@ export default function PatientDashboardScreen() {
                             <Text style={styles.userName}>{getFormattedName()}</Text>
                         </View>
                     </View>
+
+                    {/* RIGHT: Notifications (Updated onPress) */}
+                    <TouchableOpacity
+                        style={styles.notificationButton}
+                        onPress={() => fetchNotifications(true)} // ✅ Calls fetchNotifications
+                    >
+                        <Bell size={24} color="#1e293b" />
+                        {unreadCount > 0 && (
+                            <View style={styles.unreadBadge}>
+                                <Text style={styles.unreadBadgeText}>
+                                    {unreadCount > 9 ? '9+' : unreadCount}
+                                </Text>
+                            </View>
+                        )}
+                    </TouchableOpacity>
                 </View>
             </SafeAreaView>
 
-            <ScrollView
-                showsVerticalScrollIndicator={false}
-                contentContainerStyle={styles.scrollContent}
-            >
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
                 {/* --- HERO BANNER --- */}
                 <View style={styles.heroContainer}>
                     <Image source={bannerImage} style={styles.heroImage} />
-                    <LinearGradient
-                        colors={['transparent', 'rgba(0,0,0,0.7)']}
-                        style={styles.heroOverlay}
-                    >
+                    <LinearGradient colors={['transparent', 'rgba(0,0,0,0.7)']} style={styles.heroOverlay}>
                         <Text style={styles.heroTitle}>YOUR HEALTH MATTERS</Text>
                         <Text style={styles.heroSubtitle}>Manage your care journey with ease</Text>
                     </LinearGradient>
@@ -221,34 +276,24 @@ export default function PatientDashboardScreen() {
                 {/* --- UPCOMING APPOINTMENT SECTION --- */}
                 <View style={styles.section}>
                     <Text style={styles.sectionTitle}>Upcoming Appointment</Text>
-                    
+
                     {upcomingAppointment ? (
-                        <TouchableOpacity 
+                        <TouchableOpacity
                             style={styles.appointmentCard}
                             onPress={() => fetchQueueStatus(upcomingAppointment._id || upcomingAppointment.id)}
                             activeOpacity={0.9}
                         >
                             <View style={styles.appointLeft}>
                                 <View style={styles.dateBox}>
-                                    <Text style={styles.dateDay}>
-                                        {formatDate(upcomingAppointment.date).day}
-                                    </Text>
-                                    <Text style={styles.dateMonth}>
-                                        {formatDate(upcomingAppointment.date).month}
-                                    </Text>
+                                    <Text style={styles.dateDay}>{formatDate(upcomingAppointment.date).day}</Text>
+                                    <Text style={styles.dateMonth}>{formatDate(upcomingAppointment.date).month}</Text>
                                 </View>
                                 <View style={styles.appointDetails}>
-                                    <Text style={styles.doctorName}>
-                                        {upcomingAppointment.doctorName || "Dr. Unknown"}
-                                    </Text>
-                                    <Text style={styles.specialty}>
-                                        {upcomingAppointment.specialty || "General"}
-                                    </Text>
+                                    <Text style={styles.doctorName}>{upcomingAppointment.doctorName || "Dr. Unknown"}</Text>
+                                    <Text style={styles.specialty}>{upcomingAppointment.specialty || "General"}</Text>
                                     <View style={styles.timeRow}>
                                         <Clock size={14} color="#64748b" />
-                                        <Text style={styles.timeText}>
-                                            {upcomingAppointment.time || "TBA"}
-                                        </Text>
+                                        <Text style={styles.timeText}>{upcomingAppointment.time || "TBA"}</Text>
                                     </View>
                                     <Text style={styles.tapHint}>Tap to view queue status</Text>
                                 </View>
@@ -258,7 +303,6 @@ export default function PatientDashboardScreen() {
                             </View>
                         </TouchableOpacity>
                     ) : (
-                        // Fallback if no appointment
                         <View style={styles.emptyCard}>
                             <Calendar size={24} color="#94a3b8" />
                             <Text style={styles.emptyText}>No upcoming appointments scheduled.</Text>
@@ -269,7 +313,7 @@ export default function PatientDashboardScreen() {
                     )}
                 </View>
 
-                {/* --- QUICK ACTIONS SECTION --- */}
+                {/* --- QUICK ACTIONS --- */}
                 <View style={styles.section}>
                     <Text style={styles.sectionTitle}>Quick Actions</Text>
                     <View style={styles.actionList}>
@@ -300,8 +344,8 @@ export default function PatientDashboardScreen() {
                         <Text style={styles.infoText}>Ensure your medical history needs are up to date for better care.</Text>
                     </View>
                 </View>
-                
-                <View style={{ height: 80 }} /> 
+
+                <View style={{ height: 80 }} />
             </ScrollView>
 
             {/* --- QUEUE STATUS MODAL --- */}
@@ -319,40 +363,29 @@ export default function PatientDashboardScreen() {
                                 <X size={24} color="#64748b" />
                             </TouchableOpacity>
                         </View>
-                        
                         {queueData ? (
                             <>
                                 <View style={styles.queueContainer}>
                                     <View style={styles.tokenBox}>
                                         <Text style={styles.tokenLabel}>Your Token</Text>
-                                        <Text style={styles.tokenNumber}>
-                                            {queueData.myToken || "--"}
-                                        </Text>
+                                        <Text style={styles.tokenNumber}>{queueData.myToken || "--"}</Text>
                                     </View>
-
                                     <View style={[styles.tokenBox, styles.activeTokenBox]}>
                                         <Text style={styles.activeTokenLabel}>Ongoing</Text>
-                                        <Text style={styles.activeTokenNumber}>
-                                            {queueData.currentToken || "--"}
-                                        </Text>
+                                        <Text style={styles.activeTokenNumber}>{queueData.currentToken || "--"}</Text>
                                         <View style={styles.liveIndicator}>
                                             <View style={styles.liveDot} />
                                             <Text style={styles.liveText}>Live</Text>
                                         </View>
                                     </View>
                                 </View>
-
                                 <View style={styles.queueInfo}>
                                     <Users size={16} color="#64748b" />
-                                    <Text style={styles.queueInfoText}>
-                                        {queueData.peopleAhead || 0} people ahead of you
-                                    </Text>
+                                    <Text style={styles.queueInfoText}>{queueData.peopleAhead || 0} people ahead of you</Text>
                                 </View>
                                 <View style={styles.queueInfo}>
                                     <Clock size={16} color="#64748b" />
-                                    <Text style={styles.queueInfoText}>
-                                        Approx. Wait: {queueData.estimatedWait || 0} mins
-                                    </Text>
+                                    <Text style={styles.queueInfoText}>Approx. Wait: {queueData.estimatedWait || 0} mins</Text>
                                 </View>
                             </>
                         ) : (
@@ -361,18 +394,53 @@ export default function PatientDashboardScreen() {
                                 <Text style={{ marginTop: 10, color: '#64748b' }}>Updating status...</Text>
                             </View>
                         )}
-
-                        <TouchableOpacity 
-                            style={styles.closeButton}
-                            onPress={() => setQueueVisible(false)}
-                        >
+                        <TouchableOpacity style={styles.closeButton} onPress={() => setQueueVisible(false)}>
                             <Text style={styles.closeButtonText}>Close</Text>
                         </TouchableOpacity>
                     </View>
                 </View>
             </Modal>
 
-            {/* --- FLOATING AI ASSISTANT --- */}
+            {/* --- NOTIFICATION MODAL (New) --- */}
+            <Modal
+                animationType="slide"
+                visible={isNotifVisible}
+                presentationStyle="pageSheet" // Looks better on iOS
+                onRequestClose={() => setNotifVisible(false)}
+            >
+                <SafeAreaView style={{ flex: 1, backgroundColor: '#fff' }}>
+                    <View style={styles.modalHeader}>
+                        <Text style={styles.modalTitle}>Notifications</Text>
+                        <TouchableOpacity onPress={() => setNotifVisible(false)}>
+                            <X size={24} color="#0f172a" />
+                        </TouchableOpacity>
+                    </View>
+                    <FlatList
+                        data={notifications}
+                        keyExtractor={(item) => item._id}
+                        contentContainerStyle={{ padding: 20 }}
+                        ListEmptyComponent={
+                            <View style={{ alignItems: 'center', marginTop: 50 }}>
+                                <Bell size={40} color="#cbd5e1" />
+                                <Text style={{ color: '#94a3b8', marginTop: 10 }}>No new notifications</Text>
+                            </View>
+                        }
+                        renderItem={({ item }) => (
+                            <View style={styles.notifCard}>
+                                <View style={[styles.notifIcon, { backgroundColor: item.type === 'appointment' ? '#ecfeff' : '#f1f5f9' }]}>
+                                    {item.type === 'appointment' ? <Calendar size={20} color="#06b6d4" /> : <Bell size={20} color="#64748b" />}
+                                </View>
+                                <View style={{ flex: 1 }}>
+                                    <Text style={styles.notifMessage}>{item.message}</Text>
+                                    <Text style={styles.notifTime}>{new Date(item.timestamp).toLocaleString()}</Text>
+                                </View>
+                                {!item.read && <View style={styles.unreadDot} />}
+                            </View>
+                        )}
+                    />
+                </SafeAreaView>
+            </Modal>
+
             <View style={{ zIndex: 100 }}>
                 <AiAssistant />
             </View>
@@ -398,10 +466,41 @@ const styles = StyleSheet.create({
         borderBottomWidth: 1,
         borderBottomColor: '#f1f5f9',
         backgroundColor: '#fff',
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center'
     },
     profileSection: {
         flexDirection: 'row',
         alignItems: 'center',
+    },
+    notificationButton: {
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+        backgroundColor: '#f1f5f9',
+        alignItems: 'center',
+        justifyContent: 'center',
+        position: 'relative'
+    },
+    unreadBadge: {
+        position: 'absolute',
+        top: 6,
+        right: 6,
+        minWidth: 18,
+        height: 18,
+        borderRadius: 9,
+        backgroundColor: '#ef4444',
+        borderWidth: 1.5,
+        borderColor: '#fff',
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingHorizontal: 4,
+    },
+    unreadBadgeText: {
+        color: '#fff',
+        fontSize: 10,
+        fontWeight: '700',
     },
     avatarContainer: {
         width: 50,
@@ -623,7 +722,7 @@ const styles = StyleSheet.create({
         color: '#10b981',
         lineHeight: 20,
     },
-    /* --- MODAL STYLES --- */
+    // --- MODAL STYLES ---
     modalOverlay: {
         flex: 1,
         backgroundColor: 'rgba(0,0,0,0.5)',
@@ -648,7 +747,9 @@ const styles = StyleSheet.create({
         width: '100%',
         justifyContent: 'space-between',
         alignItems: 'center',
-        marginBottom: 20
+        marginBottom: 20,
+        paddingHorizontal: 20,
+        paddingTop: 20
     },
     modalTitle: {
         fontSize: 18,
@@ -744,5 +845,11 @@ const styles = StyleSheet.create({
         color: '#fff',
         fontWeight: '600',
         fontSize: 16
-    }
+    },
+    // Notif Styles
+    notifCard: { flexDirection: 'row', padding: 16, backgroundColor: '#fff', borderRadius: 12, marginBottom: 10, borderWidth: 1, borderColor: '#e2e8f0' },
+    notifIcon: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', marginRight: 12 },
+    notifMessage: { fontSize: 14, color: '#334155', marginBottom: 4, flexWrap: 'wrap' },
+    notifTime: { fontSize: 11, color: '#94a3b8' },
+    unreadDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#ef4444', marginLeft: 8, marginTop: 6 },
 });

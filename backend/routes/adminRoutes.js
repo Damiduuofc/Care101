@@ -6,7 +6,8 @@ import Doctor from "../models/Doctor.js";
 import Patient from "../models/Patient.js";
 import Appointment from "../models/Appointment.js";
 import HospitalStatus from "../models/HospitalStatus.js";
-import Bill from "../models/Bill.js"; 
+import Bill from "../models/Bill.js";
+import HospitalFinance from "../models/Finance.js";
 import { protect, authorize } from "../middleware/authRole.js";
 
 const router = express.Router();
@@ -25,11 +26,11 @@ router.post("/login", async (req, res) => {
     if (!isMatch) return res.status(400).json({ msg: "Invalid Credentials" });
 
     const payload = { id: admin.id, role: admin.role };
-    
+
     // Ensure JWT_SECRET exists
     if (!process.env.JWT_SECRET) {
-       console.error("JWT_SECRET is missing in .env");
-       return res.status(500).send("Server Configuration Error");
+      console.error("JWT_SECRET is missing in .env");
+      return res.status(500).send("Server Configuration Error");
     }
 
     const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: "1d" });
@@ -59,11 +60,11 @@ router.get("/stats", protect, async (req, res) => {
     const totalDoctors = await Doctor.countDocuments();
     const pendingDoctors = await Doctor.countDocuments({ isApproved: false });
     const totalPatients = await Patient.countDocuments();
-    
+
     // Appointments Today
     const startOfDay = new Date();
     startOfDay.setHours(0, 0, 0, 0);
-    
+
     const endOfDay = new Date();
     endOfDay.setHours(23, 59, 59, 999);
 
@@ -72,8 +73,8 @@ router.get("/stats", protect, async (req, res) => {
     });
 
     // Pending Appointments (Case Insensitive)
-    const pendingAppointments = await Appointment.countDocuments({ 
-      status: { $regex: /^pending$/i } 
+    const pendingAppointments = await Appointment.countDocuments({
+      status: { $regex: /^pending$/i }
     });
 
     // Revenue Calculation
@@ -98,7 +99,7 @@ router.get("/stats", protect, async (req, res) => {
       status: {
         generalWard: status.generalWard,
         icuBeds: status.icuBeds,
-        emergency: status.emergencyUnit, 
+        emergency: status.emergencyUnit,
         pharmacy: status.pharmacy
       }
     });
@@ -115,7 +116,7 @@ router.get("/stats", protect, async (req, res) => {
 router.put("/status", protect, authorize(["system_admin"]), async (req, res) => {
   try {
     const { generalWard, icuBeds, emergencyUnit, pharmacy } = req.body;
-    
+
     let status = await HospitalStatus.findOne();
 
     if (status) {
@@ -143,8 +144,8 @@ router.put("/status", protect, authorize(["system_admin"]), async (req, res) => 
 router.get("/appointments", protect, async (req, res) => {
   try {
     const appointments = await Appointment.find()
-      .populate("patientId", "fullName phone") 
-      .populate("doctorId", "name department") 
+      .populate("patientId", "fullName phone")
+      .populate("doctorId", "name department")
       .sort({ date: -1 });
     res.json(appointments);
   } catch (err) {
@@ -166,15 +167,53 @@ router.put("/appointments/:id", protect, async (req, res) => {
     }
 
     if (status) appointment.status = status;
-    
+
+
+
     if (paymentStatus) {
+      // Check if status is changing TO paid FROM something else
+      const isBecomingPaid = paymentStatus.toLowerCase() === "paid" && appointment.paymentStatus !== "paid";
+
       appointment.paymentStatus = paymentStatus;
-      // Sync with Bill if marked Paid
-      if (paymentStatus.toLowerCase() === "paid") {
+
+      // Sync with Bill & Finance if marked Paid
+      if (isBecomingPaid) {
+        // 1. Update Bill
         await Bill.findOneAndUpdate(
-            { appointmentId: appointment._id }, 
-            { status: "Paid" }
+          { appointmentId: appointment._id },
+          { status: "Paid" }
         );
+
+        // 2. ✅ Update Finance Record
+        try {
+          const hospitalName = "Suwasevana"; // Default
+          let hospitalFinance = await HospitalFinance.findOne({
+            doctorId: appointment.doctorId,
+            name: hospitalName
+          });
+
+          if (!hospitalFinance) {
+            hospitalFinance = new HospitalFinance({
+              doctorId: appointment.doctorId,
+              name: hospitalName,
+              whtEnabled: false,
+              records: []
+            });
+          }
+
+          hospitalFinance.records.unshift({
+            type: 'channeling',
+            date: new Date(appointment.date),
+            patients: 1,
+            income: appointment.amount || 2000
+          });
+
+          await hospitalFinance.save();
+          console.log(`✅ Finance Updated: ${appointment.amount} LKR added via Admin Panel`);
+
+        } catch (finErr) {
+          console.error("Failed to update finance from admin:", finErr);
+        }
       }
     }
 
@@ -207,30 +246,30 @@ router.post("/create-staff", protect, authorize(["system_admin"]), async (req, r
     // 1. Check for valid role
     const validRoles = ["receptionist", "nurse", "system_admin"];
     if (!validRoles.includes(role)) {
-        return res.status(400).json({ msg: "Invalid Role. Must be one of: " + validRoles.join(", ") });
+      return res.status(400).json({ msg: "Invalid Role. Must be one of: " + validRoles.join(", ") });
     }
 
     // 2. Check if user already exists
     let user = await Admin.findOne({ email });
     if (user) {
-        return res.status(400).json({ msg: "User with this email already exists" });
+      return res.status(400).json({ msg: "User with this email already exists" });
     }
-    
+
     // 3. Hash Password
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
     // 4. Save to DB
-    user = new Admin({ 
-        name, 
-        email, 
-        password: hashedPassword, 
-        role, 
-        department 
+    user = new Admin({
+      name,
+      email,
+      password: hashedPassword,
+      role,
+      department
     });
-    
+
     await user.save();
-    
+
     res.json({ msg: `New ${role} created successfully` });
 
   } catch (err) {
@@ -262,7 +301,7 @@ router.delete("/staff/:id", protect, authorize(["system_admin"]), async (req, re
 
     const result = await Admin.findByIdAndDelete(req.params.id);
     if (!result) {
-        return res.status(404).json({ msg: "Staff member not found" });
+      return res.status(404).json({ msg: "Staff member not found" });
     }
 
     res.json({ msg: "Staff member removed" });
