@@ -16,7 +16,7 @@ import { Send, X, Loader2, Stethoscope, Activity, MessageCircle } from "lucide-r
 import { MotiView } from "moti";
 import Constants from "expo-constants";
 
-const API_URL = `${process.env.EXPO_PUBLIC_API_URL}/api/chat`;
+const API_URL = `${process.env.EXPO_PUBLIC_API_URL}/chat`;
 
 type Message = {
   role: "user" | "assistant";
@@ -218,7 +218,7 @@ source={require('../../assets/images/icon3.png')}
                   {m.role === "assistant" && (
                     <View className="w-8 h-8 rounded-full bg-white border border-slate-200 items-center justify-center mr-2 shadow-sm">
                       <Image
-source={require('../../assets/images/icon3.png')}
+                        source={require('../../assets/images/icon3.png')}
                         className="h-5 w-5"
                         resizeMode="contain"
                       />

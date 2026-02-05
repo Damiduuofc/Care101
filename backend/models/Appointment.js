@@ -17,10 +17,8 @@ const AppointmentSchema = new mongoose.Schema({
     default: "pending" 
   },
   
-  // ✅ Removed the extra "}," that was here
   
-  amount: { type: Number, default: 0 }, // Fee for the appointment
-  
+  amount: { type: Number, default: 0 }, 
   paymentStatus: { 
     type: String, 
     enum: ["pending", "paid"], 

@@ -9,7 +9,7 @@ import { ArrowLeft, Camera } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as SecureStore from 'expo-secure-store';
 
-const API_URL = `${process.env.EXPO_PUBLIC_API_URL}/api/surgery-records/create`;
+const API_URL = `${process.env.EXPO_PUBLIC_API_URL}/surgery-records/create`;
 export default function CreateRecordScreen() {
   const router = useRouter();
   const [name, setName] = useState('');
