@@ -92,7 +92,7 @@ EXPO_PUBLIC_OPENROUTER_API_KEY
 EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY
 
 npm install
-npm start
+npx expo start
 ```
 Use the Expo Go app on your phone or an emulator to scan the QR code and run the app.
 
