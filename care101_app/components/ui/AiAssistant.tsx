@@ -15,8 +15,7 @@ import {
 import { Send, X, Loader2, Stethoscope, Activity, MessageCircle } from "lucide-react-native";
 import { MotiView } from "moti";
 import Constants from "expo-constants";
-
-const API_URL = `${process.env.EXPO_PUBLIC_API_URL}/chat`;
+import api from "@/services/api"; // Import the centralized API service
 
 type Message = {
   role: "user" | "assistant";
@@ -55,44 +54,27 @@ export default function AiAssistant() {
     setLoading(true);
 
     try {
-      const res = await fetch(API_URL, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "ngrok-skip-browser-warning": "true",
-        },
-        body: JSON.stringify({ messages: newHistory }),
+      // Use the centralized API service to call our backend
+      // This ensures we use the backend's system prompt and logic (Gemini)
+      const res = await api.post("/chat", {
+        messages: newHistory
       });
 
-      if (!res.ok) {
-        const errorText = await res.text();
-        console.error("Server Error:", errorText);
-        try {
-          const errorData = JSON.parse(errorText);
-          if (errorData.error) {
-            setMessages((prev) => [...prev, { role: "assistant", content: `⚠️ ${errorData.error}` }]);
-            return;
-          }
-        } catch {
-          // ignore json parse error
-        }
-        throw new Error(`Server Error: ${res.status}`);
-      }
+      const reply = res.data.reply;
 
-      const data = await res.json();
+      setMessages((prev) => [
+        ...prev,
+        { role: "assistant", content: reply }
+      ]);
 
-      if (data.reply) {
-        setMessages((prev) => [...prev, { role: "assistant", content: data.reply }]);
-      } else if (data.error) {
-        setMessages((prev) => [...prev, { role: "assistant", content: `⚠️ Error: ${data.error}` }]);
-      } else {
-        setMessages((prev) => [...prev, { role: "assistant", content: "⚠️ No response from server." }]);
-      }
     } catch (error: any) {
       console.error("Chat Error:", error);
       setMessages((prev) => [
         ...prev,
-        { role: "assistant", content: `⚠️ I'm currently offline. Please check your connection.` },
+        {
+          role: "assistant",
+          content: `⚠️ Sorry, something went wrong. ${error.response?.data?.error || error.message || 'Please try again.'}`
+        },
       ]);
     } finally {
       setLoading(false);
@@ -121,7 +103,7 @@ export default function AiAssistant() {
               {/* Note: If this is a local asset, use require() instead of uri string */}
               {/* Example: source={require('../../assets/images/icon.png')} */}
               <Image
-source={require('../../assets/images/icon3.png')}
+                source={require('../../assets/images/icon3.png')}
                 className="h-full w-full"
                 resizeMode="contain"
               />
@@ -150,7 +132,7 @@ source={require('../../assets/images/icon3.png')}
       <Modal
         visible={isOpen}
         transparent={true}
-        animationType="slide"
+        animationType="fade" // Changed from 'slide' to 'fade' for smoother custom animation
         onRequestClose={() => setIsOpen(false)}
       >
         <KeyboardAvoidingView
@@ -159,15 +141,16 @@ source={require('../../assets/images/icon3.png')}
         >
           {/* Backdrop (Tap to close) */}
           <TouchableOpacity
-            className="absolute inset-0 bg-black/30"
+            className="absolute inset-0 bg-black/40" // Slightly darker for better contrast
             activeOpacity={1}
             onPress={() => setIsOpen(false)}
           />
 
           <MotiView
-            from={{ translateY: 600 }}
-            animate={{ translateY: 0 }}
-            transition={{ type: "spring", damping: 20 }}
+            from={{ opacity: 0, scale: 0.9, translateY: 50 }} // Subtle pop-up instead of full slide
+            animate={{ opacity: 1, scale: 1, translateY: 0 }}
+            exit={{ opacity: 0, scale: 0.9, translateY: 50 }}
+            transition={{ type: "timing", duration: 250 }} // Snappy 250ms transition
             className="bg-white rounded-t-3xl h-[85%] w-full shadow-2xl overflow-hidden flex flex-col"
           >
             {/* HEADER */}
@@ -211,9 +194,8 @@ source={require('../../assets/images/icon3.png')}
               {messages.map((m, index) => (
                 <View
                   key={index}
-                  className={`flex-row mb-4 ${
-                    m.role === "user" ? "justify-end" : "justify-start"
-                  }`}
+                  className={`flex-row mb-4 ${m.role === "user" ? "justify-end" : "justify-start"
+                    }`}
                 >
                   {m.role === "assistant" && (
                     <View className="w-8 h-8 rounded-full bg-white border border-slate-200 items-center justify-center mr-2 shadow-sm">
@@ -226,16 +208,14 @@ source={require('../../assets/images/icon3.png')}
                   )}
 
                   <View
-                    className={`max-w-[80%] px-4 py-3 shadow-sm ${
-                      m.role === "user"
-                        ? "bg-cyan-600 rounded-2xl rounded-tr-none"
-                        : "bg-white border border-slate-200 rounded-2xl rounded-tl-none"
-                    }`}
+                    className={`max-w-[80%] px-4 py-3 shadow-sm ${m.role === "user"
+                      ? "bg-cyan-600 rounded-2xl rounded-tr-none"
+                      : "bg-white border border-slate-200 rounded-2xl rounded-tl-none"
+                      }`}
                   >
                     <Text
-                      className={`text-sm leading-relaxed ${
-                        m.role === "user" ? "text-white" : "text-slate-700"
-                      }`}
+                      className={`text-sm leading-relaxed ${m.role === "user" ? "text-white" : "text-slate-700"
+                        }`}
                     >
                       {m.content}
                     </Text>
@@ -247,7 +227,7 @@ source={require('../../assets/images/icon3.png')}
                 <View className="flex-row justify-start items-center mb-4">
                   <View className="w-8 h-8 rounded-full bg-white border border-slate-200 items-center justify-center mr-2 shadow-sm">
                     {/* Rotate animation manually or use Moti. Keeping simple here. */}
-                    <Loader2 size={16} color="#0891b2" /> 
+                    <Loader2 size={16} color="#0891b2" />
                   </View>
                   <View className="bg-white border border-slate-200 px-4 py-3 rounded-2xl rounded-tl-none shadow-sm flex-row gap-1">
                     <MotiView
@@ -288,9 +268,8 @@ source={require('../../assets/images/icon3.png')}
                   <TouchableOpacity
                     onPress={sendMessage}
                     disabled={loading || !input.trim()}
-                    className={`h-12 w-12 items-center justify-center rounded-xl shadow-md ${
-                      loading || !input.trim() ? "bg-slate-300" : "bg-cyan-600"
-                    }`}
+                    className={`h-12 w-12 items-center justify-center rounded-xl shadow-md ${loading || !input.trim() ? "bg-slate-300" : "bg-cyan-600"
+                      }`}
                   >
                     <Send size={20} color="white" style={{ marginLeft: 2 }} />
                   </TouchableOpacity>
