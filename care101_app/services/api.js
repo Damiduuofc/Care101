@@ -6,6 +6,12 @@ import { Platform } from 'react-native';
 // For Android Emulator, use 10.0.2.2. For iOS Simulator, localhost is fine.
 // For Physical Device, you need your computer's local IP (e.g., 192.168.1.5)
 const getBaseUrl = () => {
+    // Prioritize environment variable (e.g., for ngrok)
+    if (process.env.EXPO_PUBLIC_API_URL) {
+        return process.env.EXPO_PUBLIC_API_URL;
+    }
+
+    // Fallback for local development
     if (Platform.OS === 'android') {
         return 'http://10.0.2.2:5000/api';
     }
