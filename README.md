@@ -55,6 +55,9 @@ The backend is the core of the application. Start it first.
 cd backend
 npm install
 
+
+
+
 create a .env file with the following variables:
 PORT=5000
 MONGO_URI
