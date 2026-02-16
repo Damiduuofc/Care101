@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardFooter } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import Image from "next/image";
 import {
   Select,
   SelectContent,
@@ -87,7 +88,16 @@ export default function DoctorsPage() {
       {/* HERO SECTION */}
       <section className="relative h-[40vh] min-h-[300px] bg-slate-900 flex flex-col justify-center items-center overflow-hidden">
         <div className="absolute inset-0 bg-gradient-to-br from-slate-900 to-slate-800">
-           <div className="absolute inset-0 bg-black/30" />
+           <div className="absolute inset-0 bg-black/30" >
+            <Image
+                       src="/images/doctor-hero.jpg" // Ensure this exists
+                       alt="Reception Desk"
+                       fill
+                       className="object-cover opacity-30"
+                       priority
+                     />
+                     <div className="absolute inset-0 bg-gradient-to-t from-slate-50 via-transparent to-transparent" />
+           </div>
         </div>
         <div className="relative container px-6 text-center z-10 -mt-10">
           <motion.div initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6 }}>
