@@ -44,9 +44,9 @@ export default function ContactPage() {
     {
       icon: MapPin,
       title: "Visit Us",
-      description: "123 Health St, Wellness City",
+      description: "Peradeniya Road, Kandy",
       action: "View on Map",
-      link: "#map",
+      link: "https://maps.app.goo.gl/185ELPQTPKEtFgDY7",
       color: "text-purple-600",
       bg: "bg-purple-50"
     }
@@ -210,12 +210,13 @@ export default function ContactPage() {
                 transition={{ delay: 0.2 }}
                 className="relative h-[400px] rounded-3xl overflow-hidden shadow-lg group"
               >
-                <Image 
-                  src="/images/map-bg.jpg" // Ensure this exists
-                  alt="Hospital Location Map"
-                  fill
-                  className="object-cover transition-transform duration-700 group-hover:scale-110"
-                />
+                <iframe
+    src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3957.6410461857417!2d80.61804927543008!3d7.281619892725647!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x3ae369be63b75f41%3A0x98100fea97803bdb!2sSuwasevana%20Hospital!5e0!3m2!1sen!2slk!4v1771269583331!5m2!1sen!2slk"
+    className="w-full h-full border-0 rounded-3xl"
+    allowFullScreen
+    loading="lazy"
+    referrerPolicy="no-referrer-when-downgrade"
+  />
                 <div className="absolute inset-0 bg-slate-900/10 group-hover:bg-slate-900/20 transition-colors" />
                 
                 {/* Floating Map Detail */}

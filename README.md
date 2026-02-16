@@ -112,3 +112,11 @@ For detailed instructions on building and deploying the application for producti
 ## 📄 License
 
 This project is licensed under the ISC License.
+
+
+git switch main
+git pull
+
+git switch Dev/Damidu
+git merge main
+
