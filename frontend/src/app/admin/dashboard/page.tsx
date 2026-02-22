@@ -7,7 +7,10 @@ import {
 } from "lucide-react";
 import Sidebar from "@/components/admin/Sidebar";
 
+import { useRouter } from "next/navigation";
+
 export default function Dashboard() {
+  const router = useRouter();
   const [stats, setStats] = useState<any>({
     doctors: { total: 0, pending: 0 },
     patients: { total: 0, today: 0 },
@@ -26,7 +29,17 @@ export default function Dashboard() {
 
   useEffect(() => {
     const storedUser = localStorage.getItem("adminUser");
-    if (storedUser) setUser(JSON.parse(storedUser));
+    if (storedUser) {
+      const parsed = JSON.parse(storedUser);
+      if (parsed.role === "receptionist") {
+        router.push("/admin/receptionist-dashboard");
+        return;
+      }
+      setUser(parsed);
+    } else {
+      router.push("/admin/login");
+      return;
+    }
 
     const fetchStats = async () => {
       try {

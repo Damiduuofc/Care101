@@ -278,7 +278,7 @@ router.post("/create-staff", protect, authorize(["system_admin"]), async (req, r
   }
 });
 
-router.get("/staff", protect, authorize(["system_admin"]), async (req, res) => {
+router.get("/staff", protect, authorize(["system_admin", "receptionist"]), async (req, res) => {
   try {
     const staff = await Admin.find().select("-password");
     res.json(staff);
@@ -307,6 +307,42 @@ router.delete("/staff/:id", protect, authorize(["system_admin"]), async (req, re
     res.json({ msg: "Staff member removed" });
   } catch (err) {
     console.error("Delete Staff Error:", err);
+    res.status(500).send("Server Error");
+  }
+});
+
+// ==========================================
+// 7. RECEPTIONIST / NURSE DASHBOARD: DOCTORS STATUS
+// ==========================================
+router.get("/doctors", protect, authorize(["system_admin", "receptionist", "nurse"]), async (req, res) => {
+  try {
+    const doctors = await Doctor.find().select("name specialization isArrived allocatedRoom allocatedNurse channelingTime channelingStatus phone profileImage sessionStarted currentQueueNumber");
+    res.json(doctors);
+  } catch (err) {
+    console.error("Fetch Doctors Error:", err);
+    res.status(500).send("Server Error");
+  }
+});
+
+router.put("/doctors/:id/status", protect, authorize(["system_admin", "receptionist", "nurse"]), async (req, res) => {
+  try {
+    const { isArrived, allocatedRoom, allocatedNurse, channelingTime, channelingStatus, sessionStarted, currentQueueNumber } = req.body;
+    let doctor = await Doctor.findById(req.params.id);
+
+    if (!doctor) return res.status(404).json({ msg: "Doctor not found" });
+
+    if (isArrived !== undefined) doctor.isArrived = isArrived;
+    if (allocatedRoom !== undefined) doctor.allocatedRoom = allocatedRoom;
+    if (allocatedNurse !== undefined) doctor.allocatedNurse = allocatedNurse;
+    if (channelingTime !== undefined) doctor.channelingTime = channelingTime;
+    if (channelingStatus !== undefined) doctor.channelingStatus = channelingStatus;
+    if (sessionStarted !== undefined) doctor.sessionStarted = sessionStarted;
+    if (currentQueueNumber !== undefined) doctor.currentQueueNumber = currentQueueNumber;
+
+    await doctor.save();
+    res.json(doctor);
+  } catch (err) {
+    console.error("Update Doctor Status Error:", err);
     res.status(500).send("Server Error");
   }
 });
