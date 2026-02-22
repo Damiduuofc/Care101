@@ -135,6 +135,7 @@ export default function AppointmentsPage() {
                   <th className="p-4 font-semibold">Patient</th>
                   <th className="p-4 font-semibold">Doctor</th>
                   <th className="p-4 font-semibold">Date</th>
+                  <th className="p-4 font-semibold">Queue No.</th>
                   <th className="p-4 font-semibold">Status</th>
                   <th className="p-4 font-semibold">Payment</th>
                   <th className="p-4 font-semibold text-right">Actions</th>
@@ -160,6 +161,12 @@ export default function AppointmentsPage() {
                       <td className="p-4 align-top text-sm text-slate-600">
                         <div>{new Date(appt.date).toLocaleDateString()}</div>
                         <div className="text-xs text-slate-400">{new Date(appt.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
+                      </td>
+
+                      <td className="p-4 align-top">
+                        <span className="font-bold text-lg text-slate-800 bg-slate-100 px-3 py-1 rounded-lg">
+                          #{appt.queueNumber || 0}
+                        </span>
                       </td>
 
                       {/* STATUS BADGE */}

@@ -1,36 +1,68 @@
-import { 
-  LayoutDashboard, 
-  Users, 
-  Stethoscope, 
-  CreditCard, 
-  CalendarCheck, 
-  Activity, 
+import {
+  LayoutDashboard,
+  Users,
+  CreditCard,
+  CalendarCheck,
+  Activity,
   ShieldCheck,
-  UserPlus
+  UserCheck,
+  Building,
+  Clock
 } from "lucide-react";
 
 export const menuItems = [
-  // --- COMMON ---
+  // --- SYSTEM ADMIN ---
   {
     title: "Dashboard",
     href: "/admin/dashboard",
     icon: LayoutDashboard,
-    roles: ["system_admin", "nurse", "receptionist"], // Everyone sees this
+    roles: ["system_admin", "nurse"],
+  },
+  {
+    title: "All Doctors",
+    href: "/admin/doctors",
+    icon: Users,
+    roles: ["system_admin"],
+  },
+  {
+    title: "Manage Staff",
+    href: "/admin/staff",
+    icon: ShieldCheck,
+    roles: ["system_admin"],
   },
 
-  // --- RECEPTIONIST ---
+  // --- RECEPTIONIST DASHBOARD DEDICATED ITEMS ---
+  {
+    title: "Reception Desk",
+    href: "/admin/receptionist-dashboard",
+    icon: LayoutDashboard,
+    roles: ["receptionist"],
+  },
+  {
+    title: "Doctor Arrival",
+    href: "/admin/doctors/arrival",
+    icon: UserCheck,
+    roles: ["receptionist"],
+  },
   {
     title: "Appointments",
     href: "/admin/appointments",
     icon: CalendarCheck,
-    roles: ["receptionist", "system_admin"],
-  },
-  {
-    title: "Patient Registration",
-    href: "/admin/patients/new",
-    icon: UserPlus,
     roles: ["receptionist"],
   },
+  {
+    title: "Room Allocation",
+    href: "/admin/room-allocation",
+    icon: Building,
+    roles: ["receptionist"],
+  },
+  {
+    title: "Channeling Time",
+    href: "/admin/channeling-time",
+    icon: Clock,
+    roles: ["receptionist"],
+  },
+
   {
     title: "Billing & Invoices",
     href: "/admin/billing",
@@ -43,26 +75,7 @@ export const menuItems = [
     title: "OPD Queue",
     href: "/admin/queue",
     icon: Activity,
-    roles: ["nurse", "system_admin"],
-  },
-  {
-    title: "Doctor Coordination",
-    href: "/admin/doctor-status",
-    icon: Stethoscope,
     roles: ["nurse"],
   },
 
-  // --- SYSTEM ADMIN ---
-  {
-    title: "Manage Staff",
-    href: "/admin/staff",
-    icon: ShieldCheck,
-    roles: ["system_admin"],
-  },
-  {
-    title: "All Doctors",
-    href: "/admin/doctors",
-    icon: Users,
-    roles: ["system_admin", "receptionist"],
-  },
 ];
