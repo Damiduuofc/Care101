@@ -43,7 +43,13 @@ export default function AdminLogin() {
       localStorage.setItem("adminToken", data.token);
       localStorage.setItem("adminUser", JSON.stringify(data.admin));
 
-      router.push("/admin/dashboard");
+      if (data.admin.role === "receptionist") {
+        router.push("/admin/receptionist-dashboard");
+      } else if (data.admin.role === "nurse") {
+        router.push("/admin/queue");
+      } else {
+        router.push("/admin/dashboard");
+      }
     } catch (err: any) {
       setError(err.message || "Invalid credentials. Access denied.");
     } finally {

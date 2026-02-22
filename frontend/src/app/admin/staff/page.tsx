@@ -63,6 +63,21 @@ export default function StaffManagement() {
   };
 
   useEffect(() => {
+    const storedUser = localStorage.getItem("adminUser");
+    if (storedUser) {
+      const parsed = JSON.parse(storedUser);
+      if (parsed.role !== "system_admin") {
+        if (parsed.role === "receptionist") {
+          window.location.href = "/admin/receptionist-dashboard";
+        } else {
+          window.location.href = "/admin/dashboard";
+        }
+        return;
+      }
+    } else {
+      window.location.href = "/admin/login";
+      return;
+    }
     fetchStaff();
   }, []);
 
@@ -101,8 +116,8 @@ export default function StaffManagement() {
       if (res.ok) {
         alert("Staff Member Created Successfully!");
         setIsModalOpen(false);
-        setFormData({ name: "", email: "", password: "", role: "nurse", department: "" }); // Reset
-        fetchStaff(); // Refresh list
+        setFormData({ name: "", email: "", password: "", role: "nurse", department: "" });
+        fetchStaff();
       } else {
         alert(`Error: ${data.msg}`);
       }
@@ -183,6 +198,7 @@ export default function StaffManagement() {
                     <SelectContent>
                       <SelectItem value="nurse">Nurse</SelectItem>
                       <SelectItem value="receptionist">Receptionist</SelectItem>
+                      <SelectItem value="lab_assistant">Lab Assistant</SelectItem>
                       <SelectItem value="system_admin">System Admin</SelectItem>
                     </SelectContent>
                   </Select>

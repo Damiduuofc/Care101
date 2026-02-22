@@ -3,6 +3,7 @@ import Appointment from "../models/Appointment.js";
 import Bill from "../models/Bill.js";
 import Notification from "../models/Notification.js";
 import HospitalFinance from "../models/Finance.js";
+import Doctor from "../models/Doctor.js";
 import { auth } from "../middleware/auth.js";
 
 const router = express.Router();
@@ -28,7 +29,7 @@ router.post("/book", auth, async (req, res) => {
       return res.status(400).json({ msg: "Doctor and Date are required" });
     }
 
-    // --- GENERATE TOKEN NUMBER ---
+    // --- GENERATE QUEUE NUMBER ---
     const startOfDay = new Date(date);
     startOfDay.setHours(0, 0, 0, 0);
     const endOfDay = new Date(date);
@@ -39,7 +40,7 @@ router.post("/book", auth, async (req, res) => {
       date: { $gte: startOfDay, $lte: endOfDay }
     });
 
-    const tokenNumber = count + 1;
+    const queueNumber = count + 1;
 
     // 1. Create Appointment
     const newAppointment = new Appointment({
@@ -48,7 +49,7 @@ router.post("/book", auth, async (req, res) => {
       doctorName,
       department,
       date,
-      tokenNumber,
+      queueNumber,
       visitType,
       reason,
       amount: amount || 2000,
@@ -119,7 +120,7 @@ router.post("/book", auth, async (req, res) => {
       await Notification.create({
         userId: req.user.id,
         type: 'appointment',
-        message: `Booking Confirmed! Token #${tokenNumber} for Dr. ${doctorName}.`
+        message: `Booking Confirmed! Queue #${queueNumber} for Dr. ${doctorName}.`
       });
 
       // Notification B: Payment Received (Only if paid)
@@ -193,25 +194,17 @@ router.get("/queue-status/:id", auth, async (req, res) => {
       return res.status(404).json({ msg: "Appointment not found" });
     }
 
-    const myToken = myAppointment.tokenNumber || 0;
+    const myToken = myAppointment.queueNumber || 0;
 
-    const startOfDay = new Date(myAppointment.date);
-    startOfDay.setHours(0, 0, 0, 0);
-    const endOfDay = new Date(myAppointment.date);
-    endOfDay.setHours(23, 59, 59, 999);
+    // Fetch the live doctor object to see where the Nurse has placed the current queue
+    const doctor = await Doctor.findById(myAppointment.doctorId);
+    const currentToken = doctor ? doctor.currentQueueNumber || 0 : 0;
 
-    const completedCount = await Appointment.countDocuments({
-      doctorId: myAppointment.doctorId,
-      date: { $gte: startOfDay, $lte: endOfDay },
-      status: 'completed'
-    });
-
-    const currentToken = completedCount + 1;
     const peopleAhead = Math.max(0, myToken - currentToken);
     const estimatedWait = peopleAhead * 15;
 
     res.json({
-      myToken,
+      queueNumber: myToken,
       currentToken,
       peopleAhead,
       estimatedWait
