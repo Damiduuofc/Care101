@@ -15,7 +15,7 @@ router.get("/dashboard-stats", auth, async (req, res) => {
     const doctorId = req.user.id;
 
     // Get Doctor
-    const doctor = await Doctor.findById(doctorId).select("name fullName specialization");
+    const doctor = await Doctor.findById(doctorId).select("name fullName specialization channelingTime isArrived channelingStatus currentQueueNumber allocatedRoom");
     if (!doctor) return res.status(404).json({ msg: "Doctor not found" });
 
     // Count Records
@@ -33,13 +33,17 @@ router.get("/dashboard-stats", auth, async (req, res) => {
           else if (rec.type === 'surgical') hospitalIncome += (rec.amount || 0);
         });
       }
-      if (hospital.whtEnabled) hospitalIncome = hospitalIncome * 0.95;
       totalIncome += hospitalIncome;
     });
 
     res.json({
       name: doctor.name || doctor.fullName || "Doctor",
       specialization: doctor.specialization || "Specialist",
+      channelingTime: doctor.channelingTime,
+      channelingStatus: doctor.channelingStatus,
+      currentQueueNumber: doctor.currentQueueNumber,
+      allocatedRoom: doctor.allocatedRoom,
+      isArrived: doctor.isArrived,
       income: Math.round(totalIncome),
       records: recordCount
     });
@@ -122,6 +126,27 @@ router.put("/change-password", auth, async (req, res) => {
 
   } catch (err) {
     console.error("Password Change Error:", err.message);
+    res.status(500).send("Server Error");
+  }
+});
+
+// ---------------------------------------------
+// 5. UPDATE DELAY STATUS
+// ---------------------------------------------
+router.put("/delay-status", auth, async (req, res) => {
+  try {
+    const { status } = req.body;
+    const doctor = await Doctor.findById(req.user.id);
+    
+    if (!doctor) return res.status(404).json({ msg: "Doctor not found" });
+
+    doctor.channelingStatus = status;
+    await doctor.save();
+    
+    res.json({ msg: "Delay Status Updated", status: doctor.channelingStatus });
+
+  } catch (err) {
+    console.error("Delay Status Update Error:", err.message);
     res.status(500).send("Server Error");
   }
 });

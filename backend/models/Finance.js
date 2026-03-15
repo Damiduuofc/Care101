@@ -17,7 +17,6 @@ const RecordSchema = new mongoose.Schema({
 const HospitalSchema = new mongoose.Schema({
   doctorId: { type: mongoose.Schema.Types.ObjectId, ref: 'Doctor', required: true },
   name: { type: String, required: true },
-  whtEnabled: { type: Boolean, default: false },
   records: [RecordSchema], // Nested records
   createdAt: { type: Date, default: Date.now }
 });

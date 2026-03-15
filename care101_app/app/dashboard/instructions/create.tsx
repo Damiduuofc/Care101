@@ -37,12 +37,12 @@ export default function CreateInstructionScreen() {
       }
 
       const token = await SecureStore.getItemAsync('token');
-      
+
       const res = await fetch(fullUrl, {
         method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json', 
-          Authorization: `Bearer ${token}` 
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
         },
         body: JSON.stringify({ surgeryName: name, description: desc })
       });
@@ -78,12 +78,12 @@ export default function CreateInstructionScreen() {
       </View>
 
       <ScrollView contentContainerStyle={styles.content}>
-        
+
         <View style={styles.inputGroup}>
           <Text style={styles.label}>Surgery Name</Text>
-          <TextInput 
-            style={styles.input} 
-            placeholder="Enter surgery name" 
+          <TextInput
+            style={styles.input}
+            placeholder="Enter surgery name"
             placeholderTextColor="#94a3b8"
             value={name}
             onChangeText={setName}
@@ -92,9 +92,9 @@ export default function CreateInstructionScreen() {
 
         <View style={styles.inputGroup}>
           <Text style={styles.label}>Description (Optional)</Text>
-          <TextInput 
-            style={styles.input} 
-            placeholder="Enter description" 
+          <TextInput
+            style={styles.input}
+            placeholder="Enter description"
             placeholderTextColor="#94a3b8"
             value={desc}
             onChangeText={setDesc}
@@ -102,7 +102,7 @@ export default function CreateInstructionScreen() {
         </View>
 
         <View style={styles.infoBox}>
-          <Info size={20} color="#2563eb" style={{marginTop: 2}} />
+          <Info size={20} color="#06B6D4" style={{ marginTop: 2 }} />
           <Text style={styles.infoText}>
             After creating the surgery, you'll be able to upload Pre-Operative and Post-Operative instructions including videos, audio files, and documents.
           </Text>

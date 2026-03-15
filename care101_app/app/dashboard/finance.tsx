@@ -40,7 +40,6 @@ export default function FinanceScreen() {
 
   // Form State
   const [newHospitalName, setNewHospitalName] = useState('');
-  const [isWhtEnabled, setIsWhtEnabled] = useState(false);
 
   // Auto-refresh when screen is focused
   useFocusEffect(
@@ -122,8 +121,7 @@ export default function FinanceScreen() {
           Authorization: `Bearer ${token}`
         },
         body: JSON.stringify({
-          name: newHospitalName,
-          whtEnabled: isWhtEnabled
+          name: newHospitalName
         })
       });
 
@@ -135,7 +133,6 @@ export default function FinanceScreen() {
         await fetchData();
         setModalVisible(false);
         setNewHospitalName('');
-        setIsWhtEnabled(false);
       } else {
         // Failure: Show the actual message from backend
         console.error("Server Error:", resData);
@@ -174,19 +171,15 @@ export default function FinanceScreen() {
         <View style={styles.cardHeader}>
           <View>
             <Text style={styles.hospitalName}>{item.name}</Text>
-            {item.whtEnabled && (
-              <View style={styles.whtBadge}>
-                <CheckCircle2 size={14} color="#10b981" />
-                <Text style={styles.whtText}>WHT Enabled (-5%)</Text>
-              </View>
-            )}
           </View>
-          <TouchableOpacity
-            style={styles.iconBtn}
-            onPress={() => handleDelete(item.id)}
-          >
-            <Trash2 size={18} color="#ef4444" />
-          </TouchableOpacity>
+          {item.name !== 'Suwasevana' && (
+            <TouchableOpacity
+              style={styles.iconBtn}
+              onPress={() => handleDelete(item.id)}
+            >
+              <Trash2 size={18} color="#ef4444" />
+            </TouchableOpacity>
+          )}
         </View>
 
         <View style={styles.statsGrid}>
@@ -204,9 +197,6 @@ export default function FinanceScreen() {
         <View style={styles.totalSection}>
           <View>
             <Text style={styles.totalLabel}>Total Payable</Text>
-            {item.whtEnabled && (
-              <Text style={styles.taxLabel}>(After 5% Tax Deduction)</Text>
-            )}
           </View>
           <Text style={styles.totalValue}>{Math.round(item.totalPayable || 0).toLocaleString()} LKR</Text>
         </View>
@@ -216,7 +206,7 @@ export default function FinanceScreen() {
           onPress={() => router.push(`/dashboard/finance/${item.id}`)}
         >
           <Text style={styles.footerLink}>View & Add Records</Text>
-          <ChevronRight size={16} color="#12a9acff" />
+          <ChevronRight size={16} color="#06B6D4" />
         </TouchableOpacity>
       </View>
     );
@@ -231,7 +221,7 @@ export default function FinanceScreen() {
       </View>
 
       {loading ? (
-        <ActivityIndicator size="large" color="#12a9acff" style={{ marginTop: 50 }} />
+        <ActivityIndicator size="large" color="#06B6D4" style={{ marginTop: 50 }} />
       ) : (
         <FlatList
           data={hospitals}
@@ -242,8 +232,8 @@ export default function FinanceScreen() {
             <RefreshControl
               refreshing={refreshing}
               onRefresh={onRefresh}
-              colors={['#12a9acff']}
-              tintColor="#12a9acff"
+              colors={['#06B6D4']}
+              tintColor="#06B6D4"
             />
           }
           ListEmptyComponent={
@@ -286,19 +276,6 @@ export default function FinanceScreen() {
               />
             </View>
 
-            <View style={styles.switchContainer}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.switchLabel}>Enable WHT (5%)</Text>
-                <Text style={styles.switchSubLabel}>5% will be automatically deducted from Total Payable</Text>
-              </View>
-              <Switch
-                trackColor={{ false: "#e2e8f0", true: "#bfdbfe" }}
-                thumbColor={isWhtEnabled ? "#2563eb" : "#f4f4f5"}
-                onValueChange={setIsWhtEnabled}
-                value={isWhtEnabled}
-              />
-            </View>
-
             <TouchableOpacity
               style={[styles.addBtn, isSubmitting && { opacity: 0.7 }]}
               onPress={handleAddHospital}
@@ -328,22 +305,19 @@ const styles = StyleSheet.create({
   card: { backgroundColor: '#fff', borderRadius: 16, padding: 16, marginBottom: 16, marginHorizontal: 20, borderWidth: 1, borderColor: '#e2e8f0', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 2 },
   cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 },
   hospitalName: { fontSize: 18, fontWeight: '700', color: '#0f172a', marginBottom: 4 },
-  whtBadge: { flexDirection: 'row', alignItems: 'center', marginTop: 4 },
-  whtText: { fontSize: 12, color: '#10b981', marginLeft: 4, fontWeight: '500' },
   iconBtn: { padding: 8, backgroundColor: '#f1f5f9', borderRadius: 8 },
   statsGrid: { flexDirection: 'row', backgroundColor: '#f8fafc', borderRadius: 12, padding: 12, marginBottom: 12 },
   statCol: { flex: 1, alignItems: 'center' },
   statDivider: { width: 1, backgroundColor: '#cbd5e1', marginVertical: 4 },
   statLabel: { fontSize: 12, color: '#64748b', marginBottom: 4 },
-  statValueBlue: { fontSize: 16, fontWeight: '700', color: '#12a9acff' },
+  statValueBlue: { fontSize: 16, fontWeight: '700', color: '#06B6D4' },
   totalSection: { backgroundColor: '#eff6ff', borderRadius: 12, padding: 16, marginBottom: 16, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   totalLabel: { fontSize: 14, color: '#475569', fontWeight: '500' },
-  taxLabel: { fontSize: 10, color: '#64748b', fontStyle: 'italic' },
   totalValue: { fontSize: 20, fontWeight: '800', color: '#1e3a8a' },
   cardFooter: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', borderTopWidth: 1, borderTopColor: '#f1f5f9', paddingTop: 16 },
-  footerLink: { color: '#12a9acff', fontWeight: '600', marginRight: 4, fontSize: 14 },
+  footerLink: { color: '#06B6D4', fontWeight: '600', marginRight: 4, fontSize: 14 },
 
-  fab: { position: 'absolute', right: 24, width: 56, height: 56, borderRadius: 28, backgroundColor: '#12a9acff', alignItems: 'center', justifyContent: 'center', elevation: 6, shadowColor: "#12a9acff", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 4 },
+  fab: { position: 'absolute', right: 24, width: 56, height: 56, borderRadius: 28, backgroundColor: '#06B6D4', alignItems: 'center', justifyContent: 'center', elevation: 6, shadowColor: "#06B6D4", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 4 },
 
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', padding: 20 },
   modalContent: { backgroundColor: '#fff', borderRadius: 24, padding: 24, elevation: 5 },
@@ -352,10 +326,7 @@ const styles = StyleSheet.create({
   inputGroup: { marginBottom: 20 },
   label: { fontSize: 14, fontWeight: '600', color: '#334155', marginBottom: 8 },
   input: { borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 12, paddingHorizontal: 16, paddingVertical: 14, fontSize: 16, backgroundColor: '#f8fafc' },
-  switchContainer: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#f8fafc', padding: 16, borderRadius: 12, marginBottom: 24, borderWidth: 1, borderColor: '#f1f5f9' },
-  switchLabel: { fontSize: 14, fontWeight: '600', color: '#0f172a' },
-  switchSubLabel: { fontSize: 12, color: '#64748b', marginTop: 2 },
-  addBtn: { paddingVertical: 16, borderRadius: 12, backgroundColor: '#12a9acff', alignItems: 'center', height: 56, justifyContent: 'center' },
+  addBtn: { paddingVertical: 16, borderRadius: 12, backgroundColor: '#06B6D4', alignItems: 'center', height: 56, justifyContent: 'center' },
   addBtnText: { color: '#fff', fontWeight: '600', fontSize: 16 },
   emptyContainer: { alignItems: 'center', justifyContent: 'center', padding: 20, marginTop: 40 },
   emptyTitle: { fontSize: 18, fontWeight: '600', color: '#334155', marginBottom: 8 },

@@ -147,7 +147,7 @@ export default function HospitalDetailsScreen() {
           <Text style={styles.mainAddButtonText}>Add {activeTab === 'channeling' ? 'Session' : 'Record'}</Text>
         </TouchableOpacity>
 
-        {loading ? <ActivityIndicator color="#12a9acff" /> : (
+        {loading ? <ActivityIndicator color="#06B6D4" /> : (
           <FlatList
             data={records}
             keyExtractor={(item: any) => item._id}
@@ -212,8 +212,8 @@ const styles = StyleSheet.create({
   tabButton: { flex: 1, paddingVertical: 10, alignItems: 'center', borderRadius: 6 },
   tabButtonActive: { backgroundColor: '#fff' },
   tabText: { fontSize: 14, fontWeight: '600', color: '#64748b' },
-  tabTextActive: { color: '#1e3a8a' },
-  mainAddButton: { backgroundColor: '#12a9acff', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 16, borderRadius: 8, marginBottom: 24 },
+  tabTextActive: { color: '#06B6D4' },
+  mainAddButton: { backgroundColor: '#06B6D4', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 16, borderRadius: 8, marginBottom: 24 },
   mainAddButtonText: { color: '#fff', fontSize: 16, fontWeight: '700' },
   listContainer: { paddingBottom: 20 },
   emptyText: { color: '#94a3b8', fontStyle: 'italic', textAlign: 'center', marginTop: 20 },
@@ -225,7 +225,7 @@ const styles = StyleSheet.create({
   recordStat: { flex: 1 },
   statLabel: { fontSize: 11, color: '#64748b', marginBottom: 2 },
   statValue: { fontSize: 16, fontWeight: '600', color: '#0f172a' },
-  statValueBlue: { fontSize: 16, fontWeight: '700', color: '#2563eb' },
+  statValueBlue: { fontSize: 16, fontWeight: '700', color: '#06B6D4' },
   verticalDivider: { width: 1, backgroundColor: '#e2e8f0', marginHorizontal: 16 },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: 20 },
   modalContent: { backgroundColor: '#fff', borderRadius: 16, padding: 24, elevation: 5 },
@@ -234,5 +234,5 @@ const styles = StyleSheet.create({
   dateInputWrapper: { flexDirection: 'row', justifyContent: 'space-between', borderWidth: 1, borderColor: '#e2e8f0', padding: 12, borderRadius: 8, marginBottom: 16 },
   modalActions: { flexDirection: 'row', gap: 12 },
   cancelBtn: { flex: 1, padding: 14, borderRadius: 8, backgroundColor: '#f1f5f9', alignItems: 'center' },
-  saveBtn: { flex: 1, padding: 14, borderRadius: 8, backgroundColor: '#12a9acff', alignItems: 'center' },
+  saveBtn: { flex: 1, padding: 14, borderRadius: 8, backgroundColor: '#06B6D4', alignItems: 'center' },
 });

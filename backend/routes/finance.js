@@ -26,12 +26,10 @@ router.get("/", auth, async (req, res) => {
       }
 
       let total = channelingIncome + surgicalIncome;
-      if (hospital.whtEnabled) total = total * 0.95;
 
       return {
         id: hospital._id,
         name: hospital.name,
-        whtEnabled: hospital.whtEnabled,
         channelingIncome,
         surgicalIncome,
         totalPayable: total
@@ -46,11 +44,11 @@ router.get("/", auth, async (req, res) => {
   }
 });
 
-// 2. ADD HOSPITAL (✅ LIMIT REMOVED HERE)
+  // 2. ADD HOSPITAL (✅ LIMIT REMOVED HERE)
 router.post("/add-hospital", auth, async (req, res) => {
   try {
 
-    const { name, whtEnabled } = req.body;
+    const { name } = req.body;
 
     // Check for duplicate names (Optional but recommended)
     const existing = await HospitalFinance.findOne({ doctorId: req.user.id, name });
@@ -58,7 +56,7 @@ router.post("/add-hospital", auth, async (req, res) => {
       return res.status(400).json({ msg: "A hospital with this name already exists." });
     }
 
-    const newHospital = new HospitalFinance({ doctorId: req.user.id, name, whtEnabled });
+    const newHospital = new HospitalFinance({ doctorId: req.user.id, name });
     await newHospital.save();
     res.json(newHospital);
   } catch (err) {
@@ -82,6 +80,15 @@ router.get("/:id", auth, async (req, res) => {
 // 4. DELETE HOSPITAL
 router.delete("/:id", auth, async (req, res) => {
   try {
+    const hospital = await HospitalFinance.findById(req.params.id);
+    if (!hospital) {
+      return res.status(404).json({ msg: "Hospital not found" });
+    }
+
+    if (hospital.name === "Suwasevana") {
+      return res.status(400).json({ msg: "Cannot delete the default hospital Suwasevana" });
+    }
+
     await HospitalFinance.findByIdAndDelete(req.params.id);
     res.json({ msg: "Deleted" });
   } catch (err) {

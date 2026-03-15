@@ -657,7 +657,7 @@ const styles = StyleSheet.create({
     dateDay: {
         fontSize: 18,
         fontWeight: '700',
-        color: '#2563eb',
+        color: '#06B6D4',
     },
     dateMonth: {
         fontSize: 12,
