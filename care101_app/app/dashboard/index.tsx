@@ -37,17 +37,24 @@ export default function DashboardScreen() {
   const [stats, setStats] = useState({
     name: "Doctor",
     specialization: "Specialist",
+    channelingTime: "",
+    channelingStatus: "On Time",
+    currentQueueNumber: 0,
+    allocatedRoom: "",
+    isArrived: false,
     income: 0,
     records: 0
   });
 
-  const bannerImage = { uri: "https://images.unsplash.com/photo-1576091160550-2187d80a1b95?ixlib=rb-1.2.1&auto=format&fit=crop&w=800&q=80" };
+  const bannerImage = { uri: "https://unsplash.com/photos/black-and-gray-stethoscope-yo01Z-9HQAw" };
 
   const quickActions = [
     {
       id: 5,
-      title: 'Patients',
-      subtitle: 'Manage and add patients',
+      title: 'Today\'s Clinic',
+      subtitle: stats.channelingTime 
+        ? `Arrival: ${stats.channelingTime}${stats.channelingStatus !== 'On Time' ? ` (${stats.channelingStatus})` : ''} • Q: ${stats.currentQueueNumber}` 
+        : 'Manage today\'s session & patients',
       icon: User,
       link: '/dashboard/patients',
       color: '#ec4899',
@@ -92,37 +99,39 @@ export default function DashboardScreen() {
 
   ];
 
+    const fetchDashboard = async () => {
+      try {
+        const token = await SecureStore.getItemAsync("token");
+
+        if (!token) {
+          console.log("No token found, redirecting to login");
+          router.replace("/");
+          return;
+        }
+
+        const response = await fetch(`${API_URL}/dashboard-stats`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          setStats(data);
+        } else {
+          console.log("Failed to fetch stats, status:", response.status);
+        }
+      } catch (error) {
+        console.error("Network Error:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+
+
   // ✅ AUTO-REFRESH LOGIC
   // This runs every time the screen comes into focus
   useFocusEffect(
     useCallback(() => {
-      const fetchDashboard = async () => {
-        try {
-          const token = await SecureStore.getItemAsync("token");
-
-          if (!token) {
-            console.log("No token found, redirecting to login");
-            router.replace("/");
-            return;
-          }
-
-          const response = await fetch(`${API_URL}/dashboard-stats`, {
-            headers: { Authorization: `Bearer ${token}` }
-          });
-
-          if (response.ok) {
-            const data = await response.json();
-            setStats(data);
-          } else {
-            console.log("Failed to fetch stats, status:", response.status);
-          }
-        } catch (error) {
-          console.error("Network Error:", error);
-        } finally {
-          setLoading(false);
-        }
-      };
-
       fetchDashboard();
     }, [])
   );
@@ -221,6 +230,8 @@ export default function DashboardScreen() {
             ))}
           </View>
         </View>
+
+
 
       </ScrollView>
 
@@ -420,4 +431,5 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '500',
   },
+
 });

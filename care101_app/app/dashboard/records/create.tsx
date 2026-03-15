@@ -134,7 +134,7 @@ const styles = StyleSheet.create({
   uploadText: { marginTop: 16, fontSize: 14, color: '#475569' },
   previewImage: { width: '100%', height: '100%', resizeMode: 'cover' },
   footer: { padding: 20, backgroundColor: '#fff', borderTopWidth: 1, borderTopColor: '#e2e8f0' },
-  createBtn: { borderRadius: 8, paddingVertical: 16, alignItems: 'center', backgroundColor: '#2563eb' },
+  createBtn: { borderRadius: 8, paddingVertical: 16, alignItems: 'center', backgroundColor: '#06B6D4' },
   disabledBtn: { backgroundColor: '#94a3b8' },
   createBtnText: { fontSize: 16, fontWeight: '600', color: '#fff' },
 });

@@ -196,7 +196,6 @@ router.put("/appointments/:id", protect, async (req, res) => {
             hospitalFinance = new HospitalFinance({
               doctorId: appointment.doctorId,
               name: hospitalName,
-              whtEnabled: false,
               records: []
             });
           }

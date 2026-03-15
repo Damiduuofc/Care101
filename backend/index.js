@@ -20,6 +20,7 @@ import adminRoutes from "./routes/adminRoutes.js";
 import paymentRoutes from "./routes/payments.js"; // <--- Import this
 import instructionRoutes from "./routes/instructionRoutes.js";
 import patientsRoutes from "./routes/patients.js"; // <--- NEW: Patients management
+import scheduleRequestRoutes from "./routes/scheduleRequests.js"; // <--- NEW: Schedule Requests
 
 const app = express();
 const __dirname = path.resolve();
@@ -69,6 +70,7 @@ app.use("/api/doctors", doctorRoutes);
 app.use("/api/instructions", instructionRoutes);
 app.use("/api/payments", paymentRoutes);
 app.use("/api/patients", patientsRoutes); // <--- NEW: Patients management
+app.use("/api/schedule-requests", scheduleRequestRoutes); // <--- NEW: Schedule requests
 /* =========================
    SERVER START
 ========================= */

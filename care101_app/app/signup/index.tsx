@@ -107,7 +107,7 @@ const styles = StyleSheet.create({
     title: { fontSize: 28, fontWeight: '700', color: '#fff', textAlign: 'center', marginBottom: 8 },
     subtitle: { fontSize: 16, color: '#e2e8f0', textAlign: 'center', maxWidth: 300 },
 
-    cardsContainer: { width: '100%', maxWidth: 500, interval: 16 },
+    cardsContainer: { width: '100%', maxWidth: 500, gap: 16 },
     card: {
         marginBottom: 16,
         borderRadius: 16,

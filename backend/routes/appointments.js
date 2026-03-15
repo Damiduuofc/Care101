@@ -92,7 +92,6 @@ router.post("/book", auth, async (req, res) => {
           hospitalFinance = new HospitalFinance({
             doctorId: doctorId,
             name: hospital,
-            whtEnabled: false,
             records: []
           });
         }
