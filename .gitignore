@@ -10,10 +10,10 @@ build/
 dist/
 
 # Environment variables
-# .env
-# .env.local
-# .env*.local
-# *.env
+.env
+.env.local
+.env*.local
+*.env
 
 # Python
 __pycache__/
@@ -42,3 +42,4 @@ Thumbs.db
 *.p12
 *.key
 *.mobileprovision
+backend/.env
