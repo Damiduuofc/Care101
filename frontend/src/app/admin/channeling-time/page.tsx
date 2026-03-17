@@ -1,168 +1,197 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import Sidebar from "@/components/admin/Sidebar";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, Clock, CalendarDays, Activity } from "lucide-react";
+import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Loader2, Clock, CalendarDays, Check, X, User, Bell } from "lucide-react";
 
-import { useRouter } from "next/navigation";
+// Demo Data representing requests sent from the Doctor App
+const INITIAL_DEMO_DATA = [
+    {
+        _id: "req_1",
+        doctorName: "Dr. Lasantha Perera",
+        specialization: "Cardiologist",
+        requestedDate: "2026-03-20",
+        requestedTime: "16:30",
+        status: "Pending"
+    },
+    {
+        _id: "req_2",
+        doctorName: "Dr. Sarah Jayawardena",
+        specialization: "Pediatrician",
+        requestedDate: "2026-03-21",
+        requestedTime: "09:00",
+        status: "Pending"
+    },
+    {
+        _id: "req_3",
+        doctorName: "Dr. Kasun Rajapaksha",
+        specialization: "Dermatologist",
+        requestedDate: "2026-03-19",
+        requestedTime: "14:00",
+        status: "Confirmed"
+    }
+];
 
-export default function ChannelingTime() {
-    const router = useRouter();
-    const [doctors, setDoctors] = useState<any[]>([]);
-    const [loading, setLoading] = useState(true);
-    const [saving, setSaving] = useState<{ [key: string]: boolean }>({});
+export default function ChannelingRequestDemo() {
+    const [requests, setRequests] = useState(INITIAL_DEMO_DATA);
+    const [loadingAction, setLoadingAction] = useState<string | null>(null);
 
-    useEffect(() => {
-        const storedUser = localStorage.getItem("adminUser");
-        if (!storedUser || JSON.parse(storedUser).role !== "receptionist") {
-            router.push("/admin/dashboard");
-        }
-    }, [router]);
-
-    const fetchDoctors = async () => {
-        try {
-            const token = localStorage.getItem("adminToken");
-            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/admin/doctors`, {
-                headers: {
-                    "x-auth-token": token || "",
-                    "ngrok-skip-browser-warning": "true"
-                }
-            });
-            if (!res.ok) {
-                console.error(`Server Error: ${res.status}`);
-                return;
-            }
-
-            const contentType = res.headers.get("content-type");
-            if (!contentType || !contentType.includes("application/json")) {
-                const text = await res.text();
-                console.error("Expected JSON but got:", contentType, text);
-                return;
-            }
-
-            const data = await res.json();
-            if (Array.isArray(data)) {
-                setDoctors(data);
-            } else {
-                setDoctors([]);
-            }
-        } catch (err) {
-            console.error(err);
-        } finally {
-            setLoading(false);
-        }
+    const handleAction = (id: string, newStatus: "Confirmed" | "Rejected") => {
+        setLoadingAction(id);
+        
+        // Simulate a network delay for the demo
+        setTimeout(() => {
+            setRequests(prev => 
+                prev.map(req => req._id === id ? { ...req, status: newStatus } : req)
+            );
+            setLoadingAction(null);
+        }, 800);
     };
 
-    useEffect(() => {
-        fetchDoctors();
-    }, []);
-
-    const handleUpdate = (id: string, field: string, value: string) => {
-        setDoctors(prev => prev.map(d => d._id === id ? { ...d, [field]: value } : d));
-    };
-
-    const saveChannelingStatus = async (doc: any) => {
-        setSaving({ ...saving, [doc._id]: true });
-        try {
-            const token = localStorage.getItem("adminToken");
-            await fetch(`${process.env.NEXT_PUBLIC_API_URL}/admin/doctors/${doc._id}/status`, {
-                method: "PUT",
-                headers: {
-                    "Content-Type": "application/json",
-                    "x-auth-token": token || "",
-                    "ngrok-skip-browser-warning": "true"
-                },
-                body: JSON.stringify({
-                    channelingTime: doc.channelingTime,
-                    channelingStatus: doc.channelingStatus
-                })
-            });
-            alert(`Schedule updated for Dr. ${doc.name}`);
-        } catch (err) {
-            console.error("Failed to save schedule", err);
-        } finally {
-            setSaving({ ...saving, [doc._id]: false });
-        }
-    };
-
-    if (loading) return <div className="p-10 flex justify-center"><Loader2 className="animate-spin text-cyan-600" /></div>;
+    const pendingRequests = requests.filter(r => r.status === "Pending");
+    const historyRequests = requests.filter(r => r.status !== "Pending");
 
     return (
-        <div className="space-y-6 max-w-7xl mx-auto p-4 md:p-8 ml-0 md:ml-64">
+        <div className="flex bg-slate-50 min-h-screen">
             <Sidebar />
-            <div>
-                <h1 className="text-3xl font-bold text-slate-900">Channeling Time & Queue</h1>
-                <p className="text-slate-500">Update doctor channeling schedules, delays, and session status.</p>
-            </div>
+            <main className="flex-1 p-4 md:p-8 ml-0 md:ml-64 space-y-6">
+                
+                {/* Header Section */}
+                <header className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                    <div>
+                        <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Schedule Approvals</h1>
+                        <p className="text-slate-500">Review and action time slot requests from medical staff.</p>
+                    </div>
+                    <div className="flex items-center gap-3">
+                        <div className="h-10 w-10 rounded-full border border-slate-200 bg-white flex items-center justify-center text-slate-600 relative">
+                            <Bell size={20} />
+                            {pendingRequests.length > 0 && (
+                                <span className="absolute top-2 right-2 h-2 w-2 bg-[#06b6d4] rounded-full"></span>
+                            )}
+                        </div>
+                        <Badge className="bg-[#06b6d4] hover:bg-[#0891b2] text-white border-none px-4 py-1">
+                            {pendingRequests.length} Pending
+                        </Badge>
+                    </div>
+                </header>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {doctors.map(doc => (
-                    <Card key={doc._id} className="border-slate-200 shadow-sm relative overflow-hidden">
-                        {/* Edge Color Indicator */}
-                        <div className={`absolute top-0 left-0 h-full w-1.5 ${doc.channelingStatus === "Delayed" ? "bg-amber-500" :
-                            doc.channelingStatus === "Cancelled" ? "bg-red-500" : "bg-emerald-500"
-                            }`}></div>
+                <Tabs defaultValue="pending" className="w-full">
+                    <TabsList className="bg-slate-200/50 p-1 mb-8">
+                        <TabsTrigger value="pending" className="data-[state=active]:bg-white data-[state=active]:text-[#06b6d4]">
+                            New Requests
+                        </TabsTrigger>
+                        <TabsTrigger value="history" className="data-[state=active]:bg-white data-[state=active]:text-[#06b6d4]">
+                            Actioned History
+                        </TabsTrigger>
+                    </TabsList>
 
-                        <CardContent className="p-6">
-                            <div className="flex items-start gap-4 mb-4">
-                                <div className="h-12 w-12 bg-slate-100 rounded-full flex items-center justify-center font-bold text-slate-400 overflow-hidden shrink-0">
-                                    {doc.profileImage ? <img src={doc.profileImage} alt="" className="h-full w-full object-cover" /> : doc.name.charAt(0)}
-                                </div>
-                                <div className="flex-1">
-                                    <h3 className="font-bold text-slate-800 text-lg">{doc.name}</h3>
-                                    <div className="flex items-center gap-2 text-xs font-semibold text-slate-500">
-                                        <CalendarDays className="h-3 w-3" /> {doc.specialization}
-                                    </div>
-                                </div>
+                    <TabsContent value="pending" className="space-y-4 outline-none">
+                        {pendingRequests.length === 0 ? (
+                            <EmptyState message="All caught up! No new requests." />
+                        ) : (
+                            pendingRequests.map(req => (
+                                <RequestCard 
+                                    key={req._id} 
+                                    req={req} 
+                                    onAction={handleAction} 
+                                    loadingId={loadingAction} 
+                                />
+                            ))
+                        )}
+                    </TabsContent>
+
+                    <TabsContent value="history" className="space-y-4 outline-none">
+                        {historyRequests.length === 0 ? (
+                            <EmptyState message="No history available yet." />
+                        ) : (
+                            historyRequests.map(req => (
+                                <RequestCard key={req._id} req={req} isHistory />
+                            ))
+                        )}
+                    </TabsContent>
+                </Tabs>
+            </main>
+        </div>
+    );
+}
+
+function RequestCard({ req, onAction, loadingId, isHistory }: any) {
+    const isLoading = loadingId === req._id;
+
+    return (
+        <Card className={`group border-slate-200 shadow-sm overflow-hidden transition-all duration-300 ${isHistory ? 'bg-slate-50/50' : 'hover:shadow-md hover:border-[#06b6d4]/30 bg-white'}`}>
+            <CardContent className="p-0">
+                <div className="flex flex-col lg:flex-row items-center justify-between p-5 gap-6">
+                    
+                    {/* Doctor Info */}
+                    <div className="flex items-center gap-4 w-full lg:w-1/3">
+                        <div className={`h-12 w-12 rounded-xl flex items-center justify-center transition-colors ${isHistory ? 'bg-slate-200 text-slate-500' : 'bg-cyan-50 text-[#06b6d4]'}`}>
+                            <User size={24} />
+                        </div>
+                        <div>
+                            <h3 className="font-bold text-slate-800 leading-tight">{req.doctorName}</h3>
+                            <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-0.5">{req.specialization}</p>
+                        </div>
+                    </div>
+
+                    {/* Proposal Details */}
+                    <div className="flex items-center gap-6 w-full lg:w-auto">
+                        <div className="flex items-center gap-2 text-slate-600 font-medium">
+                            <CalendarDays size={18} className="text-[#06b6d4]" />
+                            <span className="text-sm">{req.requestedDate}</span>
+                        </div>
+                        <div className="flex items-center gap-2 text-slate-600 font-medium">
+                            <Clock size={18} className="text-[#06b6d4]" />
+                            <span className="text-sm">{req.requestedTime}</span>
+                        </div>
+                    </div>
+
+                    {/* Actions */}
+                    <div className="flex items-center gap-3 w-full lg:w-auto justify-end">
+                        {isHistory ? (
+                            <div className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold uppercase ${
+                                req.status === "Confirmed" ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"
+                            }`}>
+                                {req.status === "Confirmed" ? <Check size={14} /> : <X size={14} />}
+                                {req.status}
                             </div>
+                        ) : (
+                            <>
+                                <Button 
+                                    variant="ghost" 
+                                    onClick={() => onAction(req._id, "Rejected")}
+                                    className="text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors"
+                                    disabled={isLoading}
+                                >
+                                    Reject
+                                </Button>
+                                <Button 
+                                    onClick={() => onAction(req._id, "Confirmed")}
+                                    className="bg-[#06b6d4] hover:bg-[#0891b2] text-white shadow-lg shadow-cyan-500/20 px-6 min-w-[120px]"
+                                    disabled={isLoading}
+                                >
+                                    {isLoading ? <Loader2 size={18} className="animate-spin" /> : "Confirm"}
+                                </Button>
+                            </>
+                        )}
+                    </div>
+                </div>
+            </CardContent>
+        </Card>
+    );
+}
 
-                            <div className="grid grid-cols-2 gap-4 mb-4">
-                                <div className="space-y-2">
-                                    <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-1">
-                                        <Clock className="h-3.5 w-3.5" /> Channeling Time
-                                    </label>
-                                    <Input
-                                        type="time"
-                                        value={doc.channelingTime || ""}
-                                        onChange={e => handleUpdate(doc._id, "channelingTime", e.target.value)}
-                                    />
-                                </div>
-
-                                <div className="space-y-2">
-                                    <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-1">
-                                        <Activity className="h-3.5 w-3.5" /> Session Status
-                                    </label>
-                                    <Select
-                                        value={doc.channelingStatus || "On Time"}
-                                        onValueChange={(val) => handleUpdate(doc._id, "channelingStatus", val)}
-                                    >
-                                        <SelectTrigger>
-                                            <SelectValue placeholder="Status" />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            <SelectItem value="On Time">On Time</SelectItem>
-                                            <SelectItem value="Delayed">Delayed</SelectItem>
-                                            <SelectItem value="Cancelled">Cancelled</SelectItem>
-                                        </SelectContent>
-                                    </Select>
-                                </div>
-                            </div>
-
-                            <Button
-                                onClick={() => saveChannelingStatus(doc)}
-                                disabled={saving[doc._id]}
-                                className="w-full bg-slate-900 hover:bg-slate-800 text-white font-semibold flex items-center justify-center"
-                            >
-                                {saving[doc._id] ? <Loader2 className="animate-spin h-5 w-5" /> : "Save Schedule"}
-                            </Button>
-                        </CardContent>
-                    </Card>
-                ))}
+function EmptyState({ message }: { message: string }) {
+    return (
+        <div className="py-20 flex flex-col items-center justify-center bg-white border border-dashed rounded-2xl border-slate-200">
+            <div className="h-16 w-16 bg-slate-50 rounded-full flex items-center justify-center mb-4">
+                <Check className="h-8 w-8 text-slate-200" />
             </div>
+            <p className="text-slate-400 font-medium">{message}</p>
         </div>
     );
 }
