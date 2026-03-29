@@ -3,8 +3,12 @@ import mongoose from "mongoose";
 const DoctorSchema = new mongoose.Schema({
   // --- Auth Details ---
   name: { type: String, required: true }, // Mapped from 'fullName'
+  fullName: { type: String },
   email: { type: String, required: true, unique: true },
   password: { type: String, required: true },
+
+  // --- Admin Approval ---
+  isApproved: { type: Boolean, default: false },
 
   // --- Personal & Professional Details ---
   specialization: { type: String, default: 'General Practitioner' },

@@ -97,6 +97,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   // 3. SIGN UP ACTION (Doctor)
+  // Note: Does NOT auto-login because new doctor accounts require admin approval first.
   const signUp = async (userData: any) => {
     try {
       console.log(`Registering doctor at: ${API_URL}/register-doctor`);
@@ -113,8 +114,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         throw new Error(data.message || data.msg || 'Registration failed');
       }
 
-      // ✅ AUTO-LOGIN
-      await signIn(userData.email, userData.password);
+      // Registration successful — caller will navigate to success screen.
+      // Do NOT auto-login: account requires admin approval before first login.
 
     } catch (error: any) {
       console.error("Signup Error:", error);

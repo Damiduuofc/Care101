@@ -16,13 +16,15 @@ export const registerDoctor = async (req, res) => {
 
     const newDoctor = new Doctor({
       name: fullName,
+      fullName,
       email,
       password: hashedPassword,
       specialization,
       nic: nicNumber,
       phone: phoneNumber,
       slmcReg: slmcRegistrationNumber,
-      nameWithInitials
+      nameWithInitials,
+      isApproved: false
     });
 
     await newDoctor.save();
@@ -110,6 +112,10 @@ export const login = async (req, res) => {
     // 1. Check Doctor Collection
     const doctor = await Doctor.findOne({ email });
     if (doctor) {
+      // Block unapproved doctors
+      if (!doctor.isApproved) {
+        return res.status(403).json({ message: "Your account is pending admin approval. Please wait for the administrator to activate your account." });
+      }
       user = doctor;
       role = "doctor";
     }

@@ -311,7 +311,38 @@ router.delete("/staff/:id", protect, authorize(["system_admin"]), async (req, re
 });
 
 // ==========================================
-// 7. RECEPTIONIST / NURSE DASHBOARD: DOCTORS STATUS
+// 7. SYSTEM ADMIN: ALL DOCTORS MANAGEMENT
+// ==========================================
+router.get("/all-doctors", protect, authorize(["system_admin"]), async (req, res) => {
+  try {
+    const doctors = await Doctor.find().select("-password").sort({ createdAt: -1 });
+    res.json(doctors);
+  } catch (err) {
+    console.error("Fetch All Doctors Error:", err);
+    res.status(500).send("Server Error");
+  }
+});
+
+router.put("/all-doctors/:id/approve", protect, authorize(["system_admin"]), async (req, res) => {
+  try {
+    const { isApproved } = req.body;
+    const doctor = await Doctor.findByIdAndUpdate(
+      req.params.id,
+      { isApproved },
+      { new: true }
+    ).select("-password");
+
+    if (!doctor) return res.status(404).json({ msg: "Doctor not found" });
+
+    res.json({ msg: isApproved ? "Doctor approved successfully" : "Doctor account rejected", doctor });
+  } catch (err) {
+    console.error("Approve Doctor Error:", err);
+    res.status(500).send("Server Error");
+  }
+});
+
+// ==========================================
+// 8. RECEPTIONIST / NURSE DASHBOARD: DOCTORS STATUS
 // ==========================================
 router.get("/doctors", protect, authorize(["system_admin", "receptionist", "nurse"]), async (req, res) => {
   try {
