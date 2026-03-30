@@ -7,7 +7,8 @@ import {
   ShieldCheck,
   UserCheck,
   Building,
-  Clock
+  Clock,
+  FileText
 } from "lucide-react";
 
 export const menuItems = [
@@ -76,6 +77,14 @@ export const menuItems = [
     href: "/admin/queue",
     icon: Activity,
     roles: ["nurse"],
+  },
+
+  // --- LAB ASSISTANT ---
+  {
+    title: "Upload Records",
+    href: "/admin/lab-assistant-dashboard",
+    icon: FileText,
+    roles: ["lab_assistant"],
   },
 
 ];

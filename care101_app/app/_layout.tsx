@@ -45,12 +45,7 @@ function RootLayoutNav() {
         <Stack.Screen name="dashboard" />
       </Stack>
       
-      {/* GLOBAL ADS */}
-      {showAds && (
-        <View style={{ height: 60, backgroundColor: '#f1f5f9', justifyContent: 'center', alignItems: 'center', borderTopWidth: 1, borderTopColor: '#e2e8f0' }}>
-            <Text style={{color: '#94a3b8', fontSize: 12, fontWeight: '600'}}>ADS WOULD APPEAR HERE</Text>
-        </View>
-      )}
+ 
 
       <PortalHost />
     </View>

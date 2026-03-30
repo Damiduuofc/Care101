@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   View, 
   Text, 
@@ -15,32 +15,31 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 const { width, height } = Dimensions.get('window');
 
-// --- ASSETS CONFIGURATION ---
 const ADS = [
-    {
-        id: '1', // Changed to string for FlatList keyExtractor
-        image: require('../../assets/ads1.jpg'),
-    },
-    {
-        id: '2',
-        image: require('../../assets/ads2.jpg'),
-    },
-    {
-        id: '3',
-        image: require('../../assets/ads3.jpg'),
-    }
+    { id: '1', image: require('../../assets/ads1.jpg') },
+    { id: '2', image: require('../../assets/ads2.jpg') },
+    { id: '3', image: require('../../assets/ads3.jpg') }
 ];
 
 export default function AdScreen() {
     const router = useRouter();
     const [activeIndex, setActiveIndex] = useState(0);
     
-    // Logic to handle "Skip" OR "Get Started" (Both go to login)
     const handleFinish = () => {
         router.replace('/login');
     };
 
-    // Calculate current slide index based on scroll position
+    // Automatically navigate to login after the 3rd slide
+    useEffect(() => {
+        if (activeIndex === ADS.length - 1) {
+            // Optional: Add a small delay so they see the last ad for a split second
+            const timer = setTimeout(() => {
+                handleFinish();
+            }, 800); 
+            return () => clearTimeout(timer);
+        }
+    }, [activeIndex]);
+
     const handleScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
         const scrollPosition = event.nativeEvent.contentOffset.x;
         const index = Math.round(scrollPosition / width);
@@ -49,17 +48,12 @@ export default function AdScreen() {
 
     const renderItem = ({ item }: { item: typeof ADS[0] }) => (
         <View style={styles.slide}>
-            <Image
-                source={item.image}
-                style={styles.adImage}
-                resizeMode="cover"
-            />
+            <Image source={item.image} style={styles.adImage} resizeMode="cover" />
         </View>
     );
 
     return (
         <View style={styles.container}>
-            {/* 1. The Swipable List */}
             <FlatList
                 data={ADS}
                 renderItem={renderItem}
@@ -72,32 +66,18 @@ export default function AdScreen() {
                 bounces={false}
             />
 
-            {/* 2. Overlay Controls (Top Bar & Bottom Button) */}
             <SafeAreaView style={styles.overlayContainer} pointerEvents="box-none">
-                
-                {/* TOP BAR: Shows on all slides except the last one */}
+                {/* Only show skip if it's NOT the last slide */}
                 {activeIndex < ADS.length - 1 && (
                     <View style={styles.topBar}>
-                        <View style={styles.timerBadge}>
-                            <Text style={styles.timerText}>
-                                Ad {activeIndex + 1} of {ADS.length}
-                            </Text>
-                        </View>
-
+                        <View /> {/* Empty view to push button to the right */}
                         <TouchableOpacity
                             onPress={handleFinish}
-                            style={styles.skipButton}
+                            activeOpacity={0.7}
+                            style={styles.eyeCatchingSkip}
                         >
-                            <Text style={styles.skipText}>Skip &gt;&gt;</Text>
-                        </TouchableOpacity>
-                    </View>
-                )}
-
-                {/* BOTTOM BUTTON: Only shows on the last slide */}
-                {activeIndex === ADS.length - 1 && (
-                    <View style={styles.bottomContainer}>
-                        <TouchableOpacity style={styles.getStartedButton} onPress={handleFinish}>
-                            <Text style={styles.getStartedText}>Get Started</Text>
+                            <Text style={styles.skipText}>SKIP</Text>
+                            <Text style={styles.arrowText}> ❯❯ </Text>
                         </TouchableOpacity>
                     </View>
                 )}
@@ -119,66 +99,42 @@ const styles = StyleSheet.create({
         width: width,
         height: height,
     },
-    // Overlay Container ensures buttons sit on top of the images
     overlayContainer: {
-        ...StyleSheet.absoluteFillObject, // Fill the screen
-        justifyContent: 'space-between', // Space out top and bottom elements
+        ...StyleSheet.absoluteFillObject,
+        justifyContent: 'flex-start', 
     },
     topBar: {
         flexDirection: 'row',
-        justifyContent: 'space-between',
+        justifyContent: 'space-between', // Pushes children apart
         alignItems: 'center',
         paddingHorizontal: 20,
-        paddingTop: 10, 
+        paddingTop: 20, 
     },
-    timerBadge: {
-        backgroundColor: 'rgba(0,0,0,0.6)',
-        paddingHorizontal: 12,
-        paddingVertical: 6,
-        borderRadius: 12,
-    },
-    timerText: {
-        color: 'white',
-        fontSize: 12,
-        fontWeight: '600',
-    },
-    skipButton: {
-        backgroundColor: 'rgba(0,0,0,0.6)',
-        paddingHorizontal: 16,
-        paddingVertical: 8,
-        borderRadius: 20,
-        borderWidth: 1,
-        borderColor: 'rgba(255,255,255,0.3)',
+    eyeCatchingSkip: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#06b6d4', // Vibrant Cyan
+        paddingHorizontal: 18,
+        paddingVertical: 10,
+        borderRadius: 25,
+        // Glow/Shadow effect
+        shadowColor: "#06b6d4",
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.5,
+        shadowRadius: 10,
+        elevation: 10,
+        borderWidth: 1.5,
+        borderColor: 'rgba(255,255,255,0.4)',
     },
     skipText: {
         color: 'white',
-        fontWeight: 'bold',
+        fontWeight: '900',
         fontSize: 14,
+        letterSpacing: 1.2,
     },
-    bottomContainer: {
-        position: 'absolute',
-        bottom: 50,
-        left: 0,
-        right: 0,
-        alignItems: 'center',
-    },
-    getStartedButton: {
-        backgroundColor: '#06b6d4', // Emerald 600
-        paddingHorizontal: 40,
-        paddingVertical: 16,
-        borderRadius: 30,
-        shadowColor: "#000",
-        shadowOffset: {
-            width: 0,
-            height: 4,
-        },
-        shadowOpacity: 0.30,
-        shadowRadius: 4.65,
-        elevation: 8,
-    },
-    getStartedText: {
+    arrowText: {
         color: 'white',
-        fontSize: 18,
+        fontSize: 12,
         fontWeight: 'bold',
     }
 });

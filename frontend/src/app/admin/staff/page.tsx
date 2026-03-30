@@ -166,10 +166,12 @@ export default function StaffManagement() {
   if (loading) return <div className="p-10 flex justify-center"><Loader2 className="animate-spin text-cyan-600" /></div>;
 
   return (
-    <div className="space-y-6 max-w-6xl mx-auto">
+    <div className="min-h-screen bg-slate-50">
       <Sidebar />
-      {/* Header & Add Button */}
-      <div className="flex flex-col md:flex-row justify-between items-center gap-4">
+      <main className="flex-1 md:ml-64 p-4 lg:p-8 overflow-y-auto">
+        <div className="max-w-6xl mx-auto space-y-6">
+          {/* Header & Add Button */}
+          <div className="flex flex-col md:flex-row justify-between items-center gap-4">
         <div>
           <h1 className="text-3xl font-bold text-slate-900">Staff Management</h1>
           <p className="text-slate-500">Create accounts for Nurses and Receptionists.</p>
@@ -271,6 +273,8 @@ export default function StaffManagement() {
           </Card>
         ))}
       </div>
+        </div>
+      </main>
     </div>
   );
 }

@@ -7,10 +7,12 @@ const router = express.Router();
 // 1. UPLOAD A RECORD
 router.post("/upload", auth, async (req, res) => {
   try {
-    const { type, title, doctorName, date, description, fileData, fileType } = req.body;
+    const { patientId, type, title, doctorName, date, description, fileData, fileType } = req.body;
+
+    const actualPatientId = patientId || req.user.id;
 
     const newRecord = new MedicalRecord({
-      patientId: req.user.id,
+      patientId: actualPatientId,
       type,
       title,
       doctorName,
@@ -67,6 +69,23 @@ router.get("/my-records", auth, async (req, res) => {
   }
 });
 
+// GET RECORDS FOR A SPECIFIC PATIENT (For Doctors & Lab Assistants)
+router.get("/patient/:patientId", auth, async (req, res) => {
+  try {
+    const { role } = req.user;
+    if (role !== "doctor" && role !== "lab_assistant" && role !== "system_admin") {
+      return res.status(403).json({ msg: "Not authorized to view other patient records" });
+    }
+    const records = await MedicalRecord.find({ patientId: req.params.patientId })
+      .select("-fileData")
+      .sort({ date: -1 });
+    res.json(records);
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).send("Server Error");
+  }
+});
+
 // 3. DOWNLOAD SPECIFIC FILE
 router.get("/download/:id", auth, async (req, res) => {
   try {
@@ -74,8 +93,11 @@ router.get("/download/:id", auth, async (req, res) => {
     if (!record) return res.status(404).json({ msg: "File not found" });
 
     // Security check
-    if (record.patientId.toString() !== req.user.id) {
-      return res.status(401).json({ msg: "Not authorized" });
+    const isOwner = record.patientId.toString() === req.user.id;
+    const isAuthorized = ["doctor", "lab_assistant", "system_admin"].includes(req.user.role);
+
+    if (!isOwner && !isAuthorized) {
+      return res.status(403).json({ msg: "Not authorized" });
     }
 
     res.json({ fileData: record.fileData, fileType: record.fileType, fileName: record.title });
@@ -94,9 +116,12 @@ router.delete("/delete/:id", auth, async (req, res) => {
       return res.status(404).json({ msg: "Record not found" });
     }
 
-    // Security Check: User must own the record
-    if (record.patientId.toString() !== req.user.id) {
-      return res.status(401).json({ msg: "Not authorized" });
+    // Security Check: User must own the record or be authorized
+    const isOwner = record.patientId.toString() === req.user.id;
+    const isAuthorized = ["doctor", "system_admin"].includes(req.user.role);
+
+    if (!isOwner && !isAuthorized) {
+      return res.status(403).json({ msg: "Not authorized to delete" });
     }
 
     await MedicalRecord.findByIdAndDelete(req.params.id);

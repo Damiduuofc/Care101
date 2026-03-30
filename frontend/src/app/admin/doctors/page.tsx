@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Sidebar from "@/components/admin/Sidebar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -17,6 +16,7 @@ import {
   ShieldCheck,
   Phone,
 } from "lucide-react";
+import Sidebar from "@/components/admin/Sidebar";
 import { useRouter } from "next/navigation";
 
 interface Doctor {
@@ -99,11 +99,9 @@ export default function AllDoctorsPage() {
 
       if (res.ok) {
         showToast(approve ? "Doctor Approved" : "Status Updated", "success");
-        // Update local state
         setDoctors((prev) =>
           prev.map((d) => (d._id === doctorId ? { ...d, isApproved: approve } : d))
         );
-        // If the modal is open, update the selected doctor state too
         if (selectedDoctor?._id === doctorId) {
           setSelectedDoctor((prev) => (prev ? { ...prev, isApproved: approve } : null));
         }
@@ -132,7 +130,7 @@ export default function AllDoctorsPage() {
   if (loading)
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50">
-        <Loader2 className="h-6 w-6 animate-spin text-indigo-500" />
+        <Loader2 className="h-6 w-6 animate-spin text-[#06B6D4]" />
       </div>
     );
 
@@ -165,7 +163,7 @@ export default function AllDoctorsPage() {
                 key={status}
                 onClick={() => setFilterStatus(status)}
                 className={`px-4 py-1.5 text-xs font-bold rounded-lg transition-all capitalize ${
-                  filterStatus === status ? "bg-white shadow-sm text-slate-900" : "text-slate-500 hover:text-slate-700"
+                  filterStatus === status ? "bg-white shadow-sm text-[#06B6D4]" : "text-slate-500 hover:text-slate-700"
                 }`}
               >
                 {status}
@@ -182,7 +180,7 @@ export default function AllDoctorsPage() {
             placeholder="Search by name, SLMC or email..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-10 pr-4 py-2.5 text-sm bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-4 focus:ring-indigo-500/5 focus:border-indigo-400 transition-all shadow-sm"
+            className="w-full pl-10 pr-4 py-2.5 text-sm bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-4 focus:ring-[#06B6D4]/10 focus:border-[#06B6D4] transition-all shadow-sm"
           />
         </div>
 
@@ -226,7 +224,7 @@ function DoctorCard({ doc, isProcessing, onView, onAction }: any) {
   return (
     <Card 
       onClick={onView}
-      className="group cursor-pointer hover:border-indigo-300 transition-all duration-300 shadow-sm border-slate-200 bg-white rounded-2xl overflow-hidden"
+      className="group cursor-pointer hover:border-[#06B6D4]/50 transition-all duration-300 shadow-sm border-slate-200 bg-white rounded-2xl overflow-hidden"
     >
       <CardContent className="p-5">
         <div className="flex items-center gap-4 mb-4">
@@ -235,7 +233,7 @@ function DoctorCard({ doc, isProcessing, onView, onAction }: any) {
           </div>
           <div className="min-w-0 flex-1">
             <h3 className="text-sm font-bold text-slate-900 truncate">{doc.fullName || doc.name}</h3>
-            <p className="text-[11px] text-indigo-600 font-bold uppercase tracking-wider truncate">{doc.specialization}</p>
+            <p className="text-[11px] text-[#06B6D4] font-bold uppercase tracking-wider truncate">{doc.specialization}</p>
           </div>
         </div>
 
@@ -251,7 +249,8 @@ function DoctorCard({ doc, isProcessing, onView, onAction }: any) {
                 size="sm" 
                 onClick={() => onAction(doc._id, true)} 
                 disabled={isProcessing}
-                className="flex-[2] bg-slate-900 hover:bg-indigo-600 text-white text-[11px] h-8 rounded-lg shadow-sm"
+                style={{ backgroundColor: '#06B6D4' }}
+                className="flex-[2] hover:bg-[#0891B2] text-white text-[11px] h-8 rounded-lg shadow-sm"
               >
                 {isProcessing ? <Loader2 className="h-3 w-3 animate-spin" /> : "Approve"}
               </Button>
@@ -292,7 +291,7 @@ function DoctorDetailModal({ doctor, actionLoading, onClose, onApprove }: any) {
         
         <div className="p-6 border-b border-slate-50 flex justify-between items-center bg-slate-50/30">
           <div className="flex items-center gap-3">
-            <div className="p-2 bg-indigo-600 rounded-lg shadow-indigo-200 shadow-md">
+            <div className="p-2 bg-[#06B6D4] rounded-lg shadow-[#06B6D4]/20 shadow-md">
               <ShieldCheck className="h-4 w-4 text-white" />
             </div>
             <h2 className="font-bold text-slate-900 text-sm">Verification Profile</h2>
@@ -309,7 +308,7 @@ function DoctorDetailModal({ doctor, actionLoading, onClose, onApprove }: any) {
              </div>
              <div className="min-w-0">
                 <h3 className="text-xl font-bold text-slate-900 truncate leading-tight">{doctor.fullName || doctor.name}</h3>
-                <p className="text-indigo-600 text-xs font-bold uppercase mt-1">{doctor.specialization}</p>
+                <p className="text-[#06B6D4] text-xs font-bold uppercase mt-1">{doctor.specialization}</p>
                 <div className="flex items-center gap-1.5 mt-2 text-[10px] font-bold text-slate-400 uppercase tracking-tighter">
                     <Calendar className="h-3 w-3" /> Member Since {new Date(doctor.createdAt).getFullYear()}
                 </div>
@@ -344,7 +343,8 @@ function DoctorDetailModal({ doctor, actionLoading, onClose, onApprove }: any) {
                 <Button 
                   onClick={() => onApprove(doctor._id, true)} 
                   disabled={isProcessing}
-                  className="flex-[2] bg-indigo-600 hover:bg-indigo-700 h-12 rounded-2xl text-xs font-bold shadow-lg shadow-indigo-100 transition-all active:scale-95"
+                  style={{ backgroundColor: '#06B6D4' }}
+                  className="flex-[2] hover:bg-[#0891B2] h-12 rounded-2xl text-xs font-bold shadow-lg shadow-cyan-100 transition-all active:scale-95"
                 >
                   {isProcessing ? <Loader2 className="h-4 w-4 animate-spin" /> : "Approve Account"}
                 </Button>

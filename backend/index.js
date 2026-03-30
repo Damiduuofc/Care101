@@ -21,6 +21,7 @@ import paymentRoutes from "./routes/payments.js"; // <--- Import this
 import instructionRoutes from "./routes/instructionRoutes.js";
 import patientsRoutes from "./routes/patients.js"; // <--- NEW: Patients management
 import scheduleRequestRoutes from "./routes/scheduleRequests.js"; // <--- NEW: Schedule Requests
+import labRequestRoutes from "./routes/labRequests.js"; // <--- NEW: Lab Requests
 
 const app = express();
 const __dirname = path.resolve();
@@ -71,6 +72,7 @@ app.use("/api/instructions", instructionRoutes);
 app.use("/api/payments", paymentRoutes);
 app.use("/api/patients", patientsRoutes); // <--- NEW: Patients management
 app.use("/api/schedule-requests", scheduleRequestRoutes); // <--- NEW: Schedule requests
+app.use("/api/lab-requests", labRequestRoutes); // <--- NEW: Lab Requests
 /* =========================
    SERVER START
 ========================= */

@@ -243,7 +243,7 @@ router.post("/create-staff", protect, authorize(["system_admin"]), async (req, r
     const { name, email, password, role, department } = req.body;
 
     // 1. Check for valid role
-    const validRoles = ["receptionist", "nurse", "system_admin"];
+    const validRoles = ["receptionist", "nurse", "system_admin", "lab_assistant"];
     if (!validRoles.includes(role)) {
       return res.status(400).json({ msg: "Invalid Role. Must be one of: " + validRoles.join(", ") });
     }

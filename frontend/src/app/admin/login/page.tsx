@@ -47,6 +47,8 @@ export default function AdminLogin() {
         router.push("/admin/receptionist-dashboard");
       } else if (data.admin.role === "nurse") {
         router.push("/admin/queue");
+      } else if (data.admin.role === "lab_assistant") {
+        router.push("/admin/lab-assistant-dashboard");
       } else {
         router.push("/admin/dashboard");
       }
@@ -64,16 +66,7 @@ export default function AdminLogin() {
       <div className="absolute -top-32 left-1/3 w-96 h-96 bg-cyan-500/10 rounded-full blur-[120px]" />
       <div className="absolute -bottom-32 right-1/3 w-96 h-96 bg-blue-500/10 rounded-full blur-[120px]" />
 
-      {/* Back Button */}
-      <div className="absolute top-8 left-8 z-10">
-        <button
-          onClick={() => router.push("/")}
-          className="text-slate-500 hover:text-cyan-400 text-sm flex items-center gap-2 transition-colors group"
-        >
-          <ArrowLeft className="h-4 w-4 group-hover:-translate-x-1 transition-transform" />
-          Back to Hospital Home
-        </button>
-      </div>
+
 
       {/* Login Card */}
       <div className="w-full max-w-[400px] relative z-10">
