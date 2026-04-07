@@ -32,9 +32,8 @@ router.post("/create-intent", auth, async (req, res) => {
       return res.status(400).json({ msg: "Amount is required" });
     }
 
-    // Create a PaymentIntent with the order amount and currency
     const paymentIntent = await stripe.paymentIntents.create({
-      amount: amount,
+      amount: Math.round(amount),
       currency: "lkr", // Change to "usd" if your Stripe account doesn't support LKR
       automatic_payment_methods: {
         enabled: true,

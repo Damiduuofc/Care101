@@ -7,6 +7,8 @@ import "../theme.css";
 import { Platform, View, ActivityIndicator, Text, LogBox, Alert } from 'react-native'; 
 import * as NavigationBar from 'expo-navigation-bar';
 
+import { StripeProvider } from '@stripe/stripe-react-native';
+
 // ✅ This will suppress ALL development-time error popups (red/yellow boxes)
 LogBox.ignoreAllLogs();
 
@@ -60,8 +62,10 @@ function RootLayoutNav() {
 
 export default function RootLayout() {
   return (
-    <AuthProvider>
-      <RootLayoutNav />
-    </AuthProvider>
+    <StripeProvider publishableKey={process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY || ""}>
+      <AuthProvider>
+        <RootLayoutNav />
+      </AuthProvider>
+    </StripeProvider>
   );
 }

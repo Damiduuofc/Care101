@@ -82,7 +82,7 @@ export default function BillingScreen() {
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${token}`
                 },
-                body: JSON.stringify({ amount: bill.amount * 100 }) // Amount in cents
+                body: JSON.stringify({ amount: Math.round(bill.amount * 100) }) // Amount in cents
             });
 
             if (!response.ok) {
