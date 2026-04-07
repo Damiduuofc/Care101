@@ -8,21 +8,29 @@ import {
   StyleSheet,
   StatusBar,
   Platform,
-  ActivityIndicator
+  ActivityIndicator,
+  Modal,
+  FlatList,
+  RefreshControl,
+  Alert
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter, useFocusEffect } from 'expo-router';
 import * as SecureStore from 'expo-secure-store';
 import {
-  ChevronRight,
+  Bell,
+  X,
+  Info,
+  Trash2,
+  Calendar,
+  User,
   Wallet,
+  Stethoscope,
+  ChevronRight,
   Activity,
   BarChart3,
-  FileText,
-  User,
-  Calendar,
-  Stethoscope,
+  FileText
 } from 'lucide-react-native';
 
 import BottomNavBar from '../../components/BottomNavBar';
@@ -45,6 +53,14 @@ export default function DashboardScreen() {
     income: 0,
     records: 0
   });
+
+  const [refreshing, setRefreshing] = useState(false);
+  const [notifications, setNotifications] = useState<any[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [showNotifModal, setShowNotifModal] = useState(false);
+  const [notifLoading, setNotifLoading] = useState(false);
+
+  const API_BASE = process.env.EXPO_PUBLIC_API_URL;
 
   const bannerImage = { uri: "https://unsplash.com/photos/black-and-gray-stethoscope-yo01Z-9HQAw" };
 
@@ -126,15 +142,89 @@ export default function DashboardScreen() {
       }
     };
 
+    const fetchNotifications = async () => {
+      if (notifications.length === 0) setNotifLoading(true);
+      try {
+        const token = await SecureStore.getItemAsync('token');
+        if (!token) {
+          console.log("NOTIF ERROR: No token found");
+          return;
+        }
+        const res = await fetch(`${API_BASE}/notifications`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        if (res.ok) {
+          const data = await res.json();
+          console.log("DOCTOR NOTIFS FULL DATA:", JSON.stringify(data, null, 2));
+          setNotifications(data);
+          const unread = data.filter((n: any) => !n.read).length;
+          setUnreadCount(unread);
+        }
+      } catch (error) {
+        console.error("Notifications Error:", error);
+      } finally {
+        setNotifLoading(false);
+      }
+    };
 
+    const markAsRead = async (id: string) => {
+      try {
+        const token = await SecureStore.getItemAsync('token');
+        await fetch(`${API_BASE}/notifications/read/${id}`, {
+          method: 'PUT',
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        fetchNotifications();
+      } catch (error) {
+        console.error(error);
+      }
+    };
+
+    const deleteNotification = async (id: string) => {
+      try {
+        const token = await SecureStore.getItemAsync('token');
+        await fetch(`${API_BASE}/notifications/${id}`, {
+          method: 'DELETE',
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        fetchNotifications();
+      } catch (error) {
+        console.error(error);
+      }
+    };
+
+    const clearAllNotifications = async () => {
+      try {
+        const token = await SecureStore.getItemAsync('token');
+        await fetch(`${API_BASE}/notifications/clear-all`, {
+          method: 'DELETE',
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        fetchNotifications();
+      } catch (error) {
+        console.error(error);
+      }
+    };
 
   // ✅ AUTO-REFRESH LOGIC
   // This runs every time the screen comes into focus
   useFocusEffect(
     useCallback(() => {
       fetchDashboard();
+      fetchNotifications();
+
+      // Real-time polling
+      const intervalId = setInterval(fetchNotifications, 10000); // 10 seconds
+
+      return () => clearInterval(intervalId);
     }, [])
   );
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await Promise.all([fetchDashboard(), fetchNotifications()]);
+    setRefreshing(false);
+  };
 
   if (loading) {
     return (
@@ -154,11 +244,24 @@ export default function DashboardScreen() {
             <View style={styles.avatarContainer}>
               <User size={24} color="#06b6d4" />
             </View>
-            <View>
+            <View style={{ flex: 1 }}>
               <Text style={styles.welcomeText}>Welcome Doctor</Text>
               <Text style={styles.doctorName}>{stats.name}</Text>
               <Text style={styles.specialization}>{stats.specialization}</Text>
             </View>
+
+            {/* NOTIFICATION BELL */}
+            <TouchableOpacity
+              style={styles.notifBtn}
+              onPress={() => setShowNotifModal(true)}
+            >
+              <Bell size={24} color="#64748b" />
+              {unreadCount > 0 && (
+                <View style={styles.unreadBadge}>
+                  <Text style={styles.unreadText}>{unreadCount}</Text>
+                </View>
+              )}
+            </TouchableOpacity>
           </View>
         </View>
       </SafeAreaView>
@@ -235,6 +338,69 @@ export default function DashboardScreen() {
 
       </ScrollView>
 
+      {/* --- NOTIFICATIONS MODAL --- */}
+      <Modal
+        visible={showNotifModal}
+        animationType="slide"
+        onRequestClose={() => setShowNotifModal(false)}
+      >
+        <SafeAreaView style={styles.modalContainer}>
+          <View style={styles.modalHeader}>
+            <View>
+              <Text style={styles.modalTitle}>Notifications</Text>
+              {notifications.length > 0 && (
+                <TouchableOpacity onPress={clearAllNotifications}>
+                  <Text style={{ color: '#ef4444', fontSize: 12, fontWeight: '600', marginTop: 4 }}>Clear All</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+            <TouchableOpacity onPress={() => setShowNotifModal(false)} style={styles.closeBtn}>
+              <X size={24} color="#0f172a" />
+            </TouchableOpacity>
+          </View>
+
+          {notifLoading && notifications.length === 0 ? (
+            <ActivityIndicator size="large" color="#06b6d4" style={{ marginTop: 50 }} />
+          ) : (
+            <FlatList
+              data={notifications}
+              keyExtractor={(item) => item._id}
+              contentContainerStyle={{ padding: 20 }}
+              ListEmptyComponent={
+                <View style={styles.emptyNotif}>
+                  <Bell size={48} color="#e2e8f0" />
+                  <Text style={styles.emptyNotifText}>No notifications yet</Text>
+                </View>
+              }
+              renderItem={({ item }) => (
+                <View
+                  style={[styles.notifCard, !item.read && styles.notifUnread]}
+                >
+                  <View style={[styles.notifContent, { flexDirection: 'column', alignItems: 'flex-start' }]}>
+                    <TouchableOpacity 
+                      onPress={() => markAsRead(item._id)}
+                      style={{ flexDirection: 'row', alignItems: 'center', width: '100%' }}
+                    >
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.notifMsg, !item.read && { fontWeight: '700' }]}>{item.message}</Text>
+                        <Text style={styles.notifTime}>{new Date(item.timestamp).toLocaleString()}</Text>
+                      </View>
+                    </TouchableOpacity>
+                  </View>
+                  
+                  <TouchableOpacity 
+                    style={styles.deleteBtn} 
+                    onPress={() => deleteNotification(item._id)}
+                  >
+                    <X size={16} color="#94a3b8" />
+                  </TouchableOpacity>
+                </View>
+              )}
+            />
+          )}
+        </SafeAreaView>
+      </Modal>
+
       <BottomNavBar />
     </View>
   );
@@ -287,6 +453,34 @@ const styles = StyleSheet.create({
   specialization: {
     fontSize: 13,
     color: '#64748b',
+  },
+  notifBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#f8fafc',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#f1f5f9',
+  },
+  unreadBadge: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    backgroundColor: '#ef4444',
+    borderRadius: 10,
+    minWidth: 18,
+    height: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: '#fff',
+  },
+  unreadText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: '800',
   },
   scrollContent: {
     paddingBottom: 100,
@@ -432,4 +626,66 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
 
+  // Modal Styles
+  modalContainer: { flex: 1, backgroundColor: '#fff' },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f1f5f9'
+  },
+  modalTitle: { fontSize: 20, fontWeight: '800', color: '#0f172a' },
+  notifCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#f1f5f9',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.03,
+    elevation: 1,
+    overflow: 'hidden'
+  },
+  notifContent: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+  },
+  deleteBtn: {
+    padding: 16,
+    borderLeftWidth: 1,
+    borderLeftColor: '#f1f5f9',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#fff',
+  },
+  closeBtn: {
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  notifUnread: {
+    backgroundColor: '#f0f9ff',
+    borderColor: '#e0f2fe',
+  },
+  notifIconBox: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  notifMsg: { fontSize: 14, color: '#334155', marginBottom: 4, lineHeight: 20 },
+  notifTime: { fontSize: 11, color: '#94a3b8' },
+  notifDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#0ea5e9' },
+  emptyNotif: { alignItems: 'center', justifyContent: 'center', marginTop: 100 },
+  emptyNotifText: { color: '#94a3b8', fontSize: 16, marginTop: 16 },
 });

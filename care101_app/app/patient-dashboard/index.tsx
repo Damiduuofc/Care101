@@ -11,7 +11,7 @@ import {
     ActivityIndicator,
     Modal,
     Alert,
-    FlatList // Added FlatList
+    FlatList
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -27,7 +27,9 @@ import {
     X,
     CreditCard,
     Bell,
-    Activity
+    Activity,
+    Trash2,
+    CheckCheck
 } from 'lucide-react-native';
 
 import PatientBottomNavBar from '../../components/PatientBottomNavBar';
@@ -48,9 +50,9 @@ export default function PatientDashboardScreen() {
 
     // Modals
     const [isQueueVisible, setQueueVisible] = useState(false);
-    const [isNotifVisible, setNotifVisible] = useState(false); // ✅ Notification Modal State
-    const [notifications, setNotifications] = useState<any[]>([]); // ✅ Notification Data
-    const [unreadCount, setUnreadCount] = useState(0); // ✅ Unread notification count
+    const [isNotifVisible, setNotifVisible] = useState(false); 
+    const [notifications, setNotifications] = useState<any[]>([]); 
+    const [unreadCount, setUnreadCount] = useState(0);
 
     // Session Check
     useEffect(() => {
@@ -62,7 +64,9 @@ export default function PatientDashboardScreen() {
     // --- FETCH DASHBOARD DATA ---
     const fetchDashboardData = async () => {
         try {
-            setLoading(true);
+            // Only set total loading on first fetch
+            if (!upcomingAppointment) setLoading(true);
+            
             const response = await fetch(`${API_URL}/appointments/upcoming`, {
                 method: 'GET',
                 headers: {
@@ -85,7 +89,7 @@ export default function PatientDashboardScreen() {
         }
     };
 
-    // --- FETCH NOTIFICATIONS ---
+    // --- NOTIFICATION MANAGEMENT ---
     const fetchNotifications = async (openModal = true) => {
         try {
             const response = await fetch(`${API_URL}/notifications`, {
@@ -98,17 +102,14 @@ export default function PatientDashboardScreen() {
                 const data = await response.json();
                 setNotifications(data);
                 if (openModal) {
-                    setNotifVisible(true); // Open Modal
+                    setNotifVisible(true);
                 }
-            } else {
-                console.log("Failed to fetch notifications");
             }
         } catch (error) {
             console.error("Notification Error:", error);
         }
     };
 
-    // --- FETCH UNREAD COUNT ---
     const fetchUnreadCount = async () => {
         try {
             const response = await fetch(`${API_URL}/notifications/unread-count`, {
@@ -126,10 +127,75 @@ export default function PatientDashboardScreen() {
         }
     };
 
+    const markAsRead = async (id: string) => {
+        try {
+            await fetch(`${API_URL}/notifications/read/${id}`, {
+                method: 'PUT',
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            setNotifications(prev => prev.map(n => n._id === id ? { ...n, read: true } : n));
+            fetchUnreadCount();
+        } catch (error) {
+            console.error("Mark Read Error:", error);
+        }
+    };
+
+    const deleteNotification = async (id: string) => {
+        try {
+            await fetch(`${API_URL}/notifications/${id}`, {
+                method: 'DELETE',
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            setNotifications(prev => prev.filter(n => n._id !== id));
+            fetchUnreadCount();
+        } catch (error) {
+            console.error("Delete Error:", error);
+        }
+    };
+
+    const clearAllNotifications = async () => {
+        Alert.alert(
+            "Clear All",
+            "Are you sure you want to delete all notifications?",
+            [
+                { text: "Cancel", style: "cancel" },
+                {
+                    text: "Clear All",
+                    style: "destructive",
+                    onPress: async () => {
+                        try {
+                            await fetch(`${API_URL}/notifications/clear-all`, {
+                                method: 'DELETE',
+                                headers: { 'Authorization': `Bearer ${token}` }
+                            });
+                            setNotifications([]);
+                            setUnreadCount(0);
+                        } catch (error) {
+                            console.error("Clear All Error:", error);
+                        }
+                    }
+                }
+            ]
+        );
+    };
+
+    const markAllRead = async () => {
+        try {
+            await fetch(`${API_URL}/notifications/read-all`, {
+                method: 'PUT',
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+            setUnreadCount(0);
+        } catch (error) {
+            console.error("Mark All Read Error:", error);
+        }
+    };
+
     // --- FETCH LIVE QUEUE DATA ---
     const fetchQueueStatus = async (appointmentId: string) => {
         try {
-            const response = await fetch(`${API_URL}/queue/status/${appointmentId}`, {
+            const response = await fetch(`${API_URL}/appointments/queue-status/${appointmentId}`, {
                 method: 'GET',
                 headers: {
                     'Authorization': `Bearer ${token}`,
@@ -155,13 +221,14 @@ export default function PatientDashboardScreen() {
             fetchDashboardData();
             fetchUnreadCount();
 
-            // Auto-refresh notifications every 30 seconds
-            const notifInterval = setInterval(() => {
-                fetchNotifications(false); // Don't open modal on auto-refresh
+            // Auto-refresh EVERY 20 SECONDS for real-time feel
+            const refreshInterval = setInterval(() => {
+                fetchDashboardData(); // Real-time queue number / appointment status
+                fetchNotifications(false); // Silent refresh
                 fetchUnreadCount();
-            }, 30000);
+            }, 20000);
 
-            return () => clearInterval(notifInterval);
+            return () => clearInterval(refreshInterval);
         }
     }, [user, token]);
 
@@ -246,10 +313,10 @@ export default function PatientDashboardScreen() {
                         </View>
                     </View>
 
-                    {/* RIGHT: Notifications (Updated onPress) */}
+                    {/* RIGHT: Notifications */}
                     <TouchableOpacity
                         style={styles.notificationButton}
-                        onPress={() => fetchNotifications(true)} // ✅ Calls fetchNotifications
+                        onPress={() => fetchNotifications(true)}
                     >
                         <Bell size={24} color="#1e293b" />
                         {unreadCount > 0 && (
@@ -291,15 +358,31 @@ export default function PatientDashboardScreen() {
                                 <View style={styles.appointDetails}>
                                     <Text style={styles.doctorName}>{upcomingAppointment.doctorName || "Dr. Unknown"}</Text>
                                     <Text style={styles.specialty}>{upcomingAppointment.specialty || "General"}</Text>
+                                    
                                     <View style={styles.timeRow}>
                                         <Clock size={14} color="#64748b" />
-                                        <Text style={styles.timeText}>{upcomingAppointment.time || "TBA"}</Text>
+                                        <Text style={styles.timeText}>Token: #{upcomingAppointment.queueNumber || "TBA"}</Text>
                                     </View>
-                                    <Text style={styles.tapHint}>Tap to view queue status</Text>
+
+                                    <View style={[styles.statusBadge, {
+                                        backgroundColor: upcomingAppointment.status === 'scheduled' ? '#ecfeff' :
+                                                        upcomingAppointment.status === 'cancelled' ? '#fef2f2' : '#f1f5f9'
+                                    }]}>
+                                        <Text style={[styles.statusText, {
+                                            color: upcomingAppointment.status === 'scheduled' ? '#0891b2' :
+                                                   upcomingAppointment.status === 'cancelled' ? '#dc2626' : '#475569'
+                                        }]}>
+                                            {upcomingAppointment.status ? (upcomingAppointment.status.charAt(0).toUpperCase() + upcomingAppointment.status.slice(1)) : 'Confirmed'}
+                                        </Text>
+                                    </View>
+
+                                    <View style={{ marginTop: 6 }}>
+                                         <Text style={styles.tapHint}>Tap to view Live Queue status</Text>
+                                    </View>
                                 </View>
                             </View>
                             <View style={styles.viewButton}>
-                                <Text style={styles.viewButtonText}>View</Text>
+                                <Text style={styles.viewButtonText}>View Status</Text>
                             </View>
                         </TouchableOpacity>
                     ) : (
@@ -368,7 +451,7 @@ export default function PatientDashboardScreen() {
                                 <View style={styles.queueContainer}>
                                     <View style={styles.tokenBox}>
                                         <Text style={styles.tokenLabel}>Your Token</Text>
-                                        <Text style={styles.tokenNumber}>{queueData.myToken || "--"}</Text>
+                                        <Text style={styles.tokenNumber}>{queueData.queueNumber || "--"}</Text>
                                     </View>
                                     <View style={[styles.tokenBox, styles.activeTokenBox]}>
                                         <Text style={styles.activeTokenLabel}>Ongoing</Text>
@@ -401,19 +484,34 @@ export default function PatientDashboardScreen() {
                 </View>
             </Modal>
 
-            {/* --- NOTIFICATION MODAL (New) --- */}
+            {/* --- NOTIFICATION MODAL --- */}
             <Modal
                 animationType="slide"
                 visible={isNotifVisible}
-                presentationStyle="pageSheet" // Looks better on iOS
+                presentationStyle="pageSheet" 
                 onRequestClose={() => setNotifVisible(false)}
             >
                 <SafeAreaView style={{ flex: 1, backgroundColor: '#fff' }}>
                     <View style={styles.modalHeader}>
-                        <Text style={styles.modalTitle}>Notifications</Text>
-                        <TouchableOpacity onPress={() => setNotifVisible(false)}>
-                            <X size={24} color="#0f172a" />
-                        </TouchableOpacity>
+                        <View>
+                            <Text style={styles.modalTitle}>Notifications</Text>
+                            {unreadCount > 0 && <Text style={{ fontSize: 12, color: '#64748b' }}>{unreadCount} new</Text>}
+                        </View>
+                        <View style={{ flexDirection: 'row', gap: 15 }}>
+                            {notifications.length > 0 && (
+                                <TouchableOpacity onPress={markAllRead}>
+                                    <CheckCheck size={24} color="#06b6d4" />
+                                </TouchableOpacity>
+                            )}
+                            {notifications.length > 0 && (
+                                <TouchableOpacity onPress={clearAllNotifications}>
+                                    <Trash2 size={24} color="#dc2626" />
+                                </TouchableOpacity>
+                            )}
+                            <TouchableOpacity onPress={() => setNotifVisible(false)}>
+                                <X size={24} color="#0f172a" />
+                            </TouchableOpacity>
+                        </View>
                     </View>
                     <FlatList
                         data={notifications}
@@ -426,16 +524,25 @@ export default function PatientDashboardScreen() {
                             </View>
                         }
                         renderItem={({ item }) => (
-                            <View style={styles.notifCard}>
+                            <TouchableOpacity 
+                                style={[styles.notifCard, !item.read && { backgroundColor: '#f0f9ff' }]}
+                                onPress={() => !item.read && markAsRead(item._id)}
+                                activeOpacity={0.7}
+                            >
                                 <View style={[styles.notifIcon, { backgroundColor: item.type === 'appointment' ? '#ecfeff' : '#f1f5f9' }]}>
                                     {item.type === 'appointment' ? <Calendar size={20} color="#06b6d4" /> : <Bell size={20} color="#64748b" />}
                                 </View>
-                                <View style={{ flex: 1 }}>
-                                    <Text style={styles.notifMessage}>{item.message}</Text>
+                                <View style={{ flex: 1, marginRight: 10 }}>
+                                    <Text style={[styles.notifMessage, !item.read && { fontWeight: '700' }]}>{item.message}</Text>
                                     <Text style={styles.notifTime}>{new Date(item.timestamp).toLocaleString()}</Text>
                                 </View>
-                                {!item.read && <View style={styles.unreadDot} />}
-                            </View>
+                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                                    {!item.read && <View style={styles.unreadDot} />}
+                                    <TouchableOpacity onPress={() => deleteNotification(item._id)}>
+                                        <Trash2 size={18} color="#cbd5e1" />
+                                    </TouchableOpacity>
+                                </View>
+                            </TouchableOpacity>
                         )}
                     />
                 </SafeAreaView>
@@ -688,6 +795,18 @@ const styles = StyleSheet.create({
         color: '#64748b',
         marginLeft: 4,
     },
+    statusBadge: {
+        alignSelf: 'flex-start',
+        paddingHorizontal: 8,
+        paddingVertical: 4,
+        borderRadius: 6,
+        marginTop: 6
+    },
+    statusText: {
+        fontSize: 11,
+        fontWeight: '700',
+        textTransform: 'uppercase',
+    },
     tapHint: {
         fontSize: 10,
         color: '#06b6d4',
@@ -732,15 +851,10 @@ const styles = StyleSheet.create({
     },
     modalContent: {
         backgroundColor: '#fff',
-        width: '90%',
+        width: '95%',
         borderRadius: 20,
         padding: 20,
         alignItems: 'center',
-        shadowColor: "#000",
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.25,
-        shadowRadius: 4,
-        elevation: 5
     },
     modalHeader: {
         flexDirection: 'row',
@@ -748,12 +862,12 @@ const styles = StyleSheet.create({
         justifyContent: 'space-between',
         alignItems: 'center',
         marginBottom: 20,
-        paddingHorizontal: 20,
-        paddingTop: 20
+        paddingHorizontal: 10,
+        paddingTop: 10
     },
     modalTitle: {
-        fontSize: 18,
-        fontWeight: '700',
+        fontSize: 20,
+        fontWeight: '800',
         color: '#0f172a'
     },
     queueContainer: {
@@ -826,30 +940,41 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         marginBottom: 10,
-        gap: 8
+        gap: 8,
+        width: '100%',
+        paddingHorizontal: 10
     },
     queueInfoText: {
-        fontSize: 14,
+        fontSize: 15,
         color: '#475569',
-        fontWeight: '500'
+        fontWeight: '600'
     },
     closeButton: {
-        marginTop: 10,
+        marginTop: 15,
         width: '100%',
         backgroundColor: '#0f172a',
-        padding: 14,
+        paddingVertical: 14,
         borderRadius: 12,
         alignItems: 'center'
     },
     closeButtonText: {
         color: '#fff',
-        fontWeight: '600',
+        fontWeight: '700',
         fontSize: 16
     },
     // Notif Styles
-    notifCard: { flexDirection: 'row', padding: 16, backgroundColor: '#fff', borderRadius: 12, marginBottom: 10, borderWidth: 1, borderColor: '#e2e8f0' },
-    notifIcon: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', marginRight: 12 },
-    notifMessage: { fontSize: 14, color: '#334155', marginBottom: 4, flexWrap: 'wrap' },
+    notifCard: { 
+        flexDirection: 'row', 
+        padding: 16, 
+        backgroundColor: '#fff', 
+        borderRadius: 12, 
+        marginBottom: 10, 
+        borderWidth: 1, 
+        borderColor: '#f1f5f9',
+        alignItems: 'center'
+    },
+    notifIcon: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', marginRight: 15 },
+    notifMessage: { fontSize: 14, color: '#1e293b', lineHeight: 18, marginBottom: 4 },
     notifTime: { fontSize: 11, color: '#94a3b8' },
-    unreadDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#ef4444', marginLeft: 8, marginTop: 6 },
+    unreadDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#06b6d4' }
 });

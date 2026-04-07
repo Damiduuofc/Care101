@@ -1,6 +1,5 @@
 "use client";
-
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Sidebar from "@/components/admin/Sidebar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -8,52 +7,76 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Loader2, Clock, CalendarDays, Check, X, User, Bell } from "lucide-react";
 
-// Demo Data representing requests sent from the Doctor App
-const INITIAL_DEMO_DATA = [
-    {
-        _id: "req_1",
-        doctorName: "Dr. Lasantha Perera",
-        specialization: "Cardiologist",
-        requestedDate: "2026-03-20",
-        requestedTime: "16:30",
-        status: "Pending"
-    },
-    {
-        _id: "req_2",
-        doctorName: "Dr. Sarah Jayawardena",
-        specialization: "Pediatrician",
-        requestedDate: "2026-03-21",
-        requestedTime: "09:00",
-        status: "Pending"
-    },
-    {
-        _id: "req_3",
-        doctorName: "Dr. Kasun Rajapaksha",
-        specialization: "Dermatologist",
-        requestedDate: "2026-03-19",
-        requestedTime: "14:00",
-        status: "Confirmed"
-    }
-];
-
 export default function ChannelingRequestDemo() {
-    const [requests, setRequests] = useState(INITIAL_DEMO_DATA);
+    const [requests, setRequests] = useState<any[]>([]);
+    const [loading, setLoading] = useState(true);
     const [loadingAction, setLoadingAction] = useState<string | null>(null);
 
-    const handleAction = (id: string, newStatus: "Confirmed" | "Rejected") => {
-        setLoadingAction(id);
-        
-        // Simulate a network delay for the demo
-        setTimeout(() => {
-            setRequests(prev => 
-                prev.map(req => req._id === id ? { ...req, status: newStatus } : req)
-            );
-            setLoadingAction(null);
-        }, 800);
+    const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api";
+
+    useEffect(() => {
+        fetchRequests();
+    }, []);
+
+    const fetchRequests = async () => {
+        try {
+            const token = localStorage.getItem("adminToken");
+            const response = await fetch(`${API_URL}/schedule-requests/all`, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            if (response.ok) {
+                const data = await response.json();
+                setRequests(data);
+            }
+        } catch (error) {
+            console.error("Fetch Error:", error);
+        } finally {
+            setLoading(false);
+        }
     };
 
-    const pendingRequests = requests.filter(r => r.status === "Pending");
-    const historyRequests = requests.filter(r => r.status !== "Pending");
+    const handleAction = async (id: string, newStatus: "approved" | "rejected") => {
+        setLoadingAction(id);
+        try {
+            const token = localStorage.getItem("adminToken");
+            const response = await fetch(`${API_URL}/schedule-requests/${id}/status`, {
+                method: "PUT",
+                headers: { 
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${token}` 
+                },
+                body: JSON.stringify({ status: newStatus })
+            });
+            
+            if (response.ok) {
+                setRequests(prev => 
+                    prev.map(req => req._id === id ? { ...req, status: newStatus } : req)
+                );
+            }
+        } catch (error) {
+            console.error("Action Error:", error);
+        } finally {
+            setLoadingAction(null);
+        }
+    };
+
+    const pendingRequests = requests.filter(r => r.status === "pending");
+    const historyRequests = requests.filter(r => r.status !== "pending");
+
+    const formatDate = (dateStr: string) => {
+        return new Date(dateStr).toLocaleDateString("en-US", {
+            month: "short",
+            day: "numeric",
+            year: "numeric"
+        });
+    };
+
+    const formatTime = (timeStr: string) => {
+        return new Date(timeStr).toLocaleTimeString("en-US", {
+            hour: "2-digit",
+            minute: "2-digit"
+        });
+    };
 
     return (
         <div className="flex bg-slate-50 min-h-screen">
@@ -79,6 +102,12 @@ export default function ChannelingRequestDemo() {
                     </div>
                 </header>
 
+                {loading ? (
+                    <div className="flex justify-center items-center h-64">
+                        <Loader2 className="animate-spin text-[#06b6d4]" size={40} />
+                    </div>
+                ) : (
+
                 <Tabs defaultValue="pending" className="w-full">
                     <TabsList className="bg-slate-200/50 p-1 mb-8">
                         <TabsTrigger value="pending" className="data-[state=active]:bg-white data-[state=active]:text-[#06b6d4]">
@@ -99,6 +128,8 @@ export default function ChannelingRequestDemo() {
                                     req={req} 
                                     onAction={handleAction} 
                                     loadingId={loadingAction} 
+                                    formatDate={formatDate}
+                                    formatTime={formatTime}
                                 />
                             ))
                         )}
@@ -109,17 +140,24 @@ export default function ChannelingRequestDemo() {
                             <EmptyState message="No history available yet." />
                         ) : (
                             historyRequests.map(req => (
-                                <RequestCard key={req._id} req={req} isHistory />
+                                <RequestCard 
+                                    key={req._id} 
+                                    req={req} 
+                                    isHistory 
+                                    formatDate={formatDate}
+                                    formatTime={formatTime}
+                                />
                             ))
                         )}
                     </TabsContent>
                 </Tabs>
+                )}
             </main>
         </div>
     );
 }
 
-function RequestCard({ req, onAction, loadingId, isHistory }: any) {
+function RequestCard({ req, onAction, loadingId, isHistory, formatDate, formatTime }: any) {
     const isLoading = loadingId === req._id;
 
     return (
@@ -134,7 +172,7 @@ function RequestCard({ req, onAction, loadingId, isHistory }: any) {
                         </div>
                         <div>
                             <h3 className="font-bold text-slate-800 leading-tight">{req.doctorName}</h3>
-                            <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-0.5">{req.specialization}</p>
+                            <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-0.5">{req.specialization || "Specialist"}</p>
                         </div>
                     </div>
 
@@ -142,11 +180,16 @@ function RequestCard({ req, onAction, loadingId, isHistory }: any) {
                     <div className="flex items-center gap-6 w-full lg:w-auto">
                         <div className="flex items-center gap-2 text-slate-600 font-medium">
                             <CalendarDays size={18} className="text-[#06b6d4]" />
-                            <span className="text-sm">{req.requestedDate}</span>
+                            <span className="text-sm">{formatDate(req.date)}</span>
                         </div>
                         <div className="flex items-center gap-2 text-slate-600 font-medium">
                             <Clock size={18} className="text-[#06b6d4]" />
-                            <span className="text-sm">{req.requestedTime}</span>
+                            <span className="text-sm">{formatTime(req.startTime)} - {formatTime(req.endTime)}</span>
+                        </div>
+                        <div className="flex items-center gap-2 text-slate-600 font-medium">
+                            <Badge variant="outline" className="border-slate-200 text-slate-600 font-bold px-3 py-1">
+                                {req.isUnlimited ? "∞ Unlimited" : `${req.queueLimit || 0} Patients MAX`}
+                            </Badge>
                         </div>
                     </div>
 
@@ -154,23 +197,23 @@ function RequestCard({ req, onAction, loadingId, isHistory }: any) {
                     <div className="flex items-center gap-3 w-full lg:w-auto justify-end">
                         {isHistory ? (
                             <div className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold uppercase ${
-                                req.status === "Confirmed" ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"
+                                req.status === "approved" ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"
                             }`}>
-                                {req.status === "Confirmed" ? <Check size={14} /> : <X size={14} />}
+                                {req.status === "approved" ? <Check size={14} /> : <X size={14} />}
                                 {req.status}
                             </div>
                         ) : (
                             <>
                                 <Button 
                                     variant="ghost" 
-                                    onClick={() => onAction(req._id, "Rejected")}
+                                    onClick={() => onAction(req._id, "rejected")}
                                     className="text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors"
                                     disabled={isLoading}
                                 >
                                     Reject
                                 </Button>
                                 <Button 
-                                    onClick={() => onAction(req._id, "Confirmed")}
+                                    onClick={() => onAction(req._id, "approved")}
                                     className="bg-[#06b6d4] hover:bg-[#0891b2] text-white shadow-lg shadow-cyan-500/20 px-6 min-w-[120px]"
                                     disabled={isLoading}
                                 >

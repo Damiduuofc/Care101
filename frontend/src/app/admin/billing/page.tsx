@@ -1,9 +1,9 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import Sidebar from "@/components/admin/Sidebar";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -17,47 +17,143 @@ import {
     SheetFooter
 } from "@/components/ui/sheet";
 import { 
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from "@/components/ui/select";
+import { 
     FileText, 
     Plus, 
     Printer, 
     Download, 
     DollarSign,
     CheckCircle2,
-    Loader2
+    Loader2,
+    Search,
+    User,
+    CreditCard,
+    Wallet,
+    Clock
 } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
 
-// Demo Data
-const INITIAL_BILLING = [
-    { id: "INV-001", patient: "Nimna Rathnayake", doctor: "Dr. Lasantha Perera", date: "2026-03-17", amount: 3500.00, status: "Paid" },
-    { id: "INV-002", patient: "Kamal Gunawardena", doctor: "Dr. Sarah Jayawardena", date: "2026-03-17", amount: 4200.00, status: "Pending" },
-];
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api";
 
 export default function BillingPage() {
-    const [invoices, setInvoices] = useState(INITIAL_BILLING);
+    const { toast } = useToast();
+    const [history, setHistory] = useState<any[]>([]);
+    const [loading, setLoading] = useState(true);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [open, setOpen] = useState(false);
-    const [formData, setFormData] = useState({ patient: "", doctor: "", amount: "" });
+    
+    // Search State
+    const [searchNic, setSearchNic] = useState("");
+    const [searching, setSearching] = useState(false);
+    const [selectedPatient, setSelectedPatient] = useState<any>(null);
 
-    const handleCreateInvoice = (e: React.FormEvent) => {
+    // Form State
+    const [formData, setFormData] = useState({
+        title: "",
+        type: "Appointment",
+        amount: "",
+        paymentMethod: "App" // "Cash" or "App"
+    });
+
+    const fetchHistory = async () => {
+        setLoading(true);
+        try {
+            const token = localStorage.getItem("adminToken");
+            const res = await fetch(`${API_URL}/admin/bills/all`, {
+                headers: { 
+                    "x-auth-token": token || "",
+                    "ngrok-skip-browser-warning": "true"
+                }
+            });
+            const data = await res.json();
+            if (res.ok) {
+                setHistory(data);
+            }
+        } catch (e) {
+            console.error("Fetch History Error:", e);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        fetchHistory();
+    }, []);
+
+    const handleSearchPatient = async () => {
+        if (!searchNic) return;
+        setSearching(true);
+        setSelectedPatient(null);
+        try {
+            const token = localStorage.getItem("adminToken");
+            const res = await fetch(`${API_URL}/admin/patients/search/nic/${searchNic}`, {
+                headers: { 
+                    "x-auth-token": token || "",
+                    "ngrok-skip-browser-warning": "true"
+                }
+            });
+            const data = await res.json();
+            if (res.ok) {
+                setSelectedPatient(data);
+                toast({ title: "Success", description: `Patient ${data.fullName} found.` });
+            } else {
+                toast({ title: "Not Found", description: data.msg || "Patient not found.", variant: "destructive" });
+            }
+        } catch (err) {
+            toast({ title: "Error", description: "Error searching patient.", variant: "destructive" });
+        } finally {
+            setSearching(false);
+        }
+    };
+
+    const handleCreateBill = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!formData.patient || !formData.amount) return;
+        if (!selectedPatient || !formData.amount || !formData.title) {
+            toast({ title: "Missing Info", description: "Please fill all required fields", variant: "destructive" });
+            return;
+        }
         
         setIsSubmitting(true);
+        try {
+            const token = localStorage.getItem("adminToken");
+            const res = await fetch(`${API_URL}/admin/bills/create`, {
+                method: "POST",
+                headers: { 
+                    "Content-Type": "application/json",
+                    "x-auth-token": token || "",
+                    "ngrok-skip-browser-warning": "true"
+                },
+                body: JSON.stringify({
+                    patientId: selectedPatient._id,
+                    title: formData.title,
+                    type: formData.type,
+                    amount: parseFloat(formData.amount),
+                    status: formData.paymentMethod === "Cash" ? "Paid" : "Pending"
+                })
+            });
 
-        setTimeout(() => {
-            const newInv = {
-                id: `INV-00${invoices.length + 1}`,
-                patient: formData.patient,
-                doctor: formData.doctor || "General Medical",
-                date: new Date().toISOString().split('T')[0],
-                amount: parseFloat(formData.amount),
-                status: "Pending"
-            };
-            setInvoices([newInv, ...invoices]);
+            const data = await res.json();
+            if (res.ok) {
+                toast({ title: "Bill Issued", description: formData.paymentMethod === "Cash" ? "Paid by cash successfully" : "Bill sent to patient app" });
+                setOpen(false);
+                setFormData({ title: "", type: "Consultation", amount: "", paymentMethod: "App" });
+                setSelectedPatient(null);
+                setSearchNic("");
+                setHistory([data.bill, ...history]);
+            } else {
+                toast({ title: "Failed", description: data.msg || "Failed to create bill", variant: "destructive" });
+            }
+        } catch (error) {
+            toast({ title: "Error", description: "Server error", variant: "destructive" });
+        } finally {
             setIsSubmitting(false);
-            setOpen(false);
-            setFormData({ patient: "", doctor: "", amount: "" });
-        }, 800);
+        }
     };
 
     return (
@@ -67,59 +163,141 @@ export default function BillingPage() {
                 
                 <header className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                     <div>
-                        <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Billing & Invoices</h1>
-                        <p className="text-slate-500">Manage patient payments and generate receipts.</p>
+                        <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Hospital Billing</h1>
+                        <p className="text-slate-500">Search patients and issue medical bills.</p>
                     </div>
 
                     <Sheet open={open} onOpenChange={setOpen}>
                         <SheetTrigger asChild>
                             <Button className="bg-[#06b6d4] hover:bg-[#0891b2] text-white gap-2 shadow-lg shadow-cyan-500/20">
-                                <Plus size={18} /> New Invoice
+                                <Plus size={18} /> Issue New Bill
                             </Button>
                         </SheetTrigger>
-                        <SheetContent side="right" className="sm:max-w-[450px]">
+                        <SheetContent side="right" className="sm:max-w-[500px] overflow-y-auto">
                             <SheetHeader>
                                 <SheetTitle className="text-[#06b6d4] flex items-center gap-2">
-                                    <FileText /> Create New Invoice
+                                    <FileText /> Create New Medical Bill
                                 </SheetTitle>
                             </SheetHeader>
-                            <form onSubmit={handleCreateInvoice} className="space-y-6 py-8">
-                                <div className="space-y-4">
-                                    <div className="space-y-2">
-                                        <Label htmlFor="patient">Patient Name</Label>
-                                        <Input 
-                                            id="patient" 
-                                            required 
-                                            value={formData.patient}
-                                            onChange={(e) => setFormData({...formData, patient: e.target.value})}
-                                        />
+
+                            <div className="space-y-6 py-6">
+                                <div className="space-y-3 p-4 bg-slate-50 rounded-xl border border-slate-200">
+                                    <Label className="text-xs font-bold text-slate-500 uppercase">Step 1: Locate Patient</Label>
+                                    <div className="flex gap-2">
+                                        <div className="relative flex-1">
+                                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                                            <Input 
+                                                placeholder="Search by NIC Number..." 
+                                                className="pl-10 h-11"
+                                                value={searchNic}
+                                                onChange={(e) => setSearchNic(e.target.value)}
+                                                onKeyDown={(e) => e.key === 'Enter' && handleSearchPatient()}
+                                            />
+                                        </div>
+                                        <Button onClick={handleSearchPatient} disabled={searching} variant="outline" className="h-11">
+                                            {searching ? <Loader2 className="animate-spin" size={16} /> : "Search"}
+                                        </Button>
                                     </div>
-                                    <div className="space-y-2">
-                                        <Label htmlFor="doctor">Type</Label>
-                                        <Input 
-                                            id="doctor" 
-                                            value={formData.doctor}
-                                            onChange={(e) => setFormData({...formData, doctor: e.target.value})}
-                                        />
-                                    </div>
-                                    <div className="space-y-2">
-                                        <Label htmlFor="amount">Amount (Rs.)</Label>
-                                        <Input 
-                                            id="amount" 
-                                            type="number" 
-                                            required 
-                                            value={formData.amount}
-                                            onChange={(e) => setFormData({...formData, amount: e.target.value})}
-                                        />
-                                    </div>
+
+                                    {selectedPatient && (
+                                        <div className="mt-4 p-3 bg-white rounded-lg border border-cyan-100 flex items-center gap-3 animate-in fade-in slide-in-from-top-2">
+                                            <div className="h-10 w-10 bg-cyan-50 rounded-full flex items-center justify-center text-cyan-600">
+                                                <User size={20} />
+                                            </div>
+                                            <div>
+                                                <p className="text-sm font-bold text-slate-900">{selectedPatient.fullName}</p>
+                                                <p className="text-xs text-slate-500 font-medium tracking-tight">NIC: {selectedPatient.nicNumber}</p>
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
-                                <SheetFooter>
-                                    <Button type="submit" className="w-full bg-[#06b6d4] hover:bg-[#0891b2]" disabled={isSubmitting}>
-                                        {isSubmitting ? <Loader2 className="animate-spin mr-2" /> : <CheckCircle2 className="mr-2" size={18} />}
-                                        Generate Invoice
-                                    </Button>
-                                </SheetFooter>
-                            </form>
+
+                                <form onSubmit={handleCreateBill} className="space-y-5">
+                                    <div className="space-y-4">
+                                        <div className="space-y-2">
+                                            <Label htmlFor="title">Bill Description</Label>
+                                            <Input 
+                                                id="title" 
+                                                placeholder="e.g. Heart Surgery Fees, Lab Reports..."
+                                                required 
+                                                className="h-11 shadow-sm"
+                                                value={formData.title}
+                                                onChange={(e) => setFormData({...formData, title: e.target.value})}
+                                            />
+                                        </div>
+
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <div className="space-y-2">
+                                                <Label>Bill Type</Label>
+                                                <Select 
+                                                    value={formData.type} 
+                                                    onValueChange={(v) => setFormData({...formData, type: v})}
+                                                >
+                                                    <SelectTrigger className="h-11">
+                                                        <SelectValue placeholder="Select type" />
+                                                    </SelectTrigger>
+                                                    <SelectContent>
+                                                        <SelectItem value="Appointment">Consultation</SelectItem>
+                                                        <SelectItem value="Lab">Laboratory</SelectItem>
+                                                        <SelectItem value="Surgery">Surgery</SelectItem>
+                                                        <SelectItem value="Pharmacy">Pharmacy</SelectItem>
+                                                    </SelectContent>
+                                                </Select>
+                                            </div>
+                                            <div className="space-y-2">
+                                                <Label htmlFor="amount">Amount (Rs.)</Label>
+                                                <Input 
+                                                    id="amount" 
+                                                    type="number" 
+                                                    required 
+                                                    className="h-11 shadow-sm"
+                                                    placeholder="2500"
+                                                    value={formData.amount}
+                                                    onChange={(e) => setFormData({...formData, amount: e.target.value})}
+                                                />
+                                            </div>
+                                        </div>
+
+                                        <div className="space-y-3 pt-2">
+                                            <Label>Payment Strategy</Label>
+                                            <div className="grid grid-cols-2 gap-3">
+                                                <button 
+                                                    type="button"
+                                                    onClick={() => setFormData({...formData, paymentMethod: "Cash"})}
+                                                    className={`p-4 rounded-xl border-2 flex flex-col items-center gap-2 transition-all ${formData.paymentMethod === "Cash" ? "border-[#06b6d4] bg-cyan-50 shadow-sm" : "border-slate-100 hover:border-slate-200"}`}
+                                                >
+                                                    <Wallet className={formData.paymentMethod === "Cash" ? "text-[#06b6d4]" : "text-slate-400"} />
+                                                    <span className={`text-xs font-bold ${formData.paymentMethod === "Cash" ? "text-[#06b6d4]" : "text-slate-500"}`}>CASH (PAID)</span>
+                                                </button>
+
+                                                <button 
+                                                    type="button"
+                                                    onClick={() => setFormData({...formData, paymentMethod: "App"})}
+                                                    className={`p-4 rounded-xl border-2 flex flex-col items-center gap-2 transition-all ${formData.paymentMethod === "App" ? "border-[#06b6d4] bg-cyan-50 shadow-sm" : "border-slate-100 hover:border-slate-200"}`}
+                                                >
+                                                    <CreditCard className={formData.paymentMethod === "App" ? "text-[#06b6d4]" : "text-slate-400"} />
+                                                    <span className={`text-xs font-bold ${formData.paymentMethod === "App" ? "text-[#06b6d4]" : "text-slate-500"}`}>SEND TO APP</span>
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <SheetFooter className="pt-4">
+                                        <Button 
+                                            type="submit" 
+                                            className="w-full bg-[#06b6d4] hover:bg-[#0891b2] h-12 text-lg shadow-lg shadow-cyan-500/20" 
+                                            disabled={isSubmitting || !selectedPatient}
+                                        >
+                                            {isSubmitting ? (
+                                                <Loader2 className="animate-spin mr-2" />
+                                            ) : (
+                                                formData.paymentMethod === "Cash" ? <CheckCircle2 className="mr-2" size={20} /> : <FileText className="mr-2" size={20} />
+                                            )}
+                                            {formData.paymentMethod === "Cash" ? "Confirm Cash Payment" : "Issue & Send to App"}
+                                        </Button>
+                                    </SheetFooter>
+                                </form>
+                            </div>
                         </SheetContent>
                     </Sheet>
                 </header>
@@ -129,9 +307,9 @@ export default function BillingPage() {
                         <div className="absolute top-0 left-0 w-1 h-full bg-[#06b6d4]"></div>
                         <CardContent className="p-6 flex items-center justify-between">
                             <div>
-                                <p className="text-sm font-bold text-slate-500 uppercase">Revenue</p>
+                                <p className="text-sm font-bold text-slate-500 uppercase tracking-tight">Total Revenue From Bills</p>
                                 <h3 className="text-2xl font-bold text-slate-900 mt-1">
-                                    Rs. {invoices.reduce((acc, curr) => acc + curr.amount, 0).toLocaleString()}
+                                    LKR {history.reduce((acc, curr) => acc + (curr.status === "Paid" ? curr.amount : 0), 0).toLocaleString()}
                                 </h3>
                             </div>
                             <div className="h-10 w-10 bg-cyan-50 rounded-lg flex items-center justify-center text-[#06b6d4]">
@@ -141,42 +319,67 @@ export default function BillingPage() {
                     </Card>
                 </div>
 
-                <Card className="border-slate-200 shadow-sm bg-white">
-                    <CardHeader className="border-b border-slate-100 p-4">
-                        <CardTitle className="text-lg font-bold text-slate-800">History</CardTitle>
+                <Card className="border-slate-200 shadow-sm bg-white overflow-hidden">
+                    <CardHeader className="border-b border-slate-100 p-4 bg-slate-50/50 flex flex-row items-center justify-between">
+                        <CardTitle className="text-lg font-bold text-slate-800">Billing History</CardTitle>
+                        <Button variant="ghost" className="h-8 text-xs text-[#06b6d4]" onClick={fetchHistory}>
+                           <Clock className="mr-2 h-3 w-3" /> Refresh history
+                        </Button>
                     </CardHeader>
                     <CardContent className="p-0">
-                        <Table>
-                            <TableHeader className="bg-slate-50/50">
-                                <TableRow>
-                                    <TableHead>Invoice ID</TableHead>
-                                    <TableHead>Patient</TableHead>
-                                    <TableHead>Amount</TableHead>
-                                    <TableHead>Status</TableHead>
-                                    <TableHead className="text-right">Actions</TableHead>
-                                </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                                {invoices.map((inv) => (
-                                    <TableRow key={inv.id}>
-                                        <TableCell className="font-medium">{inv.id}</TableCell>
-                                        <TableCell>{inv.patient}</TableCell>
-                                        <TableCell className="font-bold">Rs. {inv.amount.toLocaleString()}</TableCell>
-                                        <TableCell>
-                                            <Badge className={inv.status === "Paid" ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}>
-                                                {inv.status}
-                                            </Badge>
-                                        </TableCell>
-                                        <TableCell className="text-right">
-                                            <div className="flex justify-end gap-2">
-                                                <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-400 hover:text-[#06b6d4]"><Printer size={16} /></Button>
-                                                <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-400 hover:text-[#06b6d4]"><Download size={16} /></Button>
-                                            </div>
-                                        </TableCell>
+                        {loading ? (
+                            <div className="py-20 text-center flex flex-col items-center gap-3">
+                                <Loader2 className="animate-spin text-[#06b6d4]" size={32} />
+                                <p className="text-sm text-slate-400 font-medium">Loading history...</p>
+                            </div>
+                        ) : (
+                            <Table>
+                                <TableHeader className="bg-slate-50/50">
+                                    <TableRow>
+                                        <TableHead className="w-[100px]">Status</TableHead>
+                                        <TableHead>Patient Details</TableHead>
+                                        <TableHead>Bill Title</TableHead>
+                                        <TableHead>Amount</TableHead>
+                                        <TableHead className="text-right">Actions</TableHead>
                                     </TableRow>
-                                ))}
-                            </TableBody>
-                        </Table>
+                                </TableHeader>
+                                <TableBody>
+                                    {history.length > 0 ? history.map((inv, idx) => (
+                                        <TableRow key={inv._id || idx}>
+                                            <TableCell>
+                                                <Badge className={inv.status === "Paid" ? "bg-emerald-100 text-emerald-700 border-emerald-200" : "bg-amber-100 text-amber-700 border-amber-200"}>
+                                                    {inv.status}
+                                                </Badge>
+                                            </TableCell>
+                                            <TableCell>
+                                                <p className="font-medium text-slate-900">{inv.patientId?.fullName || "Patient"}</p>
+                                                <p className="text-xs text-slate-500 font-medium">{inv.patientId?.nicNumber}</p>
+                                            </TableCell>
+                                            <TableCell>
+                                                <p className="text-sm font-medium text-slate-800">{inv.title}</p>
+                                                <p className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">{inv.type}</p>
+                                            </TableCell>
+                                            <TableCell className="font-bold text-slate-900">Rs. {inv.amount.toLocaleString()}</TableCell>
+                                            <TableCell className="text-right">
+                                                <div className="flex justify-end gap-2">
+                                                    <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-400 hover:text-[#06b6d4]"><Printer size={16} /></Button>
+                                                    <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-400 hover:text-rose-500"><Download size={16} /></Button>
+                                                </div>
+                                            </TableCell>
+                                        </TableRow>
+                                    )) : (
+                                        <TableRow>
+                                            <TableCell colSpan={5} className="text-center py-20">
+                                                <div className="flex flex-col items-center gap-3">
+                                                    <CreditCard size={48} className="text-slate-200" />
+                                                    <p className="text-sm text-slate-400 font-medium">No billing records found.</p>
+                                                </div>
+                                            </TableCell>
+                                        </TableRow>
+                                    )}
+                                </TableBody>
+                            </Table>
+                        )}
                     </CardContent>
                 </Card>
             </main>

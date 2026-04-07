@@ -1,6 +1,7 @@
 import express from 'express';
 import ScheduleRequest from '../models/ScheduleRequest.js';
 import Doctor from '../models/Doctor.js';
+import Notification from '../models/Notification.js';
 import { auth } from '../middleware/auth.js';
 
 const router = express.Router();
@@ -61,12 +62,10 @@ router.get('/my-requests', auth, async (req, res) => {
 });
 
 // ==========================================
-// 3. RECEPTIONIST: Get all pending schedule requests
+// 3. RECEPTIONIST: Get pending schedule requests
 // ==========================================
 router.get('/pending', auth, async (req, res) => {
   try {
-    // Assuming auth middleware can verify if user is a receptionist
-    // For now, getting all pending requests
     const pendingRequests = await ScheduleRequest.find({ status: 'pending' }).sort({ date: 1 });
     res.json(pendingRequests);
   } catch (err) {
@@ -76,7 +75,20 @@ router.get('/pending', auth, async (req, res) => {
 });
 
 // ==========================================
-// 4. RECEPTIONIST: Accept/Reject a schedule request
+// 4. RECEPTIONIST: Get all schedule requests (for history)
+// ==========================================
+router.get('/all', auth, async (req, res) => {
+  try {
+    const requests = await ScheduleRequest.find().sort({ createdAt: -1 });
+    res.json(requests);
+  } catch (err) {
+    console.error('Fetch All Requests Error:', err.message);
+    res.status(500).json({ msg: 'Server error while fetching requests' });
+  }
+});
+
+// ==========================================
+// 5. RECEPTIONIST: Accept/Reject a schedule request
 // ==========================================
 router.put('/:id/status', auth, async (req, res) => {
   try {
@@ -94,11 +106,52 @@ router.put('/:id/status', auth, async (req, res) => {
     request.status = status;
     await request.save();
 
+    console.log('--- NOTIFYING DOCTOR ---');
+    console.log('Doctor ID:', request.doctorId);
+
+    // ✅ NOTIFY THE DOCTOR
+    const doctorNotification = new Notification({
+      userId: request.doctorId,
+      type: 'schedule_request',
+      message: `Your channeling schedule request for ${new Date(request.date).toDateString()} has been ${status}.`,
+      metadata: {
+        requestId: request._id,
+        status: status,
+        date: request.date,
+        startTime: request.startTime,
+        endTime: request.endTime
+      }
+    });
+
+    console.log('Notification Obj:', doctorNotification);
+    await doctorNotification.save();
+
     res.json({ msg: `Request has been ${status}`, request });
 
   } catch (err) {
     console.error('Update Request Status Error:', err.message);
     res.status(500).json({ msg: 'Server error while updating request status' });
+  }
+});
+
+// ==========================================
+// 6. PATIENT: Get approved schedules for a specific doctor
+// ==========================================
+router.get('/doctor/:doctorId/approved', auth, async (req, res) => {
+  try {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const approvedSchedules = await ScheduleRequest.find({
+      doctorId: req.params.doctorId,
+      status: 'approved',
+      date: { $gte: today }
+    }).sort({ date: 1 });
+
+    res.json(approvedSchedules);
+  } catch (err) {
+    console.error('Fetch Approved Schedules Error:', err.message);
+    res.status(500).json({ msg: 'Server error while fetching approved schedules' });
   }
 });
 

@@ -1,3 +1,4 @@
+import mongoose from "mongoose";
 import express from "express";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
@@ -8,6 +9,7 @@ import Appointment from "../models/Appointment.js";
 import HospitalStatus from "../models/HospitalStatus.js";
 import Bill from "../models/Bill.js";
 import HospitalFinance from "../models/Finance.js";
+import Notification from "../models/Notification.js";
 import { protect, authorize } from "../middleware/authRole.js";
 
 const router = express.Router();
@@ -236,7 +238,104 @@ router.delete("/appointments/:id", protect, authorize(["system_admin", "receptio
 });
 
 // ==========================================
-// 5. STAFF MANAGEMENT
+// 5. BILLING MANAGEMENT
+// ==========================================
+// Search Patient by NIC Number
+router.get("/patients/search/nic/:nic", protect, async (req, res) => {
+  try {
+    const patient = await Patient.findOne({ nicNumber: req.params.nic }).select("-password");
+    if (!patient) return res.status(404).json({ msg: "Patient not found" });
+    res.json(patient);
+  } catch (err) {
+    console.error("NIC Search Error:", err.message);
+    res.status(500).send("Server Error");
+  }
+});
+
+// Fetch All Billing History (for Admin View)
+router.get("/bills/all", protect, authorize(["system_admin", "receptionist"]), async (req, res) => {
+  try {
+    const bills = await Bill.find()
+      .populate("patientId", "fullName nicNumber")
+      .sort({ date: -1 });
+    res.json(bills);
+  } catch (err) {
+    console.error("Fetch All Bills Error:", err.message);
+    res.status(500).send("Server Error");
+  }
+});
+
+// Create a New Bill (Cash or App Payment)
+router.post("/bills/create", protect, authorize(["system_admin", "receptionist"]), async (req, res) => {
+  try {
+    const { patientId, title, type, amount, status } = req.body;
+
+    if (!patientId || !amount) {
+      return res.status(400).json({ msg: "Missing required fields" });
+    }
+
+    const newBill = new Bill({
+      patientId: new mongoose.Types.ObjectId(patientId), // Explicitly convert to ObjectId
+      title,
+      type,
+      amount,
+      status: status || "Pending",
+      date: new Date()
+    });
+
+    await newBill.save();
+
+    // 2. Update Finance Records (if Cash)
+    if (status === "Paid") {
+      try {
+        const hospitalName = "Suwasevana";
+        let hospitalFinance = await HospitalFinance.findOne({ name: hospitalName });
+
+        if (!hospitalFinance) {
+          hospitalFinance = new HospitalFinance({ name: hospitalName, records: [], doctorId: null });
+        }
+
+        hospitalFinance.records.unshift({
+          type: type.toLowerCase() === 'appointment' ? 'channeling' : 'surgical', // Map to valid enums
+          date: new Date(),
+          patients: 1,
+          income: amount,
+          amount: amount // Set for surgical record structure if needed
+        });
+
+        await hospitalFinance.save();
+        console.log("✅ Finance record updated");
+      } catch (finErr) {
+        console.error("❌ Finance Sync Error:", finErr.message);
+        // We don't crash the bill creation if finance update fails
+      }
+    }
+
+    // 3. Send Notification to Patient
+    try {
+      await Notification.create({
+        userId: newBill.patientId, // Use the converted ObjectId from the saved bill
+        type: "payment",
+        message: status === "Paid" 
+          ? `Receipt Confirmed! LKR ${amount} paid for ${title}.` 
+          : `New Bill Issued: You have a payment of LKR ${amount} due for ${title}. Pay via app.`
+      });
+    } catch (notifErr) {
+      console.error("❌ Notification Error:", notifErr.message);
+    }
+
+    // 4. Return Populated Bill
+    const populatedBill = await Bill.findById(newBill._id).populate("patientId", "fullName nicNumber");
+    res.json({ msg: "Bill created successfully", bill: populatedBill });
+
+  } catch (err) {
+    console.error("Create Bill Error:", err.message);
+    res.status(500).send("Server Error");
+  }
+});
+
+// ==========================================
+// 6. STAFF MANAGEMENT
 // ==========================================
 router.post("/create-staff", protect, authorize(["system_admin"]), async (req, res) => {
   try {

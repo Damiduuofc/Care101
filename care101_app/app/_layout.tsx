@@ -4,8 +4,14 @@ import { AuthProvider, useAuth } from '../context/auth';
 import "../global.css";
 import { PortalHost } from "@rn-primitives/portal";
 import "../theme.css";
-import { Platform, View, ActivityIndicator, Text } from 'react-native'; 
+import { Platform, View, ActivityIndicator, Text, LogBox, Alert } from 'react-native'; 
 import * as NavigationBar from 'expo-navigation-bar';
+
+// ✅ This will suppress ALL development-time error popups (red/yellow boxes)
+LogBox.ignoreAllLogs();
+
+// ✅ (Optional) Un-comment below to also disable ALL Alert.alert() popups throughout the app
+// Alert.alert = () => {}; 
 
 function RootLayoutNav() {
   const { user, isLoading } = useAuth();

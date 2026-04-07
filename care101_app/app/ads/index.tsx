@@ -70,7 +70,7 @@ export default function AdScreen() {
                 {/* Only show skip if it's NOT the last slide */}
                 {activeIndex < ADS.length - 1 && (
                     <View style={styles.topBar}>
-                        <View /> {/* Empty view to push button to the right */}
+                        <View />{/* Empty view to push button to the right */}
                         <TouchableOpacity
                             onPress={handleFinish}
                             activeOpacity={0.7}

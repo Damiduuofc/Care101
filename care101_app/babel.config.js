@@ -6,6 +6,7 @@ module.exports = function (api) {
       "nativewind/babel",
     ],
     plugins: [
+      'transform-remove-console',
       "react-native-reanimated/plugin",
       [
         'module-resolver',

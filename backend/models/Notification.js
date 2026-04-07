@@ -1,7 +1,7 @@
 import mongoose from "mongoose";
 
 const NotificationSchema = new mongoose.Schema({
-  userId: { type: mongoose.Schema.Types.ObjectId, ref: "Patient", required: true },
+  userId: { type: mongoose.Schema.Types.ObjectId, required: true },
   type: {
     type: String,
     enum: [
@@ -14,6 +14,7 @@ const NotificationSchema = new mongoose.Schema({
       'report',           // General report
       'message',          // Message from doctor
       'reminder',         // Appointment reminder
+      'schedule_request', // ✅ Schedule request status update
       'system'            // System notification
     ],
     required: true

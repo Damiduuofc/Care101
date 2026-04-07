@@ -5,12 +5,14 @@ import { auth } from "../middleware/auth.js";
 
 const router = express.Router();
 
-// GET NOTIFICATIONS
 router.get("/", auth, async (req, res) => {
   try {
+    console.log("Fetching notifications for:", req.user.id);
     let notifications = await Notification.find({ userId: req.user.id })
       .sort({ timestamp: -1 })
       .lean(); // .lean() is important!
+    
+    console.log("Found:", notifications.length);
 
     // Reminder Logic
     const tomorrow = new Date();

@@ -3,6 +3,7 @@ import mongoose from "mongoose";
 const DoctorSchema = new mongoose.Schema({
   // --- Auth Details ---
   name: { type: String, required: true }, // Mapped from 'fullName'
+  hospital: { type: String, default: "SUWASEWANA HOSPITAL" },
   fullName: { type: String },
   email: { type: String, required: true, unique: true },
   password: { type: String, required: true },
@@ -24,7 +25,7 @@ const DoctorSchema = new mongoose.Schema({
   allocatedRoom: { type: String, default: "" },
   allocatedNurse: { type: String, default: "" },
   channelingTime: { type: String, default: "" },
-  channelingStatus: { type: String, enum: ["On Time", "Delayed", "Cancelled"], default: "On Time" },
+  channelingStatus: { type: String, default: "On Time" },
 
   // --- Nurse Dashboard Current Session Info ---
   sessionStarted: { type: Boolean, default: false },

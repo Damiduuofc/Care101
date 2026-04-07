@@ -4,6 +4,7 @@ import Bill from "../models/Bill.js";
 import Notification from "../models/Notification.js";
 import HospitalFinance from "../models/Finance.js";
 import Doctor from "../models/Doctor.js";
+import ScheduleRequest from "../models/ScheduleRequest.js";
 import { auth } from "../middleware/auth.js";
 
 const router = express.Router();
@@ -29,18 +30,38 @@ router.post("/book", auth, async (req, res) => {
       return res.status(400).json({ msg: "Doctor and Date are required" });
     }
 
-    // --- GENERATE QUEUE NUMBER ---
-    const startOfDay = new Date(date);
+    // --- 1. CHECK IF DOCTOR HAS AN APPROVED SCHEDULE ---
+    const bookingDate = new Date(date);
+    const startOfDay = new Date(bookingDate);
     startOfDay.setHours(0, 0, 0, 0);
-    const endOfDay = new Date(date);
+    const endOfDay = new Date(bookingDate);
     endOfDay.setHours(23, 59, 59, 999);
 
-    const count = await Appointment.countDocuments({
+    const approvedSchedule = await ScheduleRequest.findOne({
       doctorId,
+      status: "approved",
       date: { $gte: startOfDay, $lte: endOfDay }
     });
 
-    const queueNumber = count + 1;
+    if (!approvedSchedule) {
+      return res.status(400).json({ msg: "This doctor is not available on the selected date (No approved schedule)." });
+    }
+
+    // --- 2. CHECK QUEUE LIMIT ---
+    const currentAppointmentCount = await Appointment.countDocuments({
+      doctorId,
+      date: { $gte: startOfDay, $lte: endOfDay },
+      status: { $ne: "cancelled" }
+    });
+
+    if (!approvedSchedule.isUnlimited && approvedSchedule.queueLimit) {
+      if (currentAppointmentCount >= approvedSchedule.queueLimit) {
+        return res.status(400).json({ msg: "Sorry, this session is full. Maximum patient count reached." });
+      }
+    }
+
+    // --- 3. GENERATE QUEUE NUMBER ---
+    const queueNumber = currentAppointmentCount + 1;
 
     // 1. Create Appointment
     const newAppointment = new Appointment({
