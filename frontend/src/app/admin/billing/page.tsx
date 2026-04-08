@@ -8,26 +8,26 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { 
-    Sheet, 
-    SheetContent, 
-    SheetHeader, 
-    SheetTitle, 
+import {
+    Sheet,
+    SheetContent,
+    SheetHeader,
+    SheetTitle,
     SheetTrigger,
     SheetFooter
 } from "@/components/ui/sheet";
-import { 
+import {
     Select,
     SelectContent,
     SelectItem,
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select";
-import { 
-    FileText, 
-    Plus, 
-    Printer, 
-    Download, 
+import {
+    FileText,
+    Plus,
+    Printer,
+    Download,
     DollarSign,
     CheckCircle2,
     Loader2,
@@ -50,7 +50,7 @@ export default function BillingPage() {
     const [loading, setLoading] = useState(true);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [open, setOpen] = useState(false);
-    
+
     // Search State
     const [searchNic, setSearchNic] = useState("");
     const [searching, setSearching] = useState(false);
@@ -112,7 +112,7 @@ export default function BillingPage() {
         try {
             const token = localStorage.getItem("adminToken");
             const res = await fetch(`${API_URL}/admin/bills/all`, {
-                headers: { 
+                headers: {
                     "x-auth-token": token || "",
                     "ngrok-skip-browser-warning": "true"
                 }
@@ -139,7 +139,7 @@ export default function BillingPage() {
         try {
             const token = localStorage.getItem("adminToken");
             const res = await fetch(`${API_URL}/admin/patients/search/nic/${searchNic}`, {
-                headers: { 
+                headers: {
                     "x-auth-token": token || "",
                     "ngrok-skip-browser-warning": "true"
                 }
@@ -164,13 +164,13 @@ export default function BillingPage() {
             toast({ title: "Missing Info", description: "Please fill all required fields", variant: "destructive" });
             return;
         }
-        
+
         setIsSubmitting(true);
         try {
             const token = localStorage.getItem("adminToken");
             const res = await fetch(`${API_URL}/admin/bills/create`, {
                 method: "POST",
-                headers: { 
+                headers: {
                     "Content-Type": "application/json",
                     "x-auth-token": token || "",
                     "ngrok-skip-browser-warning": "true"
@@ -192,7 +192,7 @@ export default function BillingPage() {
                 setSelectedPatient(null);
                 setSearchNic("");
                 setHistory([data.bill, ...history]);
-                
+
                 // Automatically show print dialog for the new bill
                 setSelectedBill(data.bill);
                 setShowPrintDialog(true);
@@ -210,7 +210,7 @@ export default function BillingPage() {
         <div className="flex bg-slate-50 min-h-screen">
             <Sidebar />
             <main className="flex-1 p-4 md:p-8 ml-0 md:ml-64 space-y-6">
-                
+
                 <header className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                     <div>
                         <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Hospital Billing</h1>
@@ -236,8 +236,8 @@ export default function BillingPage() {
                                     <div className="flex gap-2">
                                         <div className="relative flex-1">
                                             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-                                            <Input 
-                                                placeholder="Search by NIC Number..." 
+                                            <Input
+                                                placeholder="Search by NIC Number..."
                                                 className="pl-10 h-11"
                                                 value={searchNic}
                                                 onChange={(e) => setSearchNic(e.target.value)}
@@ -266,22 +266,22 @@ export default function BillingPage() {
                                     <div className="space-y-4">
                                         <div className="space-y-2">
                                             <Label htmlFor="title">Bill Description</Label>
-                                            <Input 
-                                                id="title" 
+                                            <Input
+                                                id="title"
                                                 placeholder="e.g. Heart Surgery Fees, Lab Reports..."
-                                                required 
+                                                required
                                                 className="h-11 shadow-sm"
                                                 value={formData.title}
-                                                onChange={(e) => setFormData({...formData, title: e.target.value})}
+                                                onChange={(e) => setFormData({ ...formData, title: e.target.value })}
                                             />
                                         </div>
 
                                         <div className="grid grid-cols-2 gap-4">
                                             <div className="space-y-2">
                                                 <Label>Bill Type</Label>
-                                                <Select 
-                                                    value={formData.type} 
-                                                    onValueChange={(v) => setFormData({...formData, type: v})}
+                                                <Select
+                                                    value={formData.type}
+                                                    onValueChange={(v) => setFormData({ ...formData, type: v })}
                                                 >
                                                     <SelectTrigger className="h-11">
                                                         <SelectValue placeholder="Select type" />
@@ -296,14 +296,14 @@ export default function BillingPage() {
                                             </div>
                                             <div className="space-y-2">
                                                 <Label htmlFor="amount">Amount (Rs.)</Label>
-                                                <Input 
-                                                    id="amount" 
-                                                    type="number" 
-                                                    required 
+                                                <Input
+                                                    id="amount"
+                                                    type="number"
+                                                    required
                                                     className="h-11 shadow-sm"
                                                     placeholder="2500"
                                                     value={formData.amount}
-                                                    onChange={(e) => setFormData({...formData, amount: e.target.value})}
+                                                    onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
                                                 />
                                             </div>
                                         </div>
@@ -311,18 +311,18 @@ export default function BillingPage() {
                                         <div className="space-y-3 pt-2">
                                             <Label>Payment Strategy</Label>
                                             <div className="grid grid-cols-2 gap-3">
-                                                <button 
+                                                <button
                                                     type="button"
-                                                    onClick={() => setFormData({...formData, paymentMethod: "Cash"})}
+                                                    onClick={() => setFormData({ ...formData, paymentMethod: "Cash" })}
                                                     className={`p-4 rounded-xl border-2 flex flex-col items-center gap-2 transition-all ${formData.paymentMethod === "Cash" ? "border-[#06b6d4] bg-cyan-50 shadow-sm" : "border-slate-100 hover:border-slate-200"}`}
                                                 >
                                                     <Wallet className={formData.paymentMethod === "Cash" ? "text-[#06b6d4]" : "text-slate-400"} />
                                                     <span className={`text-xs font-bold ${formData.paymentMethod === "Cash" ? "text-[#06b6d4]" : "text-slate-500"}`}>CASH (PAID)</span>
                                                 </button>
 
-                                                <button 
+                                                <button
                                                     type="button"
-                                                    onClick={() => setFormData({...formData, paymentMethod: "App"})}
+                                                    onClick={() => setFormData({ ...formData, paymentMethod: "App" })}
                                                     className={`p-4 rounded-xl border-2 flex flex-col items-center gap-2 transition-all ${formData.paymentMethod === "App" ? "border-[#06b6d4] bg-cyan-50 shadow-sm" : "border-slate-100 hover:border-slate-200"}`}
                                                 >
                                                     <CreditCard className={formData.paymentMethod === "App" ? "text-[#06b6d4]" : "text-slate-400"} />
@@ -333,9 +333,9 @@ export default function BillingPage() {
                                     </div>
 
                                     <SheetFooter className="pt-4">
-                                        <Button 
-                                            type="submit" 
-                                            className="w-full bg-[#06b6d4] hover:bg-[#0891b2] h-12 text-lg shadow-lg shadow-cyan-500/20" 
+                                        <Button
+                                            type="submit"
+                                            className="w-full bg-[#06b6d4] hover:bg-[#0891b2] h-12 text-lg shadow-lg shadow-cyan-500/20"
                                             disabled={isSubmitting || !selectedPatient}
                                         >
                                             {isSubmitting ? (
@@ -357,9 +357,15 @@ export default function BillingPage() {
                         <div className="absolute top-0 left-0 w-1 h-full bg-[#06b6d4]"></div>
                         <CardContent className="p-6 flex items-center justify-between">
                             <div>
-                                <p className="text-sm font-bold text-slate-500 uppercase tracking-tight">Total Revenue From Bills</p>
+                                <p className="text-sm font-bold text-slate-500 uppercase tracking-tight">Total Revenue</p>
                                 <h3 className="text-2xl font-bold text-slate-900 mt-1">
-                                    LKR {history.reduce((acc, curr) => acc + (curr.status === "Paid" ? curr.amount : 0), 0).toLocaleString()}
+                                    {/* We use a case-insensitive check for 'Paid' to catch 
+                   both manual bills and appointment payment statuses 
+                */}
+                                    LKR {history.reduce((acc, curr) => {
+                                        const isPaid = curr.status?.toLowerCase() === "paid" || curr.paymentStatus?.toLowerCase() === "paid";
+                                        return isPaid ? acc + (curr.amount || 0) : acc;
+                                    }, 0).toLocaleString()}
                                 </h3>
                             </div>
                             <div className="h-10 w-10 bg-cyan-50 rounded-lg flex items-center justify-center text-[#06b6d4]">
@@ -373,7 +379,7 @@ export default function BillingPage() {
                     <CardHeader className="border-b border-slate-100 p-4 bg-slate-50/50 flex flex-row items-center justify-between">
                         <CardTitle className="text-lg font-bold text-slate-800">Billing History</CardTitle>
                         <Button variant="ghost" className="h-8 text-xs text-[#06b6d4]" onClick={fetchHistory}>
-                           <Clock className="mr-2 h-3 w-3" /> Refresh history
+                            <Clock className="mr-2 h-3 w-3" /> Refresh history
                         </Button>
                     </CardHeader>
                     <CardContent className="p-0">
@@ -412,9 +418,9 @@ export default function BillingPage() {
                                             <TableCell className="font-bold text-slate-900">Rs. {inv.amount.toLocaleString()}</TableCell>
                                             <TableCell className="text-right">
                                                 <div className="flex justify-end gap-2">
-                                                    <Button 
-                                                        variant="ghost" 
-                                                        size="icon" 
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="icon"
                                                         className="h-8 w-8 text-slate-400 hover:text-[#06b6d4]"
                                                         onClick={() => handlePrint(inv)}
                                                     >

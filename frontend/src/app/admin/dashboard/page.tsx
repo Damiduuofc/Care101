@@ -128,24 +128,25 @@ export default function Dashboard() {
               bgColor="bg-cyan-50"
             />
 
-            {/* 4. Revenue (System Admin/Receptionist only) */}
-            {['system_admin', 'receptionist'].includes(user?.role) ? (
-              <StatCard
-                title="Total Revenue"
-                value={`LKR ${(stats?.revenue || 0).toLocaleString()}`}
-                icon={CreditCard}
-                color="text-emerald-600"
-                bgColor="bg-emerald-50"
-              />
-            ) : (
-              <StatCard
-                title="Total Patients"
-                value={stats?.patients?.total || 0}
-                icon={Activity}
-                color="text-pink-600"
-                bgColor="bg-pink-50"
-              />
-            )}
+              {/* Revenue Card in Dashboard */}
+              {['system_admin', 'receptionist'].includes(user?.role) ? (
+                <StatCard
+                  title="Total Revenue"
+                  // stats.revenue should be the SUM of (Appointments + Bills) from backend
+                  value={`LKR ${(stats?.revenue || 0).toLocaleString()}`}
+                  icon={CreditCard}
+                  color="text-emerald-600"
+                  bgColor="bg-emerald-50"
+                />
+              ) : (
+                <StatCard
+                  title="Total Patients"
+                  value={stats?.patients?.total || 0}
+                  icon={Activity}
+                  color="text-pink-600"
+                  bgColor="bg-pink-50"
+                />
+              )}
           </div>
 
           {/* --- HOSPITAL STATUS SECTION --- */}

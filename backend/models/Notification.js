@@ -1,30 +1,33 @@
 import mongoose from "mongoose";
 
 const NotificationSchema = new mongoose.Schema({
-  userId: { type: mongoose.Schema.Types.ObjectId, required: true },
+  userId: { type: mongoose.Schema.Types.ObjectId, required: true, ref: "Patient" },
   type: {
     type: String,
     enum: [
-      'appointment',      // Appointment booking
-      'cancellation',     // Appointment cancelled
-      'reschedule',       // Appointment rescheduled
-      'payment',          // Payment confirmation
-      'prescription',     // New prescription added
-      'lab_report',       // Lab report available
-      'report',           // General report
-      'message',          // Message from doctor
-      'reminder',         // Appointment reminder
-      'schedule_request', // ✅ Schedule request status update
-      'system'            // System notification
+      'appointment',      
+      'cancellation',     
+      'reschedule',       
+      'payment',          
+      'prescription',     
+      'lab_report',       
+      'report',           
+      'message',          
+      'reminder',         
+      'schedule_request', 
+      'arrival',          // ✅ Added for Doctor Arrival
+      'doctor_status',    // ✅ Added for general status updates
+      'system'            
     ],
     required: true
   },
+  title: { type: String }, // Optional title
   message: { type: String, required: true },
   read: { type: Boolean, default: false },
   metadata: {
     type: mongoose.Schema.Types.Mixed,
     default: {}
-  }, // Additional data (appointmentId, recordId, etc.)
+  }, 
   timestamp: { type: Date, default: Date.now }
 });
 

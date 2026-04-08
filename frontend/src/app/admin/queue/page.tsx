@@ -4,7 +4,8 @@ import { useEffect, useState } from "react";
 import Sidebar from "@/components/admin/Sidebar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Loader2, Play, Square, Users, Plus, Minus } from "lucide-react";
+import { Badge } from "@/components/ui/badge"; // Ensure you have this UI component
+import { Loader2, Play, Square, Users, Plus, Minus, AlertCircle } from "lucide-react";
 import { useRouter } from "next/navigation";
 
 export default function NurseQueueDashboard() {
@@ -40,12 +41,9 @@ export default function NurseQueueDashboard() {
             });
 
             if (res.ok) {
-                const contentType = res.headers.get("content-type");
-                if (contentType && contentType.includes("application/json")) {
-                    const data = await res.json();
-                    if (Array.isArray(data)) {
-                        setDoctors(data);
-                    }
+                const data = await res.json();
+                if (Array.isArray(data)) {
+                    setDoctors(data);
                 }
             }
         } catch (err) {
@@ -70,7 +68,6 @@ export default function NurseQueueDashboard() {
                 headers: {
                     "Content-Type": "application/json",
                     "x-auth-token": token || "",
-                    "ngrok-skip-browser-warning": "true"
                 },
                 body: JSON.stringify(updates)
             });
@@ -90,7 +87,6 @@ export default function NurseQueueDashboard() {
         return <div className="p-10 flex justify-center"><Loader2 className="animate-spin text-cyan-600 h-8 w-8" /></div>;
     }
 
-    // Filter to only show doctors assigned to this specific nurse, or all if testing
     const assignedDoctors = doctors.filter(doc => doc.allocatedNurse === user.name);
 
     return (
@@ -100,7 +96,7 @@ export default function NurseQueueDashboard() {
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex justify-between items-center">
                 <div>
                     <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">Nurse OPD Queue</h1>
-                    <p className="text-slate-500 mt-1">Manage doctor sessions and update current patient queue numbers.</p>
+                    <p className="text-slate-500 mt-1">Manage doctor sessions and update patient queue numbers.</p>
                 </div>
                 <div className="bg-blue-50 text-blue-700 px-4 py-2 rounded-lg font-semibold flex items-center gap-2">
                     <Users className="h-5 w-5" />
@@ -113,13 +109,13 @@ export default function NurseQueueDashboard() {
                     <CardContent>
                         <Users className="h-12 w-12 text-slate-300 mx-auto mb-4" />
                         <h2 className="text-xl font-bold text-slate-700">No Doctors Assigned</h2>
-                        <p className="text-slate-500 mt-2">You have not been assigned to any room by the receptionist yet.</p>
+                        <p className="text-slate-500 mt-2">No doctors are assigned to you currently.</p>
                     </CardContent>
                 </Card>
             ) : (
                 <div className="grid grid-cols-1 gap-6">
                     {assignedDoctors.map(doc => (
-                        <Card key={doc._id} className="border-slate-200 overflow-hidden shadow-sm hover:shadow-md transition-all">
+                        <Card key={doc._id} className="border-slate-200 overflow-hidden shadow-sm transition-all">
                             <div className={`h-2 w-full ${doc.sessionStarted ? "bg-emerald-500" : "bg-slate-300"}`}></div>
                             <CardHeader className="bg-slate-50/50 border-b border-slate-100 flex flex-row items-center justify-between pb-4">
                                 <div className="flex items-center gap-4">
@@ -134,21 +130,24 @@ export default function NurseQueueDashboard() {
                                     </div>
                                 </div>
 
-                                <div className="text-right">
-                                    {doc.sessionStarted ? (
+                                <div className="text-right flex flex-col items-end gap-2">
+                                    {!doc.isArrived ? (
+                                        <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200 flex gap-1">
+                                            <AlertCircle className="h-3.5 w-3.5" /> Doctor Not Arrived
+                                        </Badge>
+                                    ) : doc.sessionStarted ? (
                                         <div className="bg-emerald-50 text-emerald-700 px-4 py-1.5 rounded-full text-sm font-bold border border-emerald-200 animate-pulse">
                                             Session Active
                                         </div>
                                     ) : (
                                         <div className="bg-slate-100 text-slate-500 px-4 py-1.5 rounded-full text-sm font-bold border border-slate-200">
-                                            Session Paused
+                                            Ready to Start
                                         </div>
                                     )}
                                 </div>
                             </CardHeader>
 
                             <CardContent className="p-6 md:p-8 flex flex-col md:flex-row items-center justify-between gap-8">
-                                {/* Left Side: Session Toggle */}
                                 <div className="flex-1 w-full border-r-0 md:border-r border-slate-200 pr-0 md:pr-8 space-y-4 text-center md:text-left">
                                     <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-2">Session Control</h3>
 
@@ -162,13 +161,18 @@ export default function NurseQueueDashboard() {
                                             {saving[doc._id] ? <Loader2 className="animate-spin h-5 w-5 mx-auto" /> : <><Square className="mr-2 h-5 w-5" /> End Session</>}
                                         </Button>
                                     ) : (
-                                        <Button
-                                            onClick={() => handleUpdateDoctor(doc, { sessionStarted: true, currentQueueNumber: 1 })}
-                                            disabled={saving[doc._id]}
-                                            className="w-full md:w-auto bg-blue-600 hover:bg-blue-700 text-white font-bold h-12 px-8 shadow-md"
-                                        >
-                                            {saving[doc._id] ? <Loader2 className="animate-spin h-5 w-5 mx-auto" /> : <><Play className="mr-2 h-5 w-5 fill-white" /> Start Session</>}
-                                        </Button>
+                                        <div className="space-y-2">
+                                            <Button
+                                                onClick={() => handleUpdateDoctor(doc, { sessionStarted: true, currentQueueNumber: 1 })}
+                                                disabled={saving[doc._id] || !doc.isArrived}
+                                                className={`w-full md:w-auto font-bold h-12 px-8 shadow-md ${!doc.isArrived ? 'bg-slate-300' : 'bg-blue-600 hover:bg-blue-700'}`}
+                                            >
+                                                {saving[doc._id] ? <Loader2 className="animate-spin h-5 w-5 mx-auto" /> : <><Play className="mr-2 h-5 w-5 fill-white" /> Start Session</>}
+                                            </Button>
+                                            {!doc.isArrived && (
+                                                <p className="text-[11px] text-amber-600 font-bold italic">Waiting for receptionist confirmation...</p>
+                                            )}
+                                        </div>
                                     )}
                                 </div>
 
@@ -176,7 +180,7 @@ export default function NurseQueueDashboard() {
                                 <div className="flex-1 w-full pl-0 md:pl-4 text-center">
                                     <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-4">Current Patient Queue</h3>
 
-                                    <div className={`inline-flex items-center gap-6 p-4 rounded-3xl ${doc.sessionStarted ? 'bg-slate-50 border border-slate-200' : 'opacity-50 pointer-events-none'}`}>
+                                    <div className={`inline-flex items-center gap-6 p-4 rounded-3xl ${doc.sessionStarted ? 'bg-slate-50 border border-slate-200' : 'opacity-40 pointer-events-none'}`}>
                                         <Button
                                             onClick={() => handleUpdateDoctor(doc, { currentQueueNumber: Math.max(0, (doc.currentQueueNumber || 0) - 1) })}
                                             variant="outline"
@@ -202,7 +206,7 @@ export default function NurseQueueDashboard() {
                                             <Plus className="h-6 w-6" />
                                         </Button>
                                     </div>
-                                    <p className="text-xs font-semibold text-slate-400 mt-4">Next Patient Number</p>
+                                    <p className="text-xs font-semibold text-slate-400 mt-4">Update Number for Next Patient</p>
                                 </div>
                             </CardContent>
                         </Card>

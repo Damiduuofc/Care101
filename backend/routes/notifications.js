@@ -1,71 +1,38 @@
 import express from "express";
 import Notification from "../models/Notification.js";
-import Appointment from "../models/Appointment.js";
-import { auth } from "../middleware/auth.js";
+import { auth } from "../middleware/auth.js"; // Assuming this is your patient auth middleware
 
 const router = express.Router();
 
+// ==========================================
+// 1. GET ALL NOTIFICATIONS
+// ==========================================
 router.get("/", auth, async (req, res) => {
   try {
-    console.log("Fetching notifications for:", req.user.id);
-    let notifications = await Notification.find({ userId: req.user.id })
-      .sort({ timestamp: -1 })
-      .lean(); // .lean() is important!
-    
-    console.log("Found:", notifications.length);
+    // Safety check for user ID from middleware
+    if (!req.user || !req.user.id) {
+      return res.status(401).json({ msg: "User identification failed" });
+    }
 
-    // Reminder Logic
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    tomorrow.setHours(0, 0, 0, 0);
-    const endOfTomorrow = new Date(tomorrow);
-    endOfTomorrow.setHours(23, 59, 59, 999);
-
-    const upcomingAppointments = await Appointment.find({
-      patientId: req.user.id,
-      date: { $gte: tomorrow, $lte: endOfTomorrow },
-      status: 'Confirmed'
-    });
-
-    upcomingAppointments.forEach(app => {
-      notifications.unshift({
-        _id: "rem-" + app._id,
-        type: "reminder",
-        message: `Reminder: Appointment with ${app.doctorName} tomorrow.`,
-        timestamp: new Date(),
-        read: false
-      });
-    });
-
+    const notifications = await Notification.find({ userId: req.user.id })
+      .sort({ timestamp: -1 }) // Newest first
+      .limit(50);
+      
     res.json(notifications);
   } catch (err) {
-    console.error(err);
+    console.error("Fetch Notifications Error:", err.message);
     res.status(500).send("Server Error");
   }
 });
 
-// GET UNREAD COUNT
-router.get("/unread-count", auth, async (req, res) => {
+// ==========================================
+// 2. MARK AS READ
+// ==========================================
+router.put("/:id/read", auth, async (req, res) => {
   try {
-    const count = await Notification.countDocuments({
-      userId: req.user.id,
-      read: false
-    });
-    res.json({ count });
-  } catch (err) {
-    console.error(err);
-    res.status(500).send("Server Error");
-  }
-});
-
-// MARK READ (Single)
-router.put("/read/:id", auth, async (req, res) => {
-  try {
-    if (req.params.id.startsWith("rem-")) return res.json({ msg: "Ok" });
-
     const notification = await Notification.findOne({
       _id: req.params.id,
-      userId: req.user.id
+      userId: req.user.id // Ensure patient can only mark their own notifications
     });
 
     if (!notification) {
@@ -74,57 +41,68 @@ router.put("/read/:id", auth, async (req, res) => {
 
     notification.read = true;
     await notification.save();
-
-    res.json({ msg: "Marked as read" });
+    
+    res.json(notification);
   } catch (err) {
+    console.error("Mark Read Error:", err.message);
     res.status(500).send("Server Error");
   }
 });
 
-// MARK ALL AS READ
+// ==========================================
+// 3. MARK ALL AS READ
+// ==========================================
 router.put("/read-all", auth, async (req, res) => {
   try {
-    await Notification.updateMany(
+    const result = await Notification.updateMany(
       { userId: req.user.id, read: false },
-      { read: true }
+      { $set: { read: true } }
     );
-    res.json({ msg: "All notifications marked as read" });
+    
+    res.json({ 
+      msg: "All notifications marked as read", 
+      count: result.modifiedCount 
+    });
   } catch (err) {
-    console.error(err);
+    console.error("Mark All Read Error:", err.message);
     res.status(500).send("Server Error");
   }
 });
 
-// DELETE NOTIFICATION
+// ==========================================
+// 4. DELETE NOTIFICATION
+// ==========================================
 router.delete("/:id", auth, async (req, res) => {
   try {
-    if (req.params.id.startsWith("rem-")) {
-      return res.json({ msg: "Cannot delete reminder" });
-    }
-
-    const result = await Notification.findOneAndDelete({
+    const result = await Notification.deleteOne({
       _id: req.params.id,
       userId: req.user.id
     });
-
-    if (!result) {
+    
+    if (result.deletedCount === 0) {
       return res.status(404).json({ msg: "Notification not found" });
     }
-
+    
     res.json({ msg: "Notification deleted" });
   } catch (err) {
-    console.error(err);
+    console.error("Delete Notification Error:", err.message);
     res.status(500).send("Server Error");
   }
 });
 
-// CLEAR ALL NOTIFICATIONS
-router.delete("/clear-all", auth, async (req, res) => {
+// ==========================================
+// 5. GET UNREAD COUNT (For Mobile/Web Badges)
+// ==========================================
+router.get("/unread-count", auth, async (req, res) => {
   try {
-    await Notification.deleteMany({ userId: req.user.id });
-    res.json({ msg: "All notifications cleared" });
+    const count = await Notification.countDocuments({ 
+      userId: req.user.id, 
+      read: false 
+    });
+    
+    res.json({ count });
   } catch (err) {
-    console.error(err);
+    console.error("Unread Count Error:", err.message);
     res.status(500).send("Server Error");
   }
 });

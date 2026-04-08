@@ -47,7 +47,7 @@ export default function ProfileScreen() {
             if (response.ok) {
                 const data = await response.json();
                 setProfile(data);
-                setFormData(data); // Pre-fill edit form
+                setFormData(data); 
             }
         } catch (error) {
             console.error("Failed to load profile", error);
@@ -59,16 +59,35 @@ export default function ProfileScreen() {
     // --- 2. FETCH NOTIFICATIONS ---
     const fetchNotifications = async () => {
         try {
-            const response = await fetch(`${API_URL}/auth/notifications`, {
-                headers: { 'Authorization': `Bearer ${token}` }
+            // Pointing to the correct /notifications endpoint
+            const response = await fetch(`${API_URL}/notifications`, {
+                headers: { 
+                    'Authorization': `Bearer ${token}`,
+                    'x-auth-token': token 
+                }
             });
+
             if (response.ok) {
                 const data = await response.json();
                 setNotifications(data);
                 setNotifModalVisible(true);
+
+                // Auto-mark as read when modal opens
+                if (data.some((n: any) => !n.read)) {
+                    await fetch(`${API_URL}/notifications/read-all`, {
+                        method: 'PUT',
+                        headers: { 
+                            'Authorization': `Bearer ${token}`, 
+                            'x-auth-token': token 
+                        }
+                    });
+                }
+            } else {
+                Alert.alert("Notice", "No notifications found.");
             }
         } catch (error) {
-            Alert.alert("Error", "Could not fetch notifications");
+            console.error("Fetch Notif Error:", error);
+            Alert.alert("Error", "Could not connect to notification server");
         }
     };
 
@@ -89,13 +108,12 @@ export default function ProfileScreen() {
             allowsEditing: true,
             aspect: [1, 1],
             quality: 0.5,
-            base64: true, // We need base64 to send to backend easily
+            base64: true,
         });
 
         if (!result.canceled && result.assets[0].base64) {
             const base64Image = `data:image/jpeg;base64,${result.assets[0].base64}`;
             setFormData({ ...formData, profileImage: base64Image });
-            // Optional: Auto-save image immediately or wait for "Save Changes"
         }
     };
 
@@ -176,7 +194,6 @@ export default function ProfileScreen() {
                     showsVerticalScrollIndicator={false}
                     refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#06b6d4']} />}
                 >
-                    {/* --- PROFILE CARD --- */}
                     <View style={styles.profileCard}>
                         <View style={styles.avatarContainer}>
                             {profile?.profileImage ? (
@@ -186,7 +203,6 @@ export default function ProfileScreen() {
                             )}
                         </View>
                         
-                        {/* Name Fix: Fallback Logic */}
                         <Text style={styles.name}>
                             {profile?.fullName || profile?.username || "Patient"}
                         </Text>
@@ -199,11 +215,9 @@ export default function ProfileScreen() {
                         </TouchableOpacity>
                     </View>
 
-                    {/* --- SECTIONS --- */}
                     <View style={styles.section}>
                         <Text style={styles.sectionTitle}>General</Text>
                         
-                        {/* Notifications */}
                         <TouchableOpacity style={styles.settingItem} onPress={fetchNotifications}>
                             <Ionicons name="notifications-outline" size={22} color="#64748b" />
                             <Text style={styles.settingText}>Notifications</Text>
@@ -244,8 +258,6 @@ export default function ProfileScreen() {
                         </TouchableOpacity>
                     </View>
                     <ScrollView contentContainerStyle={{ padding: 20 }}>
-                        
-                        {/* Photo Upload */}
                         <View style={{ alignItems: 'center', marginBottom: 20 }}>
                             <TouchableOpacity onPress={pickImage} style={styles.avatarContainer}>
                                 {formData.profileImage ? (
@@ -264,21 +276,16 @@ export default function ProfileScreen() {
                         <TextInput style={styles.input} value={formData.mobileNumber} onChangeText={t => setFormData({...formData, mobileNumber: t})} keyboardType="phone-pad"/>
 
                         <Text style={styles.sectionTitle}>Medical & Emergency</Text>
-                        
                         <InputLabel label="Emergency Contact" />
                         <TextInput style={styles.input} value={formData.emergencyContact} onChangeText={t => setFormData({...formData, emergencyContact: t})} placeholder="Name & Phone" />
-
                         <InputLabel label="Medical Conditions" />
                         <TextInput style={styles.input} value={formData.medicalConditions} onChangeText={t => setFormData({...formData, medicalConditions: t})} placeholder="e.g. Diabetes" />
-
                         <InputLabel label="Allergies" />
                         <TextInput style={styles.input} value={formData.allergies} onChangeText={t => setFormData({...formData, allergies: t})} placeholder="e.g. Peanuts" />
 
                         <Text style={styles.sectionTitle}>Insurance</Text>
-
                         <InputLabel label="Insurance Provider" />
                         <TextInput style={styles.input} value={formData.insuranceProvider} onChangeText={t => setFormData({...formData, insuranceProvider: t})} />
-
                         <InputLabel label="Policy Number" />
                         <TextInput style={styles.input} value={formData.policyNumber} onChangeText={t => setFormData({...formData, policyNumber: t})} />
 
@@ -295,28 +302,9 @@ export default function ProfileScreen() {
                 <View style={styles.modalOverlay}>
                     <View style={styles.popupCard}>
                         <Text style={styles.modalTitle}>Change Password</Text>
-                        
-                        <TextInput 
-                            style={styles.input} 
-                            placeholder="Current Password" 
-                            secureTextEntry 
-                            value={passwordData.current}
-                            onChangeText={t => setPasswordData({...passwordData, current: t})}
-                        />
-                        <TextInput 
-                            style={styles.input} 
-                            placeholder="New Password" 
-                            secureTextEntry 
-                            value={passwordData.new}
-                            onChangeText={t => setPasswordData({...passwordData, new: t})}
-                        />
-                        <TextInput 
-                            style={styles.input} 
-                            placeholder="Confirm New Password" 
-                            secureTextEntry 
-                            value={passwordData.confirm}
-                            onChangeText={t => setPasswordData({...passwordData, confirm: t})}
-                        />
+                        <TextInput style={styles.input} placeholder="Current Password" secureTextEntry value={passwordData.current} onChangeText={t => setPasswordData({...passwordData, current: t})} />
+                        <TextInput style={styles.input} placeholder="New Password" secureTextEntry value={passwordData.new} onChangeText={t => setPasswordData({...passwordData, new: t})} />
+                        <TextInput style={styles.input} placeholder="Confirm New Password" secureTextEntry value={passwordData.confirm} onChangeText={t => setPasswordData({...passwordData, confirm: t})} />
 
                         <View style={styles.modalActions}>
                             <TouchableOpacity style={styles.cancelBtn} onPress={() => setPasswordModalVisible(false)}>
@@ -346,13 +334,29 @@ export default function ProfileScreen() {
                         contentContainerStyle={{padding: 20}}
                         ListEmptyComponent={<Text style={{textAlign:'center', color:'#94a3b8', marginTop: 20}}>No notifications</Text>}
                         renderItem={({item}) => (
-                            <View style={styles.notifCard}>
-                                <View style={[styles.notifIcon, { backgroundColor: item.type === 'appointment' ? '#ecfeff' : '#f1f5f9' }]}>
-                                    <Ionicons name={item.type === 'appointment' ? "calendar" : "notifications"} size={20} color="#06b6d4" />
+                            <View style={[
+                                styles.notifCard, 
+                                !item.read && { borderLeftColor: '#06b6d4', borderLeftWidth: 4 },
+                                item.type === 'arrival' && { backgroundColor: '#f0fdf4' }
+                            ]}>
+                                <View style={[
+                                    styles.notifIcon, 
+                                    { backgroundColor: item.type === 'arrival' ? '#dcfce7' : (item.type === 'appointment' ? '#ecfeff' : '#f1f5f9') }
+                                ]}>
+                                    <Ionicons 
+                                        name={
+                                            item.type === 'arrival' ? "business" : 
+                                            item.type === 'appointment' ? "calendar" : "notifications"
+                                        } 
+                                        size={20} 
+                                        color={item.type === 'arrival' ? '#16a34a' : '#06b6d4'} 
+                                    />
                                 </View>
                                 <View style={{flex: 1}}>
-                                    <Text style={styles.notifMessage}>{item.message}</Text>
-                                    <Text style={styles.notifTime}>{new Date(item.timestamp).toLocaleString()}</Text>
+                                    <Text style={[styles.notifMessage, !item.read && { fontWeight: '700' }]}>{item.message}</Text>
+                                    <Text style={styles.notifTime}>
+                                        {new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short' })}
+                                    </Text>
                                 </View>
                                 {!item.read && <View style={styles.unreadDot} />}
                             </View>
@@ -364,9 +368,8 @@ export default function ProfileScreen() {
     );
 }
 
-// Helpers
 const InfoItem = ({ icon, label, value }: any) => {
-    if (!value) return null; // Don't show empty fields in read-only view
+    if (!value) return null;
     return (
         <View style={styles.settingItem}>
             <Ionicons name={icon} size={22} color="#64748b" />
@@ -388,7 +391,6 @@ const styles = StyleSheet.create({
     header: { paddingHorizontal: 20, paddingTop: 20, paddingBottom: 10 },
     title: { fontSize: 28, fontWeight: '700', color: '#0f172a' },
     scrollContent: { paddingHorizontal: 20, paddingBottom: 20 },
-
     profileCard: {
         backgroundColor: '#fff', borderRadius: 20, padding: 24, alignItems: 'center', marginBottom: 24,
         shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 4,
@@ -403,15 +405,12 @@ const styles = StyleSheet.create({
     role: { fontSize: 12, color: '#06b6d4', fontWeight: '600', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 16 },
     editButton: { paddingHorizontal: 20, paddingVertical: 10, backgroundColor: '#f1f5f9', borderRadius: 20 },
     editButtonText: { fontSize: 14, fontWeight: '600', color: '#475569' },
-
     section: { marginBottom: 24 },
     sectionTitle: { fontSize: 14, fontWeight: '600', color: '#94a3b8', marginBottom: 12, textTransform: 'uppercase', marginTop: 10 },
     settingItem: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', padding: 16, borderRadius: 12, marginBottom: 10 },
     settingText: { flex: 1, marginLeft: 16, fontSize: 16, color: '#334155', fontWeight: '500' },
     settingLabel: { fontSize: 12, color: '#94a3b8' },
     settingValue: { fontSize: 15, color: '#334155', fontWeight: '500' },
-
-    // Modal Styles
     modalContainer: { flex: 1, backgroundColor: '#fff' },
     modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: 20 },
     popupCard: { backgroundColor: '#fff', borderRadius: 16, padding: 20 },
@@ -423,8 +422,6 @@ const styles = StyleSheet.create({
     modalActions: { flexDirection: 'row', justifyContent: 'flex-end', marginTop: 10, gap: 15 },
     cancelBtn: { padding: 10 },
     confirmBtn: { backgroundColor: '#06b6d4', paddingVertical: 10, paddingHorizontal: 20, borderRadius: 8 },
-
-    // Notifications
     notifCard: { flexDirection: 'row', padding: 16, backgroundColor: '#fff', borderRadius: 12, marginBottom: 10, borderBottomWidth: 1, borderBottomColor: '#f1f5f9' },
     notifIcon: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', marginRight: 12 },
     notifMessage: { fontSize: 14, color: '#334155', marginBottom: 4 },

@@ -19,6 +19,7 @@ export default function PatientsScreen() {
 const router = useRouter();
 const [loading, setLoading] = useState(true);
 const [channelingStatus, setChannelingStatus] = useState('On Time');
+const [isArrived, setIsArrived] = useState(false);
 
 useFocusEffect(
 React.useCallback(() => {
@@ -37,6 +38,7 @@ headers: { Authorization: `Bearer ${token}` },
 if (response.ok) {
 const data = await response.json();
 setChannelingStatus(data.channelingStatus || 'On Time');
+setIsArrived(data.isArrived || false);
 }
 } catch (error) {
 console.error('Fetch Stats Error:', error);
@@ -67,6 +69,31 @@ Alert.alert('Error', 'Failed to update status');
 }
 } catch (err) {
 console.error('Delay update error:', err);
+}
+};
+
+const updateArrivalStatus = async (arrived) => {
+try {
+const token = await SecureStore.getItemAsync('token');
+
+const response = await fetch(`${API_URL}/doctor/arrival-status`, {
+method: 'PUT',
+headers: {
+Authorization: `Bearer ${token}`,
+'Content-Type': 'application/json',
+},
+body: JSON.stringify({ isArrived: arrived }),
+});
+
+if (response.ok) {
+const data = await response.json();
+setIsArrived(data.isArrived);
+Alert.alert('Success', arrived ? 'Marked as arrived' : 'Marked as not arrived');
+} else {
+Alert.alert('Error', 'Failed to update arrival status');
+}
+} catch (err) {
+console.error('Arrival update error:', err);
 }
 };
 
@@ -102,6 +129,32 @@ activeOpacity={0.8}
 </View>
 </View>
 
+</View>
+
+<View style={styles.divider} />
+
+{/* ARRIVAL SECTION */}
+<View style={styles.section}>
+<Text style={styles.sectionTitle}>Arrival Status</Text>
+<Text style={styles.sectionDesc}>
+Mark yourself as arrived to notify patients.
+</Text>
+
+<TouchableOpacity
+style={[
+styles.arrivalButton,
+isArrived && styles.arrivedButton
+]}
+onPress={() => updateArrivalStatus(!isArrived)}
+activeOpacity={0.8}
+>
+<Text style={[
+styles.arrivalButtonText,
+isArrived && styles.arrivedButtonText
+]}>
+{isArrived ? '✓ Arrived' : 'Mark as Arrived'}
+</Text>
+</TouchableOpacity>
 </View>
 
 <View style={styles.divider} />
@@ -289,6 +342,37 @@ fontWeight:'500'
 activeText:{
 color:'#0f172a',
 fontWeight:'700'
+},
+
+arrivalButton:{
+backgroundColor:'#ffffff',
+paddingVertical:16,
+paddingHorizontal:24,
+borderRadius:12,
+alignItems:'center',
+borderWidth:2,
+borderColor:'#06B6D4',
+
+shadowColor:'#000',
+shadowOffset:{width:0,height:4},
+shadowOpacity:0.1,
+shadowRadius:6,
+elevation:4
+},
+
+arrivedButton:{
+backgroundColor:'#10b981',
+borderColor:'#10b981'
+},
+
+arrivalButtonText:{
+fontSize:16,
+color:'#06B6D4',
+fontWeight:'600'
+},
+
+arrivedButtonText:{
+color:'#ffffff'
 }
 
 });

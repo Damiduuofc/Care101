@@ -27,14 +27,13 @@ router.post("/login", async (req, res) => {
     const isMatch = await bcrypt.compare(password, admin.password);
     if (!isMatch) return res.status(400).json({ msg: "Invalid Credentials" });
 
-    const payload = { id: admin.id, role: admin.role };
-
     // Ensure JWT_SECRET exists
     if (!process.env.JWT_SECRET) {
       console.error("JWT_SECRET is missing in .env");
       return res.status(500).send("Server Configuration Error");
     }
 
+    const payload = { id: admin.id, role: admin.role };
     const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: "1d" });
 
     res.json({
@@ -54,19 +53,16 @@ router.post("/login", async (req, res) => {
 });
 
 // ==========================================
-// 2. DASHBOARD STATS (Merged: Counts + Status)
+// 2. DASHBOARD STATS
 // ==========================================
 router.get("/stats", protect, async (req, res) => {
   try {
-    // A. CALCULATE DASHBOARD COUNTS
     const totalDoctors = await Doctor.countDocuments();
     const pendingDoctors = await Doctor.countDocuments({ isApproved: false });
     const totalPatients = await Patient.countDocuments();
 
-    // Appointments Today
     const startOfDay = new Date();
     startOfDay.setHours(0, 0, 0, 0);
-
     const endOfDay = new Date();
     endOfDay.setHours(23, 59, 59, 999);
 
@@ -74,25 +70,29 @@ router.get("/stats", protect, async (req, res) => {
       date: { $gte: startOfDay, $lte: endOfDay }
     });
 
-    // Pending Appointments (Case Insensitive)
     const pendingAppointments = await Appointment.countDocuments({
       status: { $regex: /^pending$/i }
     });
 
-    // Revenue Calculation
-    const revenueResult = await Appointment.aggregate([
+    const appointmentRevenue = await Appointment.aggregate([
       { $match: { paymentStatus: { $regex: /^paid$/i } } },
       { $group: { _id: null, total: { $sum: "$amount" } } }
     ]);
-    const totalRevenue = revenueResult.length > 0 ? revenueResult[0].total : 0;
 
-    // B. FETCH HOSPITAL STATUS
+    const billRevenue = await Bill.aggregate([
+      { $match: { status: { $regex: /^paid$/i } } },
+      { $group: { _id: null, total: { $sum: "$amount" } } }
+    ]);
+
+    const appTotal = appointmentRevenue.length > 0 ? appointmentRevenue[0].total : 0;
+    const billTotal = billRevenue.length > 0 ? billRevenue[0].total : 0;
+    const totalRevenue = appTotal + billTotal;
+
     let status = await HospitalStatus.findOne();
     if (!status) {
       status = { generalWard: "Available", icuBeds: 0, emergencyUnit: "Normal", pharmacy: "Open" };
     }
 
-    // C. SEND COMBINED RESPONSE
     res.json({
       doctors: { total: totalDoctors, pending: pendingDoctors },
       patients: { total: totalPatients, today: appointmentsToday },
@@ -118,7 +118,6 @@ router.get("/stats", protect, async (req, res) => {
 router.put("/status", protect, authorize(["system_admin"]), async (req, res) => {
   try {
     const { generalWard, icuBeds, emergencyUnit, pharmacy } = req.body;
-
     let status = await HospitalStatus.findOne();
 
     if (status) {
@@ -133,9 +132,7 @@ router.put("/status", protect, authorize(["system_admin"]), async (req, res) => 
       await status.save();
     }
     res.json({ msg: "Status Updated", status });
-
   } catch (err) {
-    console.error("Status Update Error:", err);
     res.status(500).send("Server Error");
   }
 });
@@ -151,7 +148,6 @@ router.get("/appointments", protect, async (req, res) => {
       .sort({ date: -1 });
     res.json(appointments);
   } catch (err) {
-    console.error("Fetch Appointments Error:", err);
     res.status(500).send("Server Error");
   }
 });
@@ -163,57 +159,37 @@ router.put("/appointments/:id", protect, async (req, res) => {
 
     if (!appointment) return res.status(404).json({ msg: "Not found" });
 
-    // Prevent editing cancelled appointments
     if (appointment.status && appointment.status.toLowerCase() === "cancelled") {
       return res.status(400).json({ msg: "Cannot edit a Cancelled appointment" });
     }
 
     if (status) appointment.status = status;
 
-
-
     if (paymentStatus) {
-      // Check if status is changing TO paid FROM something else
       const isBecomingPaid = paymentStatus.toLowerCase() === "paid" && appointment.paymentStatus !== "paid";
-
       appointment.paymentStatus = paymentStatus;
 
-      // Sync with Bill & Finance if marked Paid
       if (isBecomingPaid) {
-        // 1. Update Bill
-        await Bill.findOneAndUpdate(
-          { appointmentId: appointment._id },
-          { status: "Paid" }
-        );
+        await Bill.findOneAndUpdate({ appointmentId: appointment._id }, { status: "Paid" });
 
-        // 2. ✅ Update Finance Record
         try {
-          const hospitalName = "Suwasevana"; // Default
-          let hospitalFinance = await HospitalFinance.findOne({
-            doctorId: appointment.doctorId,
-            name: hospitalName
-          });
+          const hospitalName = "Suwasevana";
+          let hospitalFinance = await HospitalFinance.findOne({ doctorId: appointment.doctorId, name: hospitalName });
 
           if (!hospitalFinance) {
-            hospitalFinance = new HospitalFinance({
-              doctorId: appointment.doctorId,
-              name: hospitalName,
-              records: []
-            });
+            hospitalFinance = new HospitalFinance({ doctorId: appointment.doctorId, name: hospitalName, records: [] });
           }
 
           hospitalFinance.records.unshift({
             type: 'channeling',
-            date: new Date(appointment.date),
+            date: new Date(),
             patients: 1,
             income: appointment.amount || 2000
           });
 
           await hospitalFinance.save();
-          console.log(`✅ Finance Updated: ${appointment.amount} LKR added via Admin Panel`);
-
         } catch (finErr) {
-          console.error("Failed to update finance from admin:", finErr);
+          console.error("Finance Update Error:", finErr);
         }
       }
     }
@@ -221,7 +197,6 @@ router.put("/appointments/:id", protect, async (req, res) => {
     await appointment.save();
     res.json(appointment);
   } catch (err) {
-    console.error("Update Appointment Error:", err);
     res.status(500).send("Server Error");
   }
 });
@@ -232,7 +207,6 @@ router.delete("/appointments/:id", protect, authorize(["system_admin", "receptio
     await Bill.findOneAndDelete({ appointmentId: req.params.id });
     res.json({ msg: "Appointment removed" });
   } catch (err) {
-    console.error("Delete Appointment Error:", err);
     res.status(500).send("Server Error");
   }
 });
@@ -240,42 +214,44 @@ router.delete("/appointments/:id", protect, authorize(["system_admin", "receptio
 // ==========================================
 // 5. BILLING MANAGEMENT
 // ==========================================
-// Search Patient by NIC Number
 router.get("/patients/search/nic/:nic", protect, async (req, res) => {
   try {
     const patient = await Patient.findOne({ nicNumber: req.params.nic }).select("-password");
     if (!patient) return res.status(404).json({ msg: "Patient not found" });
     res.json(patient);
   } catch (err) {
-    console.error("NIC Search Error:", err.message);
     res.status(500).send("Server Error");
   }
 });
 
-// Fetch All Billing History (for Admin View)
 router.get("/bills/all", protect, authorize(["system_admin", "receptionist"]), async (req, res) => {
   try {
-    const bills = await Bill.find()
-      .populate("patientId", "fullName nicNumber")
-      .sort({ date: -1 });
-    res.json(bills);
+    const manualBills = await Bill.find().populate("patientId", "fullName nicNumber").lean();
+    const appointments = await Appointment.find({ amount: { $gt: 0 } }).populate("patientId", "fullName nicNumber").lean();
+
+    const appointmentBills = appointments.map(app => ({
+      _id: app._id,
+      patientId: app.patientId,
+      title: `Appointment Fee - ${app.status}`,
+      type: "Appointment",
+      amount: app.amount,
+      status: app.paymentStatus || "Pending",
+      date: app.date
+    }));
+
+    const combinedHistory = [...manualBills, ...appointmentBills].sort((a, b) => new Date(b.date) - new Date(a.date));
+    res.json(combinedHistory);
   } catch (err) {
-    console.error("Fetch All Bills Error:", err.message);
     res.status(500).send("Server Error");
   }
 });
 
-// Create a New Bill (Cash or App Payment)
 router.post("/bills/create", protect, authorize(["system_admin", "receptionist"]), async (req, res) => {
   try {
     const { patientId, title, type, amount, status } = req.body;
 
-    if (!patientId || !amount) {
-      return res.status(400).json({ msg: "Missing required fields" });
-    }
-
     const newBill = new Bill({
-      patientId: new mongoose.Types.ObjectId(patientId), // Explicitly convert to ObjectId
+      patientId: new mongoose.Types.ObjectId(patientId),
       title,
       type,
       amount,
@@ -285,51 +261,34 @@ router.post("/bills/create", protect, authorize(["system_admin", "receptionist"]
 
     await newBill.save();
 
-    // 2. Update Finance Records (if Cash)
     if (status === "Paid") {
       try {
         const hospitalName = "Suwasevana";
         let hospitalFinance = await HospitalFinance.findOne({ name: hospitalName });
-
         if (!hospitalFinance) {
           hospitalFinance = new HospitalFinance({ name: hospitalName, records: [], doctorId: null });
         }
-
         hospitalFinance.records.unshift({
-          type: type.toLowerCase() === 'appointment' ? 'channeling' : 'surgical', // Map to valid enums
+          type: type.toLowerCase() === 'appointment' ? 'channeling' : 'surgical',
           date: new Date(),
           patients: 1,
-          income: amount,
-          amount: amount // Set for surgical record structure if needed
+          income: amount
         });
-
         await hospitalFinance.save();
-        console.log("✅ Finance record updated");
-      } catch (finErr) {
-        console.error("❌ Finance Sync Error:", finErr.message);
-        // We don't crash the bill creation if finance update fails
-      }
+      } catch (finErr) { console.error(finErr); }
     }
 
-    // 3. Send Notification to Patient
-    try {
-      await Notification.create({
-        userId: newBill.patientId, // Use the converted ObjectId from the saved bill
-        type: "payment",
-        message: status === "Paid" 
-          ? `Receipt Confirmed! LKR ${amount} paid for ${title}.` 
-          : `New Bill Issued: You have a payment of LKR ${amount} due for ${title}. Pay via app.`
-      });
-    } catch (notifErr) {
-      console.error("❌ Notification Error:", notifErr.message);
-    }
+    await Notification.create({
+      userId: newBill.patientId,
+      type: "payment",
+      message: status === "Paid" 
+        ? `Receipt Confirmed! LKR ${amount} paid for ${title}.` 
+        : `New Bill Issued: LKR ${amount} due for ${title}.`
+    });
 
-    // 4. Return Populated Bill
     const populatedBill = await Bill.findById(newBill._id).populate("patientId", "fullName nicNumber");
     res.json({ msg: "Bill created successfully", bill: populatedBill });
-
   } catch (err) {
-    console.error("Create Bill Error:", err.message);
     res.status(500).send("Server Error");
   }
 });
@@ -340,38 +299,16 @@ router.post("/bills/create", protect, authorize(["system_admin", "receptionist"]
 router.post("/create-staff", protect, authorize(["system_admin"]), async (req, res) => {
   try {
     const { name, email, password, role, department } = req.body;
-
-    // 1. Check for valid role
-    const validRoles = ["receptionist", "nurse", "system_admin", "lab_assistant"];
-    if (!validRoles.includes(role)) {
-      return res.status(400).json({ msg: "Invalid Role. Must be one of: " + validRoles.join(", ") });
-    }
-
-    // 2. Check if user already exists
     let user = await Admin.findOne({ email });
-    if (user) {
-      return res.status(400).json({ msg: "User with this email already exists" });
-    }
+    if (user) return res.status(400).json({ msg: "User exists" });
 
-    // 3. Hash Password
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
-    // 4. Save to DB
-    user = new Admin({
-      name,
-      email,
-      password: hashedPassword,
-      role,
-      department
-    });
-
+    user = new Admin({ name, email, password: hashedPassword, role, department });
     await user.save();
-
-    res.json({ msg: `New ${role} created successfully` });
-
+    res.json({ msg: `New ${role} created` });
   } catch (err) {
-    console.error("Create Staff Error:", err);
     res.status(500).send("Server Error");
   }
 });
@@ -381,43 +318,28 @@ router.get("/staff", protect, authorize(["system_admin", "receptionist"]), async
     const staff = await Admin.find().select("-password");
     res.json(staff);
   } catch (err) {
-    console.error("Fetch Staff Error:", err);
     res.status(500).send("Server Error");
   }
 });
 
-// ==========================================
-// 6. DELETE STAFF (System Admin Only)
-// ==========================================
 router.delete("/staff/:id", protect, authorize(["system_admin"]), async (req, res) => {
   try {
-    // Prevent deleting yourself
-    // Note: req.user.id comes from the token, req.params.id comes from the URL
-    if (req.params.id === req.user.id) {
-      return res.status(400).json({ msg: "You cannot delete your own account." });
-    }
-
-    const result = await Admin.findByIdAndDelete(req.params.id);
-    if (!result) {
-      return res.status(404).json({ msg: "Staff member not found" });
-    }
-
-    res.json({ msg: "Staff member removed" });
+    if (req.params.id === req.user.id) return res.status(400).json({ msg: "Cannot delete self" });
+    await Admin.findByIdAndDelete(req.params.id);
+    res.json({ msg: "Staff removed" });
   } catch (err) {
-    console.error("Delete Staff Error:", err);
     res.status(500).send("Server Error");
   }
 });
 
 // ==========================================
-// 7. SYSTEM ADMIN: ALL DOCTORS MANAGEMENT
+// 7. DOCTOR MANAGEMENT
 // ==========================================
 router.get("/all-doctors", protect, authorize(["system_admin"]), async (req, res) => {
   try {
     const doctors = await Doctor.find().select("-password").sort({ createdAt: -1 });
     res.json(doctors);
   } catch (err) {
-    console.error("Fetch All Doctors Error:", err);
     res.status(500).send("Server Error");
   }
 });
@@ -425,34 +347,23 @@ router.get("/all-doctors", protect, authorize(["system_admin"]), async (req, res
 router.put("/all-doctors/:id/approve", protect, authorize(["system_admin"]), async (req, res) => {
   try {
     const { isApproved } = req.body;
-    const doctor = await Doctor.findByIdAndUpdate(
-      req.params.id,
-      { isApproved },
-      { new: true }
-    ).select("-password");
-
-    if (!doctor) return res.status(404).json({ msg: "Doctor not found" });
-
-    res.json({ msg: isApproved ? "Doctor approved successfully" : "Doctor account rejected", doctor });
+    const doctor = await Doctor.findByIdAndUpdate(req.params.id, { isApproved }, { new: true }).select("-password");
+    res.json({ msg: isApproved ? "Doctor approved" : "Doctor rejected", doctor });
   } catch (err) {
-    console.error("Approve Doctor Error:", err);
     res.status(500).send("Server Error");
   }
 });
 
-// ==========================================
-// 8. RECEPTIONIST / NURSE DASHBOARD: DOCTORS STATUS
-// ==========================================
 router.get("/doctors", protect, authorize(["system_admin", "receptionist", "nurse"]), async (req, res) => {
   try {
     const doctors = await Doctor.find().select("name specialization isArrived allocatedRoom allocatedNurse channelingTime channelingStatus phone profileImage sessionStarted currentQueueNumber");
     res.json(doctors);
   } catch (err) {
-    console.error("Fetch Doctors Error:", err);
     res.status(500).send("Server Error");
   }
 });
 
+// Updated Doctor Status Route with Notification Trigger
 router.put("/doctors/:id/status", protect, authorize(["system_admin", "receptionist", "nurse"]), async (req, res) => {
   try {
     const { isArrived, allocatedRoom, allocatedNurse, channelingTime, channelingStatus, sessionStarted, currentQueueNumber } = req.body;
@@ -460,36 +371,41 @@ router.put("/doctors/:id/status", protect, authorize(["system_admin", "reception
 
     if (!doctor) return res.status(404).json({ msg: "Doctor not found" });
 
-    if (isArrived !== undefined) {
-      doctor.isArrived = isArrived;
-      
-      // ✅ AUTOMATION: If doctor arrives, find their approved schedule for today and set allocation
-      if (isArrived === true) {
-        try {
-          const ScheduleRequest = mongoose.model('ScheduleRequest');
-          const startOfDay = new Date();
-          startOfDay.setHours(0, 0, 0, 0);
-          const endOfDay = new Date();
-          endOfDay.setHours(23, 59, 59, 999);
+    // Handle Doctor Arrival and Patient Notifications
+    if (isArrived === true && !doctor.isArrived) {
+      try {
+        const startOfDay = new Date();
+        startOfDay.setHours(0, 0, 0, 0);
+        const endOfDay = new Date();
+        endOfDay.setHours(23, 59, 59, 999);
 
-          const todaySchedule = await ScheduleRequest.findOne({
-            doctorId: doctor._id,
-            status: 'approved',
-            date: { $gte: startOfDay, $lte: endOfDay }
-          }).sort({ startTime: 1 }); // Get the first approved session of the day
+        const activeAppointments = await Appointment.find({
+          doctorId: doctor._id,
+          date: { $gte: startOfDay, $lte: endOfDay },
+          status: { $in: ["confirmed", "Confirmed", "pending", "Pending"] }
+        });
 
-          if (todaySchedule) {
-            console.log(`✅ Auto-populating allocation for ${doctor.name} from schedule: ${todaySchedule.allocatedRoom}, ${todaySchedule.allocatedNurse}`);
-            doctor.allocatedRoom = todaySchedule.allocatedRoom || doctor.allocatedRoom;
-            doctor.allocatedNurse = todaySchedule.allocatedNurse || doctor.allocatedNurse;
-            doctor.channelingTime = new Date(todaySchedule.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-          }
-        } catch (err) {
-          console.error("Failed to auto-populate allocation from schedule:", err.message);
+        if (activeAppointments.length > 0) {
+          const notificationPromises = activeAppointments.map(app => {
+            const timeInfo = channelingTime || doctor.channelingTime 
+              ? `Sessions start around ${channelingTime || doctor.channelingTime}.` 
+              : "Sessions will begin shortly.";
+
+            return Notification.create({
+              userId: app.patientId,
+              type: 'arrival',
+              title: "Doctor Arrived",
+              message: `Dr. ${doctor.name} has arrived. ${timeInfo} Please proceed to Room ${allocatedRoom || doctor.allocatedRoom || 'TBA'}.`,
+              metadata: { doctorId: doctor._id, appointmentId: app._id }
+            });
+          });
+          await Promise.all(notificationPromises);
         }
-      }
+      } catch (err) { console.error("Notification trigger error:", err); }
     }
     
+    // Update Doctor Fields
+    if (isArrived !== undefined) doctor.isArrived = isArrived;
     if (allocatedRoom !== undefined) doctor.allocatedRoom = allocatedRoom;
     if (allocatedNurse !== undefined) doctor.allocatedNurse = allocatedNurse;
     if (channelingTime !== undefined) doctor.channelingTime = channelingTime;
