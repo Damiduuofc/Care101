@@ -11,7 +11,6 @@ import {
   ActivityIndicator,
   Modal,
   FlatList,
-  RefreshControl,
   Alert
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -21,8 +20,6 @@ import * as SecureStore from 'expo-secure-store';
 import {
   Bell,
   X,
-  Info,
-  Trash2,
   Calendar,
   User,
   Wallet,
@@ -36,15 +33,18 @@ import {
 import BottomNavBar from '../../components/BottomNavBar';
 
 const API_URL = `${process.env.EXPO_PUBLIC_API_URL}/doctor`;
+const API_BASE = process.env.EXPO_PUBLIC_API_URL;
 
 export default function DashboardScreen() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
-  // State for Dynamic Data
+  // --- STATE FOR DYNAMIC DATA ---
   const [stats, setStats] = useState({
     name: "Doctor",
     specialization: "Specialist",
+    profileImage: null, // Added for the photo
     channelingTime: "",
     channelingStatus: "On Time",
     currentQueueNumber: 0,
@@ -54,15 +54,102 @@ export default function DashboardScreen() {
     records: 0
   });
 
-  const [refreshing, setRefreshing] = useState(false);
   const [notifications, setNotifications] = useState<any[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [showNotifModal, setShowNotifModal] = useState(false);
   const [notifLoading, setNotifLoading] = useState(false);
 
-  const API_BASE = process.env.EXPO_PUBLIC_API_URL;
+  const bannerImage = { uri: "https://images.unsplash.com/photo-1576091160550-2173bdb999ef?auto=format&fit=crop&w=800&q=80" };
 
-  const bannerImage = { uri: "https://unsplash.com/photos/black-and-gray-stethoscope-yo01Z-9HQAw" };
+  // --- DATA FETCHING ---
+  const fetchDashboard = async () => {
+    try {
+      const token = await SecureStore.getItemAsync("token");
+      if (!token) {
+        router.replace("/");
+        return;
+      }
+
+      const response = await fetch(`${API_URL}/dashboard-stats`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        // Mapping incoming data to state (handling potential naming differences)
+        setStats(prev => ({
+          ...prev,
+          name: data.fullName || data.name || "Doctor",
+          specialization: data.specialization || "General Practitioner",
+          profileImage: data.profileImage || null,
+          income: data.income || 0,
+          records: data.records || 0,
+          channelingTime: data.channelingTime || "",
+          currentQueueNumber: data.currentQueueNumber || 0,
+          channelingStatus: data.channelingStatus || "On Time"
+        }));
+      }
+    } catch (error) {
+      console.error("Dashboard Fetch Error:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchNotifications = async () => {
+    try {
+      const token = await SecureStore.getItemAsync('token');
+      if (!token) return;
+
+      const res = await fetch(`${API_BASE}/notifications`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setNotifications(data);
+        const unread = data.filter((n: any) => !n.read).length;
+        setUnreadCount(unread);
+      }
+    } catch (error) {
+      console.error("Notifications Error:", error);
+    }
+  };
+
+  useFocusEffect(
+    useCallback(() => {
+      fetchDashboard();
+      fetchNotifications();
+      const intervalId = setInterval(fetchNotifications, 10000);
+      return () => clearInterval(intervalId);
+    }, [])
+  );
+
+  // --- ACTIONS ---
+  const markAsRead = async (id: string) => {
+    try {
+      const token = await SecureStore.getItemAsync('token');
+      await fetch(`${API_BASE}/notifications/read/${id}`, {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      fetchNotifications();
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+  const deleteNotification = async (id: string) => {
+    try {
+      const token = await SecureStore.getItemAsync('token');
+      await fetch(`${API_BASE}/notifications/${id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      fetchNotifications();
+    } catch (error) {
+      console.error(error);
+    }
+  };
 
   const quickActions = [
     {
@@ -112,119 +199,7 @@ export default function DashboardScreen() {
       color: '#8b5cf6',
       bg: '#f5f3ff',
     },
-
   ];
-
-    const fetchDashboard = async () => {
-      try {
-        const token = await SecureStore.getItemAsync("token");
-
-        if (!token) {
-          console.log("No token found, redirecting to login");
-          router.replace("/");
-          return;
-        }
-
-        const response = await fetch(`${API_URL}/dashboard-stats`, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-
-        if (response.ok) {
-          const data = await response.json();
-          setStats(data);
-        } else {
-          console.log("Failed to fetch stats, status:", response.status);
-        }
-      } catch (error) {
-        console.error("Network Error:", error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    const fetchNotifications = async () => {
-      if (notifications.length === 0) setNotifLoading(true);
-      try {
-        const token = await SecureStore.getItemAsync('token');
-        if (!token) {
-          console.log("NOTIF ERROR: No token found");
-          return;
-        }
-        const res = await fetch(`${API_BASE}/notifications`, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        if (res.ok) {
-          const data = await res.json();
-          console.log("DOCTOR NOTIFS FULL DATA:", JSON.stringify(data, null, 2));
-          setNotifications(data);
-          const unread = data.filter((n: any) => !n.read).length;
-          setUnreadCount(unread);
-        }
-      } catch (error) {
-        console.error("Notifications Error:", error);
-      } finally {
-        setNotifLoading(false);
-      }
-    };
-
-    const markAsRead = async (id: string) => {
-      try {
-        const token = await SecureStore.getItemAsync('token');
-        await fetch(`${API_BASE}/notifications/read/${id}`, {
-          method: 'PUT',
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        fetchNotifications();
-      } catch (error) {
-        console.error(error);
-      }
-    };
-
-    const deleteNotification = async (id: string) => {
-      try {
-        const token = await SecureStore.getItemAsync('token');
-        await fetch(`${API_BASE}/notifications/${id}`, {
-          method: 'DELETE',
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        fetchNotifications();
-      } catch (error) {
-        console.error(error);
-      }
-    };
-
-    const clearAllNotifications = async () => {
-      try {
-        const token = await SecureStore.getItemAsync('token');
-        await fetch(`${API_BASE}/notifications/clear-all`, {
-          method: 'DELETE',
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        fetchNotifications();
-      } catch (error) {
-        console.error(error);
-      }
-    };
-
-  // ✅ AUTO-REFRESH LOGIC
-  // This runs every time the screen comes into focus
-  useFocusEffect(
-    useCallback(() => {
-      fetchDashboard();
-      fetchNotifications();
-
-      // Real-time polling
-      const intervalId = setInterval(fetchNotifications, 10000); // 10 seconds
-
-      return () => clearInterval(intervalId);
-    }, [])
-  );
-
-  const onRefresh = async () => {
-    setRefreshing(true);
-    await Promise.all([fetchDashboard(), fetchNotifications()]);
-    setRefreshing(false);
-  };
 
   if (loading) {
     return (
@@ -241,16 +216,24 @@ export default function DashboardScreen() {
       <SafeAreaView edges={['top']} style={styles.headerSafeArea}>
         <View style={styles.headerContainer}>
           <View style={styles.profileSection}>
-            <View style={styles.avatarContainer}>
-              <User size={24} color="#06b6d4" />
-            </View>
+            {/* AVATAR WITH PHOTO LOGIC */}
+            <TouchableOpacity 
+                style={styles.avatarContainer}
+                onPress={() => router.push('/dashboard/profile' as any)}
+            >
+              {stats.profileImage ? (
+                <Image source={{ uri: stats.profileImage }} style={styles.avatarImage} />
+              ) : (
+                <User size={24} color="#06b6d4" />
+              )}
+            </TouchableOpacity>
+            
             <View style={{ flex: 1 }}>
               <Text style={styles.welcomeText}>Welcome Doctor</Text>
-              <Text style={styles.doctorName}>{stats.name}</Text>
+              <Text style={styles.doctorName}>Dr. {stats.name}</Text>
               <Text style={styles.specialization}>{stats.specialization}</Text>
             </View>
 
-            {/* NOTIFICATION BELL */}
             <TouchableOpacity
               style={styles.notifBtn}
               onPress={() => setShowNotifModal(true)}
@@ -266,52 +249,44 @@ export default function DashboardScreen() {
         </View>
       </SafeAreaView>
 
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.scrollContent}
-      >
-        {/* --- HERO BANNER --- */}
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+        {/* HERO BANNER */}
         <View style={styles.heroContainer}>
           <Image source={bannerImage} style={styles.heroImage} />
-          <LinearGradient
-            colors={['transparent', 'rgba(0,0,0,0.7)']}
-            style={styles.heroOverlay}
-          >
+          <LinearGradient colors={['transparent', 'rgba(0,0,0,0.7)']} style={styles.heroOverlay}>
             <Text style={styles.heroTitle}>SMART CARE STARTS HERE</Text>
             <Text style={styles.heroSubtitle}>Your Entire Practice In One Place</Text>
           </LinearGradient>
         </View>
 
-        {/* --- OVERVIEW SECTION --- */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Overview</Text>
-          <View style={styles.overviewGrid}>
+{/* --- OVERVIEW SECTION --- */}
+<View style={styles.section}>
+  <Text style={styles.sectionTitle}>Overview</Text>
+  {/* Corrected: Changed <div> to <View> */}
+  <View style={styles.overviewGrid}> 
+    <View style={styles.overviewCard}>
+      <View style={[styles.iconCircle, { backgroundColor: '#ecfdf5' }]}>
+        <Wallet size={24} color="#10b981" />
+      </View>
+      <View>
+        <Text style={styles.statValue}>Rs. {stats.income.toLocaleString()}</Text>
+        <Text style={styles.statLabel}>Total Payable Income</Text>
+      </View>
+    </View>
 
-            {/* INCOME CARD */}
-            <View style={styles.overviewCard}>
-              <View style={[styles.iconCircle, { backgroundColor: '#ecfdf5' }]}>
-                <Wallet size={24} color="#10b981" />
-              </View>
-              <View>
-                <Text style={styles.statValue}>Rs. {stats.income.toLocaleString()}</Text>
-                <Text style={styles.statLabel}>Total Payable Income</Text>
-              </View>
-            </View>
+    <View style={styles.overviewCard}>
+      <View style={[styles.iconCircle, { backgroundColor: '#e0f2fe' }]}>
+        <Stethoscope size={24} color="#0ea5e9" />
+      </View>
+      <View>
+        <Text style={styles.statValue}>{stats.records}</Text>
+        <Text style={styles.statLabel}>Total Records</Text>
+      </View>
+    </View>
+  </View>
+</View>
 
-            {/* RECORDS CARD */}
-            <View style={styles.overviewCard}>
-              <View style={[styles.iconCircle, { backgroundColor: '#e0f2fe' }]}>
-                <Stethoscope size={24} color="#0ea5e9" />
-              </View>
-              <View>
-                <Text style={styles.statValue}>{stats.records}</Text>
-                <Text style={styles.statLabel}>Total Records</Text>
-              </View>
-            </View>
-          </View>
-        </View>
-
-        {/* --- QUICK ACTIONS SECTION --- */}
+        {/* QUICK ACTIONS SECTION */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Quick Actions</Text>
           <View style={styles.actionList}>
@@ -333,71 +308,42 @@ export default function DashboardScreen() {
             ))}
           </View>
         </View>
-
-
-
       </ScrollView>
 
-      {/* --- NOTIFICATIONS MODAL --- */}
-      <Modal
-        visible={showNotifModal}
-        animationType="slide"
-        onRequestClose={() => setShowNotifModal(false)}
-      >
+      {/* NOTIFICATIONS MODAL */}
+      <Modal visible={showNotifModal} animationType="slide" onRequestClose={() => setShowNotifModal(false)}>
         <SafeAreaView style={styles.modalContainer}>
           <View style={styles.modalHeader}>
-            <View>
-              <Text style={styles.modalTitle}>Notifications</Text>
-              {notifications.length > 0 && (
-                <TouchableOpacity onPress={clearAllNotifications}>
-                  <Text style={{ color: '#ef4444', fontSize: 12, fontWeight: '600', marginTop: 4 }}>Clear All</Text>
-                </TouchableOpacity>
-              )}
-            </View>
+            <Text style={styles.modalTitle}>Notifications</Text>
             <TouchableOpacity onPress={() => setShowNotifModal(false)} style={styles.closeBtn}>
               <X size={24} color="#0f172a" />
             </TouchableOpacity>
           </View>
 
-          {notifLoading && notifications.length === 0 ? (
-            <ActivityIndicator size="large" color="#06b6d4" style={{ marginTop: 50 }} />
-          ) : (
-            <FlatList
-              data={notifications}
-              keyExtractor={(item) => item._id}
-              contentContainerStyle={{ padding: 20 }}
-              ListEmptyComponent={
-                <View style={styles.emptyNotif}>
-                  <Bell size={48} color="#e2e8f0" />
-                  <Text style={styles.emptyNotifText}>No notifications yet</Text>
-                </View>
-              }
-              renderItem={({ item }) => (
-                <View
-                  style={[styles.notifCard, !item.read && styles.notifUnread]}
-                >
-                  <View style={[styles.notifContent, { flexDirection: 'column', alignItems: 'flex-start' }]}>
-                    <TouchableOpacity 
-                      onPress={() => markAsRead(item._id)}
-                      style={{ flexDirection: 'row', alignItems: 'center', width: '100%' }}
-                    >
-                      <View style={{ flex: 1 }}>
-                        <Text style={[styles.notifMsg, !item.read && { fontWeight: '700' }]}>{item.message}</Text>
-                        <Text style={styles.notifTime}>{new Date(item.timestamp).toLocaleString()}</Text>
-                      </View>
-                    </TouchableOpacity>
-                  </View>
-                  
-                  <TouchableOpacity 
-                    style={styles.deleteBtn} 
-                    onPress={() => deleteNotification(item._id)}
-                  >
-                    <X size={16} color="#94a3b8" />
-                  </TouchableOpacity>
-                </View>
-              )}
-            />
-          )}
+          <FlatList
+            data={notifications}
+            keyExtractor={(item) => item._id}
+            contentContainerStyle={{ padding: 20 }}
+            ListEmptyComponent={
+              <View style={styles.emptyNotif}>
+                <Bell size={48} color="#e2e8f0" />
+                <Text style={styles.emptyNotifText}>No notifications yet</Text>
+              </View>
+            }
+            renderItem={({ item }) => (
+              <View style={[styles.notifCard, !item.read && styles.notifUnread]}>
+                <TouchableOpacity onPress={() => markAsRead(item._id)} style={styles.notifContent}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.notifMsg, !item.read && { fontWeight: '700' }]}>{item.message}</Text>
+                      <Text style={styles.notifTime}>{new Date(item.timestamp).toLocaleString()}</Text>
+                    </View>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.deleteBtn} onPress={() => deleteNotification(item._id)}>
+                  <X size={16} color="#94a3b8" />
+                </TouchableOpacity>
+              </View>
+            )}
+          />
         </SafeAreaView>
       </Modal>
 
@@ -406,17 +352,9 @@ export default function DashboardScreen() {
   );
 }
 
-// Keep your existing styles...
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f8fafc',
-  },
-  headerSafeArea: {
-    backgroundColor: '#fff',
-    zIndex: 10,
-    paddingTop: Platform.OS === 'android' ? 10 : 0,
-  },
+  container: { flex: 1, backgroundColor: '#f8fafc' },
+  headerSafeArea: { backgroundColor: '#fff', zIndex: 10 },
   headerContainer: {
     paddingHorizontal: 20,
     paddingVertical: 15,
@@ -424,10 +362,7 @@ const styles = StyleSheet.create({
     borderBottomColor: '#f1f5f9',
     backgroundColor: '#fff',
   },
-  profileSection: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
+  profileSection: { flexDirection: 'row', alignItems: 'center' },
   avatarContainer: {
     width: 50,
     height: 50,
@@ -438,22 +373,12 @@ const styles = StyleSheet.create({
     marginRight: 15,
     borderWidth: 1,
     borderColor: '#cffafe',
+    overflow: 'hidden',
   },
-  welcomeText: {
-    fontSize: 14,
-    color: '#06b6d4',
-    fontWeight: '700',
-    marginBottom: 2,
-  },
-  doctorName: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#0f172a',
-  },
-  specialization: {
-    fontSize: 13,
-    color: '#64748b',
-  },
+  avatarImage: { width: '100%', height: '100%', borderRadius: 25 },
+  welcomeText: { fontSize: 13, color: '#06b6d4', fontWeight: '700', marginBottom: 2 },
+  doctorName: { fontSize: 16, fontWeight: '700', color: '#0f172a' },
+  specialization: { fontSize: 12, color: '#64748b' },
   notifBtn: {
     width: 44,
     height: 44,
@@ -477,14 +402,8 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: '#fff',
   },
-  unreadText: {
-    color: '#fff',
-    fontSize: 10,
-    fontWeight: '800',
-  },
-  scrollContent: {
-    paddingBottom: 100,
-  },
+  unreadText: { color: '#fff', fontSize: 10, fontWeight: '800' },
+  scrollContent: { paddingBottom: 100 },
   heroContainer: {
     margin: 20,
     height: 160,
@@ -492,200 +411,50 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     position: 'relative',
     backgroundColor: '#0f172a',
-    shadowColor: '#06b6d4',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 5,
   },
-  heroImage: {
-    width: '100%',
-    height: '100%',
-    opacity: 0.8,
-  },
-  heroOverlay: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    padding: 16,
-    paddingTop: 40,
-  },
-  heroTitle: {
-    color: '#fff',
-    fontSize: 20,
-    fontWeight: '800',
-    marginBottom: 4,
-  },
-  heroSubtitle: {
-    color: '#cbd5e1',
-    fontSize: 14,
-  },
-  section: {
-    paddingHorizontal: 20,
-    marginBottom: 24,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#1e293b',
-    marginBottom: 16,
-  },
-  overviewGrid: {
-    flexDirection: 'row',
-    gap: 16,
-  },
+  heroImage: { width: '100%', height: '100%', opacity: 0.8 },
+  heroOverlay: { position: 'absolute', bottom: 0, left: 0, right: 0, padding: 16, paddingTop: 40 },
+  heroTitle: { color: '#fff', fontSize: 18, fontWeight: '800' },
+  heroSubtitle: { color: '#cbd5e1', fontSize: 13 },
+  section: { paddingHorizontal: 20, marginBottom: 24 },
+  sectionTitle: { fontSize: 17, fontWeight: '700', color: '#1e293b', marginBottom: 16 },
+  overviewGrid: { flexDirection: 'row', gap: 12 },
   overviewCard: {
     flex: 1,
     backgroundColor: '#fff',
     borderRadius: 16,
     padding: 16,
+    elevation: 2,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.05,
     shadowRadius: 4,
-    elevation: 2,
-    alignItems: 'flex-start',
   },
-  iconCircle: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 12,
-  },
-  statValue: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#0f172a',
-    marginBottom: 4,
-  },
-  statLabel: {
-    fontSize: 12,
-    color: '#64748b',
-  },
-  actionList: {
-    gap: 12,
-  },
+  iconCircle: { width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
+  statValue: { fontSize: 18, fontWeight: '700', color: '#0f172a' },
+  statLabel: { fontSize: 11, color: '#64748b' },
+  actionList: { gap: 12 },
   actionCard: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#fff',
     padding: 16,
     borderRadius: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
     elevation: 2,
   },
-  actionIconBox: {
-    width: 48,
-    height: 48,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 16,
-  },
-  actionDetails: {
-    flex: 1,
-  },
-  actionTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#1e293b',
-    marginBottom: 4,
-  },
-  actionSubtitle: {
-    fontSize: 12,
-    color: '#94a3b8',
-  },
-  emptyStateCard: {
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 40,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderStyle: 'dashed',
-    borderWidth: 2,
-    borderColor: '#e2e8f0',
-  },
-  emptyStateIcon: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: '#f1f5f9',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 12,
-  },
-  emptyStateText: {
-    color: '#94a3b8',
-    fontSize: 14,
-    fontWeight: '500',
-  },
-
-  // Modal Styles
+  actionIconBox: { width: 48, height: 48, borderRadius: 12, alignItems: 'center', justifyContent: 'center', marginRight: 16 },
+  actionDetails: { flex: 1 },
+  actionTitle: { fontSize: 15, fontWeight: '600', color: '#1e293b' },
+  actionSubtitle: { fontSize: 12, color: '#94a3b8' },
   modalContainer: { flex: 1, backgroundColor: '#fff' },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f1f5f9'
-  },
-  modalTitle: { fontSize: 20, fontWeight: '800', color: '#0f172a' },
-  notifCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: '#f1f5f9',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.03,
-    elevation: 1,
-    overflow: 'hidden'
-  },
-  notifContent: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 16,
-  },
-  deleteBtn: {
-    padding: 16,
-    borderLeftWidth: 1,
-    borderLeftColor: '#f1f5f9',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#fff',
-  },
-  closeBtn: {
-    width: 40,
-    height: 40,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  notifUnread: {
-    backgroundColor: '#f0f9ff',
-    borderColor: '#e0f2fe',
-  },
-  notifIconBox: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 12,
-  },
-  notifMsg: { fontSize: 14, color: '#334155', marginBottom: 4, lineHeight: 20 },
-  notifTime: { fontSize: 11, color: '#94a3b8' },
-  notifDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#0ea5e9' },
-  emptyNotif: { alignItems: 'center', justifyContent: 'center', marginTop: 100 },
+  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 20, borderBottomWidth: 1, borderBottomColor: '#f1f5f9' },
+  modalTitle: { fontSize: 20, fontWeight: '800' },
+  notifCard: { flexDirection: 'row', backgroundColor: '#fff', borderRadius: 16, marginBottom: 12, borderWidth: 1, borderColor: '#f1f5f9' },
+  notifUnread: { backgroundColor: '#f0f9ff', borderColor: '#e0f2fe' },
+  notifContent: { flex: 1, padding: 16 },
+  notifMsg: { fontSize: 14, color: '#334155' },
+  notifTime: { fontSize: 11, color: '#94a3b8', marginTop: 4 },
+  deleteBtn: { padding: 16, borderLeftWidth: 1, borderLeftColor: '#f1f5f9', justifyContent: 'center' },
+  closeBtn: { padding: 8 },
+  emptyNotif: { alignItems: 'center', marginTop: 100 },
   emptyNotifText: { color: '#94a3b8', fontSize: 16, marginTop: 16 },
 });

@@ -4,31 +4,23 @@ import { AuthProvider, useAuth } from '../context/auth';
 import "../global.css";
 import { PortalHost } from "@rn-primitives/portal";
 import "../theme.css";
-import { Platform, View, ActivityIndicator, Text, LogBox, Alert } from 'react-native'; 
+import { Platform, View, ActivityIndicator, LogBox } from 'react-native'; 
 import * as NavigationBar from 'expo-navigation-bar';
-
 import { StripeProvider } from '@stripe/stripe-react-native';
 
-// ✅ This will suppress ALL development-time error popups (red/yellow boxes)
-LogBox.ignoreAllLogs();
+// ✅ Import your ChatProvider
+import { ChatProvider } from '@/context/ChatContext';
 
-// ✅ (Optional) Un-comment below to also disable ALL Alert.alert() popups throughout the app
-// Alert.alert = () => {}; 
+// Suppress logs for a cleaner dev experience
+LogBox.ignoreAllLogs();
 
 function RootLayoutNav() {
   const { user, isLoading } = useAuth();
-  const router = useRouter();
   const segments = useSegments();
 
-  // ✅ 1. DEFINE 'currentRoute' HERE (Safe Check)
-  // We use optional chaining (?.) just in case segments is undefined
   const currentRoute: string = segments?.[0] || "index"; 
 
-  // 2. Logic to Hide Ads
-  const hideAdsOn = ['login', 'signup', 'dashboard', 'onboarding', '(auth)'];
-  const showAds = !user && !hideAdsOn.includes(currentRoute);
-
-  // EFFECT 1: Hide Navigation Bar (Android Only)
+  // Navigation Bar styling for Android
   useEffect(() => {
     if (Platform.OS === 'android') {
       const hideNav = async () => {
@@ -43,17 +35,28 @@ function RootLayoutNav() {
     }
   }, []);
 
- 
+  if (isLoading) {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+        <ActivityIndicator size="large" color="#06b6d4" />
+      </View>
+    );
+  }
 
   return (
     <View style={{ flex: 1 }}>
-      <Stack screenOptions={{ headerShown: false }}>
-        <Stack.Screen name="index" /> 
-        <Stack.Screen name="login" />
-        <Stack.Screen name="dashboard" />
-      </Stack>
-      
- 
+      {/* ✅ ChatProvider wraps the Stack. 
+          This ensures that even when the Dashboard re-renders 
+          every 20 seconds, the chat state stays alive in this wrapper.
+      */}
+      <ChatProvider>
+        <Stack screenOptions={{ headerShown: false }}>
+          <Stack.Screen name="index" /> 
+          <Stack.Screen name="login" />
+          <Stack.Screen name="dashboard" />
+          <Stack.Screen name="patient-dashboard" />
+        </Stack>
+      </ChatProvider>
 
       <PortalHost />
     </View>
@@ -64,6 +67,7 @@ export default function RootLayout() {
   return (
     <StripeProvider publishableKey={process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY || ""}>
       <AuthProvider>
+        {/* ChatProvider is initialized inside RootLayoutNav above */}
         <RootLayoutNav />
       </AuthProvider>
     </StripeProvider>
