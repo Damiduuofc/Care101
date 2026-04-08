@@ -460,7 +460,36 @@ router.put("/doctors/:id/status", protect, authorize(["system_admin", "reception
 
     if (!doctor) return res.status(404).json({ msg: "Doctor not found" });
 
-    if (isArrived !== undefined) doctor.isArrived = isArrived;
+    if (isArrived !== undefined) {
+      doctor.isArrived = isArrived;
+      
+      // ✅ AUTOMATION: If doctor arrives, find their approved schedule for today and set allocation
+      if (isArrived === true) {
+        try {
+          const ScheduleRequest = mongoose.model('ScheduleRequest');
+          const startOfDay = new Date();
+          startOfDay.setHours(0, 0, 0, 0);
+          const endOfDay = new Date();
+          endOfDay.setHours(23, 59, 59, 999);
+
+          const todaySchedule = await ScheduleRequest.findOne({
+            doctorId: doctor._id,
+            status: 'approved',
+            date: { $gte: startOfDay, $lte: endOfDay }
+          }).sort({ startTime: 1 }); // Get the first approved session of the day
+
+          if (todaySchedule) {
+            console.log(`✅ Auto-populating allocation for ${doctor.name} from schedule: ${todaySchedule.allocatedRoom}, ${todaySchedule.allocatedNurse}`);
+            doctor.allocatedRoom = todaySchedule.allocatedRoom || doctor.allocatedRoom;
+            doctor.allocatedNurse = todaySchedule.allocatedNurse || doctor.allocatedNurse;
+            doctor.channelingTime = new Date(todaySchedule.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+          }
+        } catch (err) {
+          console.error("Failed to auto-populate allocation from schedule:", err.message);
+        }
+      }
+    }
+    
     if (allocatedRoom !== undefined) doctor.allocatedRoom = allocatedRoom;
     if (allocatedNurse !== undefined) doctor.allocatedNurse = allocatedNurse;
     if (channelingTime !== undefined) doctor.channelingTime = channelingTime;

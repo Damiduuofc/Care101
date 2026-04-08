@@ -17,7 +17,11 @@ const ScheduleRequestSchema = new mongoose.Schema({
     default: 'pending'
   },
   
-  createdAt: { type: Date, default: Date.now }
+  createdAt: { type: Date, default: Date.now },
+  
+  // Allocation Details (set on approval)
+  allocatedRoom: { type: String, default: "" },
+  allocatedNurse: { type: String, default: "" }
 });
 
 export default mongoose.model('ScheduleRequest', ScheduleRequestSchema);

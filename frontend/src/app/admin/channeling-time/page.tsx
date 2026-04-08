@@ -9,6 +9,7 @@ import { Loader2, Clock, CalendarDays, Check, X, User, Bell } from "lucide-react
 
 export default function ChannelingRequestDemo() {
     const [requests, setRequests] = useState<any[]>([]);
+    const [nurses, setNurses] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [loadingAction, setLoadingAction] = useState<string | null>(null);
 
@@ -16,7 +17,25 @@ export default function ChannelingRequestDemo() {
 
     useEffect(() => {
         fetchRequests();
+        fetchNurses();
     }, []);
+
+    const fetchNurses = async () => {
+        try {
+            const token = localStorage.getItem("adminToken");
+            const response = await fetch(`${API_URL}/admin/staff`, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            if (response.ok) {
+                const data = await response.json();
+                if (Array.isArray(data)) {
+                    setNurses(data.filter((s: any) => s.role === "nurse"));
+                }
+            }
+        } catch (error) {
+            console.error("Fetch Nurses Error:", error);
+        }
+    };
 
     const fetchRequests = async () => {
         try {
@@ -35,7 +54,12 @@ export default function ChannelingRequestDemo() {
         }
     };
 
-    const handleAction = async (id: string, newStatus: "approved" | "rejected") => {
+    const handleAction = async (id: string, newStatus: "approved" | "rejected", allocation?: { room: string, nurse: string }) => {
+        if (newStatus === "approved" && (!allocation?.room || !allocation?.nurse)) {
+            alert("Please select a Room and Nurse before confirming.");
+            return;
+        }
+
         setLoadingAction(id);
         try {
             const token = localStorage.getItem("adminToken");
@@ -45,16 +69,24 @@ export default function ChannelingRequestDemo() {
                     "Content-Type": "application/json",
                     Authorization: `Bearer ${token}` 
                 },
-                body: JSON.stringify({ status: newStatus })
+                body: JSON.stringify({ 
+                    status: newStatus,
+                    allocatedRoom: allocation?.room,
+                    allocatedNurse: allocation?.nurse
+                })
             });
             
             if (response.ok) {
                 setRequests(prev => 
-                    prev.map(req => req._id === id ? { ...req, status: newStatus } : req)
+                    prev.map(req => req._id === id ? { ...req, status: newStatus, allocatedRoom: allocation?.room, allocatedNurse: allocation?.nurse } : req)
                 );
+            } else {
+                const errData = await response.json();
+                alert(errData.msg || "Failed to update status");
             }
         } catch (error) {
             console.error("Action Error:", error);
+            alert("An error occurred. Please try again.");
         } finally {
             setLoadingAction(null);
         }
@@ -126,6 +158,7 @@ export default function ChannelingRequestDemo() {
                                 <RequestCard 
                                     key={req._id} 
                                     req={req} 
+                                    nurses={nurses}
                                     onAction={handleAction} 
                                     loadingId={loadingAction} 
                                     formatDate={formatDate}
@@ -157,8 +190,10 @@ export default function ChannelingRequestDemo() {
     );
 }
 
-function RequestCard({ req, onAction, loadingId, isHistory, formatDate, formatTime }: any) {
+function RequestCard({ req, nurses, onAction, loadingId, isHistory, formatDate, formatTime }: any) {
     const isLoading = loadingId === req._id;
+    const [selectedRoom, setSelectedRoom] = useState(req.allocatedRoom || "");
+    const [selectedNurse, setSelectedNurse] = useState(req.allocatedNurse || "");
 
     return (
         <Card className={`group border-slate-200 shadow-sm overflow-hidden transition-all duration-300 ${isHistory ? 'bg-slate-50/50' : 'hover:shadow-md hover:border-[#06b6d4]/30 bg-white'}`}>
@@ -193,6 +228,56 @@ function RequestCard({ req, onAction, loadingId, isHistory, formatDate, formatTi
                         </div>
                     </div>
 
+                    {!isHistory && (
+                        <div className="flex flex-col sm:flex-row gap-4 w-full lg:w-auto">
+                            <div className="space-y-1">
+                                <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">Room</label>
+                                <select 
+                                    className="h-9 px-3 text-sm rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-[#06b6d4]/50 bg-white min-w-[120px]"
+                                    value={selectedRoom}
+                                    onChange={(e) => setSelectedRoom(e.target.value)}
+                                    disabled={isLoading}
+                                >
+                                    <option value="">Select Room</option>
+                                    {Array.from({ length: 20 }, (_, i) => i + 1).map(num => (
+                                        <option key={num} value={`Room ${num}`}>Room {num}</option>
+                                    ))}
+                                </select>
+                            </div>
+                            <div className="space-y-1">
+                                <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">Nurse</label>
+                                <select 
+                                    className="h-9 px-3 text-sm rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-[#06b6d4]/50 bg-white min-w-[150px]"
+                                    value={selectedNurse}
+                                    onChange={(e) => setSelectedNurse(e.target.value)}
+                                    disabled={isLoading}
+                                >
+                                    <option value="">Select Nurse</option>
+                                    {nurses?.map((nurse: any) => (
+                                        <option key={nurse._id} value={nurse.name}>{nurse.name}</option>
+                                    ))}
+                                </select>
+                            </div>
+                        </div>
+                    )}
+
+                    {isHistory && (
+                        <div className="flex items-center gap-4 text-xs font-medium text-slate-500">
+                            {req.allocatedRoom && (
+                                <div className="flex items-center gap-1">
+                                    <Building size={14} className="text-slate-400" />
+                                    <span>{req.allocatedRoom}</span>
+                                </div>
+                            )}
+                            {req.allocatedNurse && (
+                                <div className="flex items-center gap-1">
+                                    <User size={14} className="text-slate-400" />
+                                    <span>{req.allocatedNurse}</span>
+                                </div>
+                            )}
+                        </div>
+                    )}
+
                     {/* Actions */}
                     <div className="flex items-center gap-3 w-full lg:w-auto justify-end">
                         {isHistory ? (
@@ -213,7 +298,7 @@ function RequestCard({ req, onAction, loadingId, isHistory, formatDate, formatTi
                                     Reject
                                 </Button>
                                 <Button 
-                                    onClick={() => onAction(req._id, "approved")}
+                                    onClick={() => onAction(req._id, "approved", { room: selectedRoom, nurse: selectedNurse })}
                                     className="bg-[#06b6d4] hover:bg-[#0891b2] text-white shadow-lg shadow-cyan-500/20 px-6 min-w-[120px]"
                                     disabled={isLoading}
                                 >

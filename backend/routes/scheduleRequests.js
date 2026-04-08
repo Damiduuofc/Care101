@@ -92,7 +92,7 @@ router.get('/all', auth, async (req, res) => {
 // ==========================================
 router.put('/:id/status', auth, async (req, res) => {
   try {
-    const { status } = req.body; // 'approved' or 'rejected'
+    const { status, allocatedRoom, allocatedNurse } = req.body; // 'approved' or 'rejected'
     
     if (!['approved', 'rejected'].includes(status)) {
       return res.status(400).json({ msg: 'Invalid status. Must be approved or rejected.' });
@@ -101,6 +101,36 @@ router.put('/:id/status', auth, async (req, res) => {
     const request = await ScheduleRequest.findById(req.params.id);
     if (!request) {
       return res.status(404).json({ msg: 'Request not found' });
+    }
+
+    if (status === 'approved') {
+      if (!allocatedRoom || !allocatedNurse) {
+        return res.status(400).json({ msg: 'Room and Nurse must be allocated for approval' });
+      }
+
+      // ✅ CONFLICT CHECK: Prevents double-booking same room or nurse at the same time
+      const conflict = await ScheduleRequest.findOne({
+        _id: { $ne: request._id },
+        status: 'approved',
+        date: request.date,
+        $or: [
+          { allocatedRoom: allocatedRoom },
+          { allocatedNurse: allocatedNurse }
+        ],
+        startTime: { $lt: request.endTime },
+        endTime: { $gt: request.startTime }
+      });
+
+      if (conflict) {
+        const type = conflict.allocatedRoom === allocatedRoom ? 'Room' : 'Nurse';
+        return res.status(409).json({ 
+          msg: `Conflict detected: ${type} "${type === 'Room' ? allocatedRoom : allocatedNurse}" is already booked by ${conflict.doctorName} during this time.`,
+          conflictWith: conflict.doctorName
+        });
+      }
+
+      request.allocatedRoom = allocatedRoom;
+      request.allocatedNurse = allocatedNurse;
     }
 
     request.status = status;
@@ -113,13 +143,17 @@ router.put('/:id/status', auth, async (req, res) => {
     const doctorNotification = new Notification({
       userId: request.doctorId,
       type: 'schedule_request',
-      message: `Your channeling schedule request for ${new Date(request.date).toDateString()} has been ${status}.`,
+      message: status === 'approved' 
+        ? `Your channeling schedule for ${new Date(request.date).toDateString()} has been APPROVED. Room: ${allocatedRoom}, Nurse: ${allocatedNurse}.`
+        : `Your channeling schedule request for ${new Date(request.date).toDateString()} has been REJECTED.`,
       metadata: {
         requestId: request._id,
         status: status,
         date: request.date,
         startTime: request.startTime,
-        endTime: request.endTime
+        endTime: request.endTime,
+        allocatedRoom: request.allocatedRoom,
+        allocatedNurse: request.allocatedNurse
       }
     });
 
@@ -152,6 +186,29 @@ router.get('/doctor/:doctorId/approved', auth, async (req, res) => {
   } catch (err) {
     console.error('Fetch Approved Schedules Error:', err.message);
     res.status(500).json({ msg: 'Server error while fetching approved schedules' });
+  }
+});
+
+// ==========================================
+// 7. RECEPTIONIST: Get all approved schedules for today
+// ==========================================
+router.get('/approved/today', auth, async (req, res) => {
+  try {
+    const startOfDay = new Date();
+    startOfDay.setHours(0, 0, 0, 0);
+
+    const endOfDay = new Date();
+    endOfDay.setHours(23, 59, 59, 999);
+
+    const schedules = await ScheduleRequest.find({
+      status: 'approved',
+      date: { $gte: startOfDay, $lte: endOfDay }
+    }).sort({ startTime: 1 });
+
+    res.json(schedules);
+  } catch (err) {
+    console.error('Fetch Today Approved Error:', err.message);
+    res.status(500).json({ msg: 'Server error while fetching today\'s schedules' });
   }
 });
 

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import Sidebar from "@/components/admin/Sidebar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, } from "@/components/ui/card";
@@ -35,9 +35,12 @@ import {
     User,
     CreditCard,
     Wallet,
-    Clock
+    Clock,
+    X
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import InvoiceTemplate from "@/components/admin/InvoiceTemplate";
+import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api";
 
@@ -60,6 +63,49 @@ export default function BillingPage() {
         amount: "",
         paymentMethod: "App" // "Cash" or "App"
     });
+
+    // Print State
+    const [selectedBill, setSelectedBill] = useState<any>(null);
+    const [showPrintDialog, setShowPrintDialog] = useState(false);
+    const invoiceRef = useRef<HTMLDivElement>(null);
+
+    const handlePrint = (bill: any) => {
+        setSelectedBill(bill);
+        setShowPrintDialog(true);
+    };
+
+    const triggerPrint = () => {
+        const printContent = invoiceRef.current;
+        if (!printContent) return;
+
+        const printWindow = window.open('', '_blank');
+        if (!printWindow) return;
+
+        printWindow.document.write(`
+            <html>
+                <head>
+                    <title>Invoice - ${selectedBill?._id}</title>
+                    <script src="https://cdn.tailwindcss.com"></script>
+                    <style>
+                        @media print {
+                            @page { margin: 0; }
+                            body { margin: 1cm; }
+                        }
+                    </style>
+                </head>
+                <body>
+                    ${printContent.innerHTML}
+                    <script>
+                        window.onload = () => {
+                            window.print();
+                            window.onafterprint = () => window.close();
+                        };
+                    </script>
+                </body>
+            </html>
+        `);
+        printWindow.document.close();
+    };
 
     const fetchHistory = async () => {
         setLoading(true);
@@ -146,6 +192,10 @@ export default function BillingPage() {
                 setSelectedPatient(null);
                 setSearchNic("");
                 setHistory([data.bill, ...history]);
+                
+                // Automatically show print dialog for the new bill
+                setSelectedBill(data.bill);
+                setShowPrintDialog(true);
             } else {
                 toast({ title: "Failed", description: data.msg || "Failed to create bill", variant: "destructive" });
             }
@@ -362,7 +412,14 @@ export default function BillingPage() {
                                             <TableCell className="font-bold text-slate-900">Rs. {inv.amount.toLocaleString()}</TableCell>
                                             <TableCell className="text-right">
                                                 <div className="flex justify-end gap-2">
-                                                    <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-400 hover:text-[#06b6d4]"><Printer size={16} /></Button>
+                                                    <Button 
+                                                        variant="ghost" 
+                                                        size="icon" 
+                                                        className="h-8 w-8 text-slate-400 hover:text-[#06b6d4]"
+                                                        onClick={() => handlePrint(inv)}
+                                                    >
+                                                        <Printer size={16} />
+                                                    </Button>
                                                     <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-400 hover:text-rose-500"><Download size={16} /></Button>
                                                 </div>
                                             </TableCell>
@@ -382,6 +439,34 @@ export default function BillingPage() {
                         )}
                     </CardContent>
                 </Card>
+
+                {/* Print Dialog */}
+                <Dialog open={showPrintDialog} onOpenChange={setShowPrintDialog}>
+                    <DialogContent className="max-w-[900px] p-0 overflow-hidden bg-slate-100 border-none">
+                        <div className="p-4 bg-white border-b flex justify-between items-center">
+                            <DialogTitle className="font-bold text-slate-800 flex items-center gap-2">
+                                <Printer size={18} className="text-[#06b6d4]" />
+                                Print Preview
+                            </DialogTitle>
+                            <DialogDescription className="sr-only">
+                                Invoice print preview for medical bill.
+                            </DialogDescription>
+                            <div className="flex gap-2">
+                                <Button onClick={triggerPrint} className="bg-[#06b6d4] hover:bg-[#0891b2] text-white gap-2">
+                                    <Printer size={16} /> Print Invoice
+                                </Button>
+                                <Button variant="outline" onClick={() => setShowPrintDialog(false)}>
+                                    <X size={16} className="mr-2" /> Close
+                                </Button>
+                            </div>
+                        </div>
+                        <div className="p-8 max-h-[80vh] overflow-y-auto">
+                            <div className="bg-white shadow-2xl mx-auto">
+                                <InvoiceTemplate ref={invoiceRef} bill={selectedBill} />
+                            </div>
+                        </div>
+                    </DialogContent>
+                </Dialog>
             </main>
         </div>
     );

@@ -48,8 +48,33 @@ export default function AppointmentScreen() {
   // Submit State
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // Schedule History State
+  const [schedules, setSchedules] = useState<any[]>([]);
+  const [loadingHistory, setLoadingHistory] = useState(true);
+
   // Calendar State
   const [currentMonth, setCurrentMonth] = useState(new Date());
+
+  useEffect(() => {
+    fetchSchedules();
+  }, []);
+
+  const fetchSchedules = async () => {
+    try {
+      const token = await SecureStore.getItemAsync('token');
+      const response = await fetch(`${API_URL}/schedule-requests/my-requests`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setSchedules(data);
+      }
+    } catch (error) {
+      console.error("Fetch Schedules Error:", error);
+    } finally {
+      setLoadingHistory(false);
+    }
+  };
 
   // Helper for Formatting
   const formatDate = (date: Date) => {
@@ -146,6 +171,7 @@ export default function AppointmentScreen() {
       router.back();
     } finally {
       setIsSubmitting(false);
+      fetchSchedules();
     }
   };
 
@@ -168,7 +194,11 @@ export default function AppointmentScreen() {
       >
         <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
 
-          <Text style={styles.sectionHeading}>Select Date</Text>
+          <View style={styles.container}>
+            <Text style={styles.sectionHeading}>Update Schedule</Text>
+          </View>
+
+          <Text style={styles.sectionHeadingSmall}>Select Date</Text>
 
           {/* CUSTOM CALENDAR */}
           <View style={styles.calendarContainer}>
@@ -307,6 +337,57 @@ export default function AppointmentScreen() {
               </View>
             </View>
 
+          </View>
+
+
+          {/* SCHEDULE HISTORY SECTION */}
+          <Text style={styles.sectionHeading}>Approved & Pending Schedules</Text>
+          <View style={styles.historyContainer}>
+            {loadingHistory ? (
+              <ActivityIndicator color="#06B6D4" style={{ marginVertical: 20 }} />
+            ) : schedules.length === 0 ? (
+              <View style={styles.emptyHistory}>
+                <Text style={styles.emptyHistoryText}>No requests found</Text>
+              </View>
+            ) : (
+              schedules.map((sched) => (
+                <View key={sched._id} style={styles.historyCard}>
+                  <View style={styles.historyCardHeader}>
+                    <Text style={styles.historyDate}>{new Date(sched.date).toDateString()}</Text>
+                    <View style={[
+                      styles.statusBadge,
+                      sched.status === 'approved' ? styles.statusApproved : 
+                      sched.status === 'rejected' ? styles.statusRejected : 
+                      styles.statusPending
+                    ]}>
+                      <Text style={[
+                        styles.statusText,
+                        sched.status === 'approved' ? { color: '#059669' } : 
+                        sched.status === 'rejected' ? { color: '#dc2626' } : 
+                        { color: '#d97706' }
+                      ]}>
+                        {sched.status.toUpperCase()}
+                      </Text>
+                    </View>
+                  </View>
+                  <View style={styles.historyCardBody}>
+                    <View style={styles.historyRow}>
+                      <Clock size={14} color="#64748b" />
+                      <Text style={styles.historyTime}>
+                        {new Date(sched.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - 
+                        {new Date(sched.endTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </Text>
+                    </View>
+                    {sched.status === 'approved' && (
+                      <View style={styles.allocationBox}>
+                        <Text style={styles.allocationText}>Room: {sched.allocatedRoom || 'TBD'}</Text>
+                        <Text style={styles.allocationText}>Nurse: {sched.allocatedNurse || 'TBD'}</Text>
+                      </View>
+                    )}
+                  </View>
+                </View>
+              ))
+            )}
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -591,5 +672,87 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: '700',
+  },
+  sectionHeadingSmall: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#64748b',
+    marginHorizontal: 20,
+    marginTop: 8,
+    marginBottom: 8
+  },
+  historyContainer: {
+    paddingHorizontal: 20,
+    marginTop: 8,
+  },
+  historyCard: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  historyCardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  historyDate: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#0f172a',
+  },
+  statusBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  statusPending: { backgroundColor: '#fef3c7' },
+  statusApproved: { backgroundColor: '#d1fae5' },
+  statusRejected: { backgroundColor: '#fee2e2' },
+  statusText: {
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  historyCardBody: {
+    gap: 8,
+  },
+  historyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  historyTime: {
+    fontSize: 14,
+    color: '#64748b',
+    fontWeight: '500',
+  },
+  allocationBox: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 4,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#f1f5f9',
+  },
+  allocationText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#06B6D4',
+  },
+  emptyHistory: {
+    backgroundColor: '#fff',
+    padding: 30,
+    borderRadius: 16,
+    alignItems: 'center',
+    borderStyle: 'dashed',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  emptyHistoryText: {
+    color: '#94a3b8',
+    fontSize: 14,
   },
 });

@@ -15,8 +15,40 @@ router.get("/dashboard-stats", auth, async (req, res) => {
     const doctorId = req.user.id;
 
     // Get Doctor
-    const doctor = await Doctor.findById(doctorId).select("name fullName specialization channelingTime isArrived channelingStatus currentQueueNumber allocatedRoom");
+    let doctor = await Doctor.findById(doctorId).select("name fullName specialization channelingTime isArrived channelingStatus currentQueueNumber allocatedRoom");
     if (!doctor) return res.status(404).json({ msg: "Doctor not found" });
+
+    // ✅ If channelingTime is empty, find today's approved schedule
+    let channelingTime = doctor.channelingTime;
+    let allocatedRoom = doctor.allocatedRoom;
+    let allocatedNurse = doctor.allocatedNurse;
+
+    if (!channelingTime || !allocatedRoom) {
+      try {
+        const ScheduleRequest = mongoose.model('ScheduleRequest');
+        const startOfDay = new Date();
+        startOfDay.setHours(0, 0, 0, 0);
+        const endOfDay = new Date();
+        endOfDay.setHours(23, 59, 59, 999);
+
+        const todaySchedule = await ScheduleRequest.findOne({
+          doctorId,
+          status: 'approved',
+          date: { $gte: startOfDay, $lte: endOfDay }
+        }).sort({ startTime: 1 });
+
+        if (todaySchedule) {
+          if (!channelingTime) {
+            channelingTime = new Date(todaySchedule.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+          }
+          if (!allocatedRoom) {
+            allocatedRoom = todaySchedule.allocatedRoom;
+          }
+        }
+      } catch (err) {
+        console.error("Failed to fetch schedule for dashboard stats:", err.message);
+      }
+    }
 
     // Count Records
     const recordCount = await SurgeryRecord.countDocuments({ doctorId });
@@ -39,10 +71,10 @@ router.get("/dashboard-stats", auth, async (req, res) => {
     res.json({
       name: doctor.name || doctor.fullName || "Doctor",
       specialization: doctor.specialization || "Specialist",
-      channelingTime: doctor.channelingTime,
+      channelingTime: channelingTime,
       channelingStatus: doctor.channelingStatus,
       currentQueueNumber: doctor.currentQueueNumber,
-      allocatedRoom: doctor.allocatedRoom,
+      allocatedRoom: allocatedRoom,
       isArrived: doctor.isArrived,
       income: Math.round(totalIncome),
       records: recordCount
