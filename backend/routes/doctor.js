@@ -2,7 +2,6 @@ import express from "express";
 import mongoose from "mongoose"; // ✅ Added this for ScheduleRequest model access
 import bcrypt from "bcryptjs"; 
 import Doctor from "../models/Doctor.js";
-import SurgeryRecord from "../models/SurgeryRecord.js"; 
 import HospitalFinance from "../models/Finance.js"; 
 import Appointment from "../models/Appointment.js";
 import { createNotification } from "../utils/notificationHelper.js";

@@ -246,17 +246,7 @@ router.get("/:id/medical-history", auth, async (req, res) => {
       .limit(10)
       .lean();
 
-    // Get surgery records if available
-    let surgeryRecords = [];
-    try {
-      const SurgeryRecord = (await import("../models/SurgeryRecord.js")).default;
-      surgeryRecords = await SurgeryRecord.find({ patientId })
-        .sort({ date: -1 })
-        .limit(10)
-        .lean();
-    } catch (err) {
-      console.log("Surgery records not available");
-    }
+ 
 
     res.json({
       patient,
