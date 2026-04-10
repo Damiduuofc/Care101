@@ -65,11 +65,12 @@ app.use("/api/doctors", doctorRoutes);
 app.use("/api/payments", paymentRoutes);
 app.use("/api/patients", patientsRoutes); 
 app.use("/api/schedule-requests", scheduleRequestRoutes); 
+
 /* =========================
    SERVER START
 ========================= */
 
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT;
 
 const startServer = async () => {
   try {

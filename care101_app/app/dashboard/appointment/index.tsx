@@ -378,12 +378,17 @@ export default function AppointmentScreen() {
                         {new Date(sched.endTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                       </Text>
                     </View>
-                    {sched.status === 'approved' && (
-                      <View style={styles.allocationBox}>
-                        <Text style={styles.allocationText}>Room: {sched.allocatedRoom || 'TBD'}</Text>
-                        <Text style={styles.allocationText}>Nurse: {sched.allocatedNurse || 'TBD'}</Text>
-                      </View>
-                    )}
+{sched.status?.toLowerCase() === 'approved' && (
+  <View style={styles.allocationBox}>
+    <Text style={styles.allocationText}>
+      {/* Check schedule object first, then the populated doctor object */}
+      Room: {sched.allocatedRoom || sched.doctorId?.allocatedRoom || 'TBA'}
+    </Text>
+    <Text style={styles.allocationText}>
+      Nurse: {sched.allocatedNurse || sched.doctorId?.allocatedNurse || 'TBD'}
+    </Text>
+  </View>
+)}
                   </View>
                 </View>
               ))

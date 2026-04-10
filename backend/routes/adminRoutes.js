@@ -382,7 +382,7 @@ router.put("/doctors/:id/status", protect, authorize(["system_admin", "reception
         const activeAppointments = await Appointment.find({
           doctorId: doctor._id,
           date: { $gte: startOfDay, $lte: endOfDay },
-          status: { $in: ["confirmed", "Confirmed", "pending", "Pending"] }
+          status: { $in: ["confirmed", "Confirmed", "pending", "Pending", "completed", "Completed"] }
         });
 
         if (activeAppointments.length > 0) {

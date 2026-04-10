@@ -1,108 +1,82 @@
 import express from "express";
 import Notification from "../models/Notification.js";
-import { auth } from "../middleware/auth.js"; // Assuming this is your patient auth middleware
+import { auth } from "../middleware/auth.js"; 
 
 const router = express.Router();
 
-// ==========================================
-// 1. GET ALL NOTIFICATIONS
-// ==========================================
+// 1. GET ALL NOTIFICATIONS FOR PATIENT
 router.get("/", auth, async (req, res) => {
   try {
-    // Safety check for user ID from middleware
-    if (!req.user || !req.user.id) {
-      return res.status(401).json({ msg: "User identification failed" });
-    }
-
+    // We look for userId matching the authenticated patient's ID
     const notifications = await Notification.find({ userId: req.user.id })
-      .sort({ timestamp: -1 }) // Newest first
+      .sort({ timestamp: -1 })
       .limit(50);
       
     res.json(notifications);
   } catch (err) {
-    console.error("Fetch Notifications Error:", err.message);
+    console.error("Fetch Error:", err.message);
     res.status(500).send("Server Error");
   }
 });
 
-// ==========================================
-// 2. MARK AS READ
-// ==========================================
-router.put("/:id/read", auth, async (req, res) => {
-  try {
-    const notification = await Notification.findOne({
-      _id: req.params.id,
-      userId: req.user.id // Ensure patient can only mark their own notifications
-    });
-
-    if (!notification) {
-      return res.status(404).json({ msg: "Notification not found" });
-    }
-
-    notification.read = true;
-    await notification.save();
-    
-    res.json(notification);
-  } catch (err) {
-    console.error("Mark Read Error:", err.message);
-    res.status(500).send("Server Error");
-  }
-});
-
-// ==========================================
-// 3. MARK ALL AS READ
-// ==========================================
-router.put("/read-all", auth, async (req, res) => {
-  try {
-    const result = await Notification.updateMany(
-      { userId: req.user.id, read: false },
-      { $set: { read: true } }
-    );
-    
-    res.json({ 
-      msg: "All notifications marked as read", 
-      count: result.modifiedCount 
-    });
-  } catch (err) {
-    console.error("Mark All Read Error:", err.message);
-    res.status(500).send("Server Error");
-  }
-});
-
-// ==========================================
-// 4. DELETE NOTIFICATION
-// ==========================================
-router.delete("/:id", auth, async (req, res) => {
-  try {
-    const result = await Notification.deleteOne({
-      _id: req.params.id,
-      userId: req.user.id
-    });
-    
-    if (result.deletedCount === 0) {
-      return res.status(404).json({ msg: "Notification not found" });
-    }
-    
-    res.json({ msg: "Notification deleted" });
-  } catch (err) {
-    console.error("Delete Notification Error:", err.message);
-    res.status(500).send("Server Error");
-  }
-});
-
-// ==========================================
-// 5. GET UNREAD COUNT (For Mobile/Web Badges)
-// ==========================================
+// 2. GET UNREAD COUNT
 router.get("/unread-count", auth, async (req, res) => {
   try {
     const count = await Notification.countDocuments({ 
       userId: req.user.id, 
       read: false 
     });
-    
     res.json({ count });
   } catch (err) {
-    console.error("Unread Count Error:", err.message);
+    res.status(500).send("Server Error");
+  }
+});
+
+// 3. MARK SINGLE AS READ
+router.put("/:id/read", auth, async (req, res) => {
+  try {
+    const notification = await Notification.findOneAndUpdate(
+      { _id: req.params.id, userId: req.user.id },
+      { $set: { read: true } },
+      { new: true }
+    );
+
+    if (!notification) return res.status(404).json({ msg: "Not found" });
+    res.json(notification);
+  } catch (err) {
+    res.status(500).send("Server Error");
+  }
+});
+
+// 4. MARK ALL AS READ
+router.put("/read-all", auth, async (req, res) => {
+  try {
+    await Notification.updateMany(
+      { userId: req.user.id, read: false },
+      { $set: { read: true } }
+    );
+    res.json({ msg: "Updated all" });
+  } catch (err) {
+    res.status(500).send("Server Error");
+  }
+});
+
+// 5. DELETE
+router.delete("/:id", auth, async (req, res) => {
+  try {
+    await Notification.deleteOne({ _id: req.params.id, userId: req.user.id });
+    res.json({ msg: "Deleted" });
+  } catch (err) {
+    res.status(500).send("Server Error");
+  }
+});
+
+// 6. CLEAR ALL NOTIFICATIONS
+router.delete("/clear-all", auth, async (req, res) => {
+  try {
+    await Notification.deleteMany({ userId: req.user.id });
+    res.json({ msg: "All notifications cleared" });
+  } catch (err) {
     res.status(500).send("Server Error");
   }
 });

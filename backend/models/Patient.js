@@ -11,20 +11,20 @@ const PatientSchema = new mongoose.Schema({
   username: { 
     type: String, 
     required: true, 
-    unique: true, // Ensures no two users have the same username
+    unique: true, 
     trim: true 
   },
   email: { 
     type: String, 
     required: true, 
-    unique: true, // Ensures no two users have the same email
+    unique: true, 
     lowercase: true,
     trim: true 
   },
   nicNumber: { 
     type: String, 
     required: true, 
-    unique: true, // Ensures no two users have the same NIC
+    unique: true, 
     trim: true 
   },
 

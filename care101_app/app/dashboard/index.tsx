@@ -79,7 +79,7 @@ export default function DashboardScreen() {
         // Mapping incoming data to state (handling potential naming differences)
         setStats(prev => ({
           ...prev,
-          name: data.fullName || data.name || "Doctor",
+          name: data.name || "Doctor",
           specialization: data.specialization || "General Practitioner",
           profileImage: data.profileImage || null,
           income: data.income || 0,

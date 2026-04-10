@@ -2,20 +2,16 @@ import Notification from "../models/Notification.js";
 
 /**
  * Centralized Notification Creator
- * @param {String} userId - Patient ID
- * @param {String} type - Notification type
- * @param {String} message - Notification message
- * @param {Object} metadata - Additional data (optional)
- * @param {String} title - Optional title
+ * Standardized to handle 'data' or 'metadata' interchangeably
  */
-export const createNotification = async (userId, type, message, metadata = {}, title = null) => {
+export const createNotification = async (userId, type, message, data = {}, title = null) => {
     try {
         const notification = new Notification({
             userId,
             type,
             message,
-            metadata,
-            title,
+            metadata: data, // ✅ Fixed: Store in 'metadata' field matching schema
+            title: title || "Care101 Update",
             read: false,
             timestamp: new Date()
         });
@@ -48,16 +44,14 @@ export const createBulkNotifications = async (notifications) => {
  */
 export const markAsRead = async (notificationId, userId) => {
     try {
-        const notification = await Notification.findOne({ _id: notificationId, userId });
-        if (!notification) {
-            return { success: false, message: "Notification not found" };
-        }
-
-        notification.read = true;
-        await notification.save();
+        const notification = await Notification.findOneAndUpdate(
+            { _id: notificationId, userId },
+            { $set: { read: true } },
+            { new: true }
+        );
+        if (!notification) return { success: false, message: "Notification not found" };
         return { success: true, message: "Marked as read" };
     } catch (error) {
-        console.error("❌ Mark as read failed:", error.message);
         return { success: false, message: "Server error" };
     }
 };
@@ -67,42 +61,20 @@ export const markAsRead = async (notificationId, userId) => {
  */
 export const markAllAsRead = async (userId) => {
     try {
-        await Notification.updateMany(
-            { userId, read: false },
-            { read: true }
-        );
+        await Notification.updateMany({ userId, read: false }, { read: true });
         return { success: true, message: "All notifications marked as read" };
     } catch (error) {
-        console.error("❌ Mark all as read failed:", error.message);
         return { success: false, message: "Server error" };
     }
 };
 
 /**
- * Delete notification
- */
-export const deleteNotification = async (notificationId, userId) => {
-    try {
-        const result = await Notification.findOneAndDelete({ _id: notificationId, userId });
-        if (!result) {
-            return { success: false, message: "Notification not found" };
-        }
-        return { success: true, message: "Notification deleted" };
-    } catch (error) {
-        console.error("❌ Delete notification failed:", error.message);
-        return { success: false, message: "Server error" };
-    }
-};
-
-/**
- * Get unread count for a user
+ * Get unread count
  */
 export const getUnreadCount = async (userId) => {
     try {
-        const count = await Notification.countDocuments({ userId, read: false });
-        return count;
+        return await Notification.countDocuments({ userId, read: false });
     } catch (error) {
-        console.error("❌ Get unread count failed:", error.message);
         return 0;
     }
 };

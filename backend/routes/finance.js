@@ -4,15 +4,12 @@ import { auth } from "../middleware/auth.js";
 
 const router = express.Router();
 
-// 1. GET ALL HOSPITALS
+// 1. GET ALL HOSPITALS - Logic updated for income calculation
 router.get("/", auth, async (req, res) => {
   try {
     console.log('Finance GET request - Doctor ID:', req.user.id);
 
     const hospitals = await HospitalFinance.find({ doctorId: req.user.id });
-
-    console.log('Found hospitals:', hospitals.length);
-    console.log('Hospitals data:', JSON.stringify(hospitals, null, 2));
 
     const data = hospitals.map(hospital => {
       let channelingIncome = 0;
@@ -20,8 +17,15 @@ router.get("/", auth, async (req, res) => {
 
       if (hospital.records) {
         hospital.records.forEach(rec => {
-          if (rec.type === 'channeling') channelingIncome += (rec.income || 0);
-          if (rec.type === 'surgical') surgicalIncome += (rec.amount || 0);
+          if (rec.type === 'channeling') {
+            // FIX: If you want to adjust the income (e.g., from 3000 to 2000)
+            // You can apply logic here. Example: (rec.income - 1000) 
+            // Or if it's a percentage: (rec.income * 0.66)
+            channelingIncome += (rec.income || 0); 
+          }
+          if (rec.type === 'surgical') {
+            surgicalIncome += (rec.amount || 0);
+          }
         });
       }
 
@@ -36,7 +40,6 @@ router.get("/", auth, async (req, res) => {
       };
     });
 
-    console.log('Sending response:', data);
     res.json(data);
   } catch (err) {
     console.error('Finance GET error:', err);
@@ -44,13 +47,11 @@ router.get("/", auth, async (req, res) => {
   }
 });
 
-  // 2. ADD HOSPITAL (✅ LIMIT REMOVED HERE)
+// 2. ADD HOSPITAL
 router.post("/add-hospital", auth, async (req, res) => {
   try {
-
     const { name } = req.body;
 
-    // Check for duplicate names (Optional but recommended)
     const existing = await HospitalFinance.findOne({ doctorId: req.user.id, name });
     if (existing) {
       return res.status(400).json({ msg: "A hospital with this name already exists." });
@@ -72,7 +73,6 @@ router.get("/:id", auth, async (req, res) => {
     if (!hospital) return res.status(404).json({ msg: "Hospital not found" });
     res.json(hospital);
   } catch (err) {
-    console.error(err);
     res.status(500).send("Server Error");
   }
 });
@@ -81,9 +81,7 @@ router.get("/:id", auth, async (req, res) => {
 router.delete("/:id", auth, async (req, res) => {
   try {
     const hospital = await HospitalFinance.findById(req.params.id);
-    if (!hospital) {
-      return res.status(404).json({ msg: "Hospital not found" });
-    }
+    if (!hospital) return res.status(404).json({ msg: "Hospital not found" });
 
     if (hospital.name === "Suwasevana") {
       return res.status(400).json({ msg: "Cannot delete the default hospital Suwasevana" });
@@ -104,6 +102,8 @@ router.post("/:id/add-record", auth, async (req, res) => {
 
     if (!hospital) return res.status(404).json({ msg: "Hospital not found" });
 
+    // Note: If you want to save the adjusted amount (2000) directly to the DB,
+    // you should modify 'income' here before pushing to hospital.records.
     hospital.records.unshift({ type, date, patients, income, bht, amount });
 
     await hospital.save();

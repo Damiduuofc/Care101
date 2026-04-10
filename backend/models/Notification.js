@@ -15,8 +15,8 @@ const NotificationSchema = new mongoose.Schema({
       'message',          
       'reminder',         
       'schedule_request', 
-      'arrival',          // ✅ Added for Doctor Arrival
-      'doctor_status',    // ✅ Added for general status updates
+      'arrival',         
+      'doctor_status',    
       'system'            
     ],
     required: true
