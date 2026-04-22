@@ -6,5 +6,8 @@ export default function Index() {
   // If authenticated -> Redirect to /dashboard
   // If not -> Redirect to /ads
 
+
+
+  
   return <Redirect href="/ads" />;
 }
