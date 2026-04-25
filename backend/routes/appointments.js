@@ -10,7 +10,7 @@ import { auth } from "../middleware/auth.js";
 const router = express.Router();
 
 // ==========================================
-// 1. BOOK APPOINTMENT (With Notifications & Payment Logic)
+// 1. BOOK APPOINTMENT (With Notifications & Split Payment Logic)
 // ==========================================
 router.post("/book", auth, async (req, res) => {
   try {
@@ -22,8 +22,8 @@ router.post("/book", auth, async (req, res) => {
       visitType,
       reason,
       amount,
-      paymentStatus, // ✅ Get payment status from frontend
-      hospitalName // ✅ Optional: Hospital name for finance tracking
+      paymentStatus, // Get payment status from frontend
+      hospitalName   // Optional: Hospital name for finance tracking
     } = req.body;
 
     if (!doctorId || !date) {
@@ -62,6 +62,9 @@ router.post("/book", auth, async (req, res) => {
 
     // --- 3. GENERATE QUEUE NUMBER ---
     const queueNumber = currentAppointmentCount + 1;
+    
+    // Set total amount (2000 Doctor + 1500 Hospital = 3500)
+    const totalAmount = amount || 3500; 
 
     // 1. Create Appointment
     const newAppointment = new Appointment({
@@ -73,9 +76,9 @@ router.post("/book", auth, async (req, res) => {
       queueNumber,
       visitType,
       reason,
-      amount: amount || 2000,
+      amount: totalAmount,
       status: 'scheduled',
-      paymentStatus: paymentStatus || 'pending' // ✅ Save 'paid' or 'pending'
+      paymentStatus: paymentStatus || 'pending'
     });
 
     const savedAppointment = await newAppointment.save();
@@ -87,8 +90,7 @@ router.post("/book", auth, async (req, res) => {
         appointmentId: savedAppointment._id,
         title: `Consultation - ${doctorName}`,
         type: "Appointment",
-        amount: amount || 2000,
-        // ✅ Mark bill as Paid if appointment is paid
+        amount: totalAmount,
         status: paymentStatus === 'paid' ? "Paid" : "Pending",
         date: new Date()
       });
@@ -97,58 +99,81 @@ router.post("/book", auth, async (req, res) => {
       console.error("Bill Creation Failed:", billError);
     }
 
-    // 3. ✅ ADD TO CHANNELING INCOME (If Paid)
+    // 3. ✅ ADD TO CHANNELING INCOME (Split: 2000 Doctor, 1500 Hospital)
     if (paymentStatus === 'paid') {
       try {
-        // Find or create hospital finance record
-        const hospital = hospitalName || "Suwasevana"; // Default to Suwasevana
+        const hospital = hospitalName || "Suwasevana";
+        
+        // Define the exact split
+        const hospitalIncome = 1500;
+        const doctorIncome = totalAmount > hospitalIncome ? (totalAmount - hospitalIncome) : 0; // Ensures it safely handles weird amounts
 
-        let hospitalFinance = await HospitalFinance.findOne({
+        // 3A. Update DOCTOR'S Finance Record
+        let doctorFinance = await HospitalFinance.findOne({
           doctorId: doctorId,
           name: hospital
         });
 
-        // If hospital doesn't exist, create it
-        if (!hospitalFinance) {
-          hospitalFinance = new HospitalFinance({
+        if (!doctorFinance) {
+          doctorFinance = new HospitalFinance({
             doctorId: doctorId,
             name: hospital,
             records: []
           });
         }
 
-        // Add channeling record
-        hospitalFinance.records.unshift({
+        doctorFinance.records.unshift({
           type: 'channeling',
           date: new Date(date),
           patients: 1,
-          income: amount || 2000
+          income: doctorIncome // Assigns the 2000
         });
 
-        await hospitalFinance.save();
-        console.log(`✅ Channeling income added: ${amount || 2000} LKR to ${hospital}`);
+        await doctorFinance.save();
+
+        // 3B. Update HOSPITAL'S Finance Record (doctorId is null)
+        let systemFinance = await HospitalFinance.findOne({
+          doctorId: null, 
+          name: hospital
+        });
+
+        if (!systemFinance) {
+          systemFinance = new HospitalFinance({
+            doctorId: null,
+            name: hospital,
+            records: []
+          });
+        }
+
+        systemFinance.records.unshift({
+          type: 'channeling',
+          date: new Date(date),
+          patients: 1,
+          income: hospitalIncome // Assigns the 1500
+        });
+
+        await systemFinance.save();
+
+        console.log(`✅ Channeling split successful: ${doctorIncome} to Doctor, ${hospitalIncome} to Hospital`);
 
       } catch (financeError) {
         console.error("Finance Update Failed:", financeError);
-        // Don't fail the appointment if finance update fails
       }
     }
 
     // 4. ✅ CREATE NOTIFICATIONS
     try {
-      // Notification A: Booking Confirmed
       await Notification.create({
         userId: req.user.id,
         type: 'appointment',
         message: `Booking Confirmed! Queue #${queueNumber} for Dr. ${doctorName}.`
       });
 
-      // Notification B: Payment Received (Only if paid)
       if (paymentStatus === 'paid') {
         await Notification.create({
           userId: req.user.id,
-          type: 'payment', // Ensure 'payment' is in your Notification Enum
-          message: `Payment of LKR ${amount || 2000} received successfully.`
+          type: 'payment',
+          message: `Payment of LKR ${totalAmount} received successfully.`
         });
       }
 
@@ -216,7 +241,6 @@ router.get("/queue-status/:id", auth, async (req, res) => {
 
     const myToken = myAppointment.queueNumber || 0;
 
-    // Fetch the live doctor object to see where the Nurse has placed the current queue
     const doctor = await Doctor.findById(myAppointment.doctorId);
     const currentToken = doctor ? doctor.currentQueueNumber || 0 : 0;
 
@@ -252,7 +276,6 @@ router.put("/cancel/:id", auth, async (req, res) => {
     appointment.status = "cancelled";
     await appointment.save();
 
-    // ✅ CREATE CANCELLATION NOTIFICATION
     try {
       await Notification.create({
         userId: req.user.id,
