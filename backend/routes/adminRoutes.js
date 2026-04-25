@@ -248,10 +248,12 @@ router.get("/bills/all", protect, authorize(["system_admin", "receptionist"]), a
 
 router.post("/bills/create", protect, authorize(["system_admin", "receptionist"]), async (req, res) => {
   try {
-    const { patientId, title, type, amount, status } = req.body;
+    // 1. Catch doctorId from the frontend request
+    const { patientId, doctorId, title, type, amount, status } = req.body;
 
     const newBill = new Bill({
       patientId: new mongoose.Types.ObjectId(patientId),
+      doctorId: doctorId ? new mongoose.Types.ObjectId(doctorId) : null, // Link doctor if provided
       title,
       type,
       amount,
@@ -263,8 +265,18 @@ router.post("/bills/create", protect, authorize(["system_admin", "receptionist"]
 
     if (status === "Paid") {
       try {
+        // 2. Calculate the financial split based on Type
+        let hospitalIncome = amount;
+        let doctorIncome = 0;
+
+        if (type === "Surgery") {
+            hospitalIncome = amount * 0.25; // 25% to Hospital
+            doctorIncome = amount * 0.75;   // 75% to Doctor
+        }
+
+        // 3. Update HOSPITAL Finance
         const hospitalName = "Suwasevana";
-        let hospitalFinance = await HospitalFinance.findOne({ name: hospitalName });
+        let hospitalFinance = await HospitalFinance.findOne({ name: hospitalName, doctorId: null });
         if (!hospitalFinance) {
           hospitalFinance = new HospitalFinance({ name: hospitalName, records: [], doctorId: null });
         }
@@ -272,10 +284,29 @@ router.post("/bills/create", protect, authorize(["system_admin", "receptionist"]
           type: type.toLowerCase() === 'appointment' ? 'channeling' : 'surgical',
           date: new Date(),
           patients: 1,
-          income: amount
+          income: hospitalIncome // Uses the 25% calculated above
         });
         await hospitalFinance.save();
-      } catch (finErr) { console.error(finErr); }
+
+        // 4. Update DOCTOR Finance (Only if it's Surgery & Doctor is selected)
+        if (type === "Surgery" && doctorId && doctorIncome > 0) {
+            let doctorFinance = await HospitalFinance.findOne({ doctorId: doctorId });
+            if (!doctorFinance) {
+                // Create a finance record for this doctor if they don't have one yet
+                doctorFinance = new HospitalFinance({ doctorId: doctorId, name: "Doctor Revenue", records: [] });
+            }
+            doctorFinance.records.unshift({
+                type: 'surgical',
+                date: new Date(),
+                patients: 1,
+                income: doctorIncome // Uses the 75% calculated above
+            });
+            await doctorFinance.save();
+        }
+
+      } catch (finErr) { 
+        console.error("Finance Error:", finErr); 
+      }
     }
 
     await Notification.create({
@@ -289,6 +320,7 @@ router.post("/bills/create", protect, authorize(["system_admin", "receptionist"]
     const populatedBill = await Bill.findById(newBill._id).populate("patientId", "fullName nicNumber");
     res.json({ msg: "Bill created successfully", bill: populatedBill });
   } catch (err) {
+    console.error("Create Bill Error:", err);
     res.status(500).send("Server Error");
   }
 });
@@ -395,7 +427,7 @@ router.put("/doctors/:id/status", protect, authorize(["system_admin", "reception
               userId: app.patientId,
               type: 'arrival',
               title: "Doctor Arrived",
-              message: `Dr. ${doctor.name} has arrived. ${timeInfo} Please proceed to Room ${allocatedRoom || doctor.allocatedRoom || 'TBA'}.`,
+              message: `Dr. ${doctor.name} has arrived. ${timeInfo} Please proceed to  ${allocatedRoom || doctor.allocatedRoom || 'TBA'}.`,
               metadata: { doctorId: doctor._id, appointmentId: app._id }
             });
           });
