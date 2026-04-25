@@ -395,7 +395,7 @@ router.put("/doctors/:id/status", protect, authorize(["system_admin", "reception
               userId: app.patientId,
               type: 'arrival',
               title: "Doctor Arrived",
-              message: `Dr. ${doctor.name} has arrived. ${timeInfo} Please proceed to Room ${allocatedRoom || doctor.allocatedRoom || 'TBA'}.`,
+              message: `Dr. ${doctor.name} has arrived. ${timeInfo} Please proceed to  ${allocatedRoom || doctor.allocatedRoom || 'TBA'}.`,
               metadata: { doctorId: doctor._id, appointmentId: app._id }
             });
           });
