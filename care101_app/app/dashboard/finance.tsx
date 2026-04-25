@@ -69,8 +69,6 @@ export default function FinanceScreen() {
 
       const token = await SecureStore.getItemAsync('token');
 
-      console.log('Fetching finance data from:', `${API_URL}/finance`);
-
       const resFinance = await fetch(`${API_URL}/finance`, {
         headers: {
           Authorization: `Bearer ${token}`,
@@ -78,11 +76,8 @@ export default function FinanceScreen() {
         }
       });
 
-      console.log('Finance API response status:', resFinance.status);
-
       if (resFinance.ok) {
         const data = await resFinance.json();
-        console.log('Finance data fetched:', data);
         setHospitals(data);
       } else {
         const errorText = await resFinance.text();
@@ -125,7 +120,6 @@ export default function FinanceScreen() {
         })
       });
 
-      // Parse the response to get the specific error message
       const resData = await response.json();
 
       if (response.ok) {
@@ -134,8 +128,6 @@ export default function FinanceScreen() {
         setModalVisible(false);
         setNewHospitalName('');
       } else {
-        // Failure: Show the actual message from backend
-        console.error("Server Error:", resData);
         Alert.alert("Error", resData.message || resData.error || "Failed to add hospital.");
       }
 

@@ -23,7 +23,6 @@ router.get("/my-bills", auth, async (req, res) => {
 });
 
 // 2. CREATE PAYMENT INTENT (For any amount)
-// POST /api/payments/create-intent
 router.post("/create-intent", auth, async (req, res) => {
   try {
     const { amount } = req.body; // Amount in cents (passed from frontend)
@@ -50,7 +49,6 @@ router.post("/create-intent", auth, async (req, res) => {
 });
 
 // 3. MARK BILL AS PAID (After Frontend Stripe Success)
-// PUT /api/payments/pay-bill/:billId
 router.put("/pay-bill/:billId", auth, async (req, res) => {
   try {
     const bill = await Bill.findOne({ _id: req.params.billId, patientId: req.user.id });

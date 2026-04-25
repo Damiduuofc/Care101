@@ -9,11 +9,10 @@ const deleteAllDoctors = async () => {
   try {
     // 🔍 DEBUG: Print the URI to see if it exists (Don't share this output if it contains passwords)
     console.log("🔍 Checking Environment Variables...");
-    const dbUri = process.env.MONGO_URI || process.env.MONGO_URL; // Try both common names
+    const dbUri = process.env.MONGO_URI ; // Try both common names
 
     if (!dbUri) {
       console.error("❌ ERROR: Could not find MONGO_URI or MONGO_URL in your .env file.");
-      console.log("   --> Please check your .env file and make sure the variable name matches.");
       process.exit(1);
     }
 

@@ -4,7 +4,7 @@ import { auth } from "../middleware/auth.js";
 
 const router = express.Router();
 
-// 1. GET ALL HOSPITALS - Logic updated for income calculation
+// 1. GET ALL HOSPITALS - Bulletproof Income Calculation
 router.get("/", auth, async (req, res) => {
   try {
     console.log('Finance GET request - Doctor ID:', req.user.id);
@@ -17,14 +17,17 @@ router.get("/", auth, async (req, res) => {
 
       if (hospital.records) {
         hospital.records.forEach(rec => {
-          if (rec.type === 'channeling') {
-            // FIX: If you want to adjust the income (e.g., from 3000 to 2000)
-            // You can apply logic here. Example: (rec.income - 1000) 
-            // Or if it's a percentage: (rec.income * 0.66)
-            channelingIncome += (rec.income || 0); 
+          // 1. Force the type to lowercase so it catches "Surgical", "Surgery", "surgical", etc.
+          const recordType = (rec.type || '').toLowerCase();
+          
+          // 2. Check both 'income' and 'amount' fields just in case old data used 'amount'
+          const money = Number(rec.income) || Number(rec.amount) || 0;
+
+          if (recordType === 'channeling' || recordType === 'appointment') {
+            channelingIncome += money; 
           }
-          if (rec.type === 'surgical') {
-            surgicalIncome += (rec.amount || 0);
+          else if (recordType === 'surgical' || recordType === 'surgery') {
+            surgicalIncome += money;
           }
         });
       }
@@ -102,8 +105,6 @@ router.post("/:id/add-record", auth, async (req, res) => {
 
     if (!hospital) return res.status(404).json({ msg: "Hospital not found" });
 
-    // Note: If you want to save the adjusted amount (2000) directly to the DB,
-    // you should modify 'income' here before pushing to hospital.records.
     hospital.records.unshift({ type, date, patients, income, bht, amount });
 
     await hospital.save();

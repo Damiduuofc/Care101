@@ -47,6 +47,7 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api";
 export default function BillingPage() {
     const { toast } = useToast();
     const [history, setHistory] = useState<any[]>([]);
+    const [doctors, setDoctors] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [open, setOpen] = useState(false);
@@ -61,7 +62,8 @@ export default function BillingPage() {
         title: "",
         type: "Appointment",
         amount: "",
-        paymentMethod: "App" // "Cash" or "App"
+        paymentMethod: "App", // "Cash" or "App"
+        doctorId: "" // Added to store selected doctor for surgery
     });
 
     // Print State
@@ -107,29 +109,53 @@ export default function BillingPage() {
         printWindow.document.close();
     };
 
-    const fetchHistory = async () => {
+const fetchHistoryAndDoctors = async () => {
         setLoading(true);
         try {
             const token = localStorage.getItem("adminToken");
-            const res = await fetch(`${API_URL}/admin/bills/all`, {
-                headers: {
-                    "x-auth-token": token || "",
-                    "ngrok-skip-browser-warning": "true"
+            const headers = {
+                "x-auth-token": token || "",
+                "ngrok-skip-browser-warning": "true"
+            };
+
+            const [historyRes, doctorsRes] = await Promise.all([
+                fetch(`${API_URL}/admin/bills/all`, { headers }),
+fetch(`${API_URL}/admin/doctors`, { headers })
+            ]);
+
+            if (historyRes.ok) {
+                const historyData = await historyRes.json();
+                setHistory(historyData);
+            }
+            
+            if (doctorsRes.ok) {
+                const doctorsData = await doctorsRes.json();
+                
+                // Add this log right here:
+                console.log("DOCTORS API RESPONSE:", doctorsData); 
+                
+                // Let's make it bulletproof. 
+                // If the backend sends { doctors: [...] }, extract it.
+                if (Array.isArray(doctorsData)) {
+                    setDoctors(doctorsData);
+                } else if (doctorsData.doctors && Array.isArray(doctorsData.doctors)) {
+                    setDoctors(doctorsData.doctors);
+                } else if (doctorsData.data && Array.isArray(doctorsData.data)) {
+                    setDoctors(doctorsData.data);
+                } else {
+                    console.error("Could not find the doctor array in the response!");
+                    setDoctors([]);
                 }
-            });
-            const data = await res.json();
-            if (res.ok) {
-                setHistory(data);
             }
         } catch (e) {
-            console.error("Fetch History Error:", e);
+            console.error("Fetch Error:", e);
         } finally {
             setLoading(false);
         }
     };
 
     useEffect(() => {
-        fetchHistory();
+        fetchHistoryAndDoctors();
     }, []);
 
     const handleSearchPatient = async () => {
@@ -165,18 +191,27 @@ export default function BillingPage() {
             return;
         }
 
+        if (formData.type === "Surgery" && !formData.doctorId) {
+            toast({ title: "Missing Info", description: "Please select a surgeon", variant: "destructive" });
+            return;
+        }
+
         setIsSubmitting(true);
         try {
             const token = localStorage.getItem("adminToken");
+            const headers = {
+                "Content-Type": "application/json",
+                "x-auth-token": token || "",
+                "ngrok-skip-browser-warning": "true"
+            };
+
+            // 1. Create the Bill
             const res = await fetch(`${API_URL}/admin/bills/create`, {
                 method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                    "x-auth-token": token || "",
-                    "ngrok-skip-browser-warning": "true"
-                },
+                headers,
                 body: JSON.stringify({
                     patientId: selectedPatient._id,
+                    doctorId: formData.type === "Surgery" ? formData.doctorId : undefined,
                     title: formData.title,
                     type: formData.type,
                     amount: parseFloat(formData.amount),
@@ -185,10 +220,24 @@ export default function BillingPage() {
             });
 
             const data = await res.json();
+            
             if (res.ok) {
+                // 2. ONLY allocate the 75% from the frontend if they paid CASH right now.
+                // If it is an "App" payment, the backend must handle this when the payment completes.
+if (formData.type === "Surgery" && formData.doctorId && formData.paymentMethod === "Cash") {
+    const doctorShare = parseFloat(formData.amount) * 0.75;
+    try {
+        await fetch(`${API_URL}/admin/doctors/finance/add`, {
+           // ... you can delete this whole try/catch block
+        });
+    } catch (financeErr) {
+        // ...
+    }
+}
+
                 toast({ title: "Bill Issued", description: formData.paymentMethod === "Cash" ? "Paid by cash successfully" : "Bill sent to patient app" });
                 setOpen(false);
-                setFormData({ title: "", type: "Consultation", amount: "", paymentMethod: "App" });
+                setFormData({ title: "", type: "Appointment", amount: "", paymentMethod: "App", doctorId: "" });
                 setSelectedPatient(null);
                 setSearchNic("");
                 setHistory([data.bill, ...history]);
@@ -232,7 +281,6 @@ export default function BillingPage() {
 
                             <div className="space-y-6 py-6">
                                 <div className="space-y-3 p-4 bg-slate-50 rounded-xl border border-slate-200">
-                                    <Label className="text-xs font-bold text-slate-500 uppercase">Step 1: Locate Patient</Label>
                                     <div className="flex gap-2">
                                         <div className="relative flex-1">
                                             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
@@ -281,7 +329,10 @@ export default function BillingPage() {
                                                 <Label>Bill Type</Label>
                                                 <Select
                                                     value={formData.type}
-                                                    onValueChange={(v) => setFormData({ ...formData, type: v })}
+                                                    onValueChange={(v) => {
+                                                        // Reset doctor selection if type changes from Surgery to something else
+                                                        setFormData({ ...formData, type: v, doctorId: v !== "Surgery" ? "" : formData.doctorId })
+                                                    }}
                                                 >
                                                     <SelectTrigger className="h-11">
                                                         <SelectValue placeholder="Select type" />
@@ -306,6 +357,31 @@ export default function BillingPage() {
                                                     onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
                                                 />
                                             </div>
+
+                                            {/* Doctor Dropdown specifically for Surgery */}
+                                            {formData.type === "Surgery" && (
+                                                <div className="space-y-2 col-span-2 animate-in fade-in slide-in-from-top-2">
+                                                    <Select
+                                                        value={formData.doctorId}
+                                                        onValueChange={(v) => setFormData({ ...formData, doctorId: v })}
+                                                    >
+                                                        <SelectTrigger className="h-11 border-[#06b6d4]">
+                                                            <SelectValue placeholder="Select Doctor" />
+                                                        </SelectTrigger>
+                                                        <SelectContent>
+                                                            {doctors.length > 0 ? (
+                                                                doctors.map(doc => (
+                                                                    <SelectItem key={doc._id} value={doc._id}>
+                                                                        Dr. {doc.fullName || doc.name}
+                                                                    </SelectItem>
+                                                                ))
+                                                            ) : (
+                                                                <SelectItem value="loading" disabled>No doctors found...</SelectItem>
+                                                            )}
+                                                        </SelectContent>
+                                                    </Select>
+                                                </div>
+                                            )}
                                         </div>
 
                                         <div className="space-y-3 pt-2">
@@ -359,12 +435,16 @@ export default function BillingPage() {
                             <div>
                                 <p className="text-sm font-bold text-slate-500 uppercase tracking-tight">Total Revenue</p>
                                 <h3 className="text-2xl font-bold text-slate-900 mt-1">
-                                    {/* We use a case-insensitive check for 'Paid' to catch 
-                   both manual bills and appointment payment statuses 
-                */}
                                     LKR {history.reduce((acc, curr) => {
                                         const isPaid = curr.status?.toLowerCase() === "paid" || curr.paymentStatus?.toLowerCase() === "paid";
-                                        return isPaid ? acc + (curr.amount || 0) : acc;
+                                        
+                                        if (isPaid) {
+                                            // If it's a Surgery, the hospital only keeps 25%. Otherwise, 100%.
+                                            const hospitalShare = curr.type === "Surgery" ? (curr.amount * 0.25) : curr.amount;
+                                            return acc + (hospitalShare || 0);
+                                        }
+                                        
+                                        return acc;
                                     }, 0).toLocaleString()}
                                 </h3>
                             </div>
@@ -378,7 +458,7 @@ export default function BillingPage() {
                 <Card className="border-slate-200 shadow-sm bg-white overflow-hidden">
                     <CardHeader className="border-b border-slate-100 p-4 bg-slate-50/50 flex flex-row items-center justify-between">
                         <CardTitle className="text-lg font-bold text-slate-800">Billing History</CardTitle>
-                        <Button variant="ghost" className="h-8 text-xs text-[#06b6d4]" onClick={fetchHistory}>
+                        <Button variant="ghost" className="h-8 text-xs text-[#06b6d4]" onClick={fetchHistoryAndDoctors}>
                             <Clock className="mr-2 h-3 w-3" /> Refresh history
                         </Button>
                     </CardHeader>
