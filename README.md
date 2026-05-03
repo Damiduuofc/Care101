@@ -63,7 +63,6 @@ PORT=5000
 MONGO_URI
 JWT_SECRET
 STRIPE_SECRET_KEY
-CLIENT_URL=http://localhost:9002
 NVIDIA_API_KEY
 
 npm run dev
@@ -91,7 +90,6 @@ cd care101_app
 create a .env file with the following variables:
 # ipconfig getifaddr en0
 EXPO_PUBLIC_API_URL
-EXPO_PUBLIC_OPENROUTER_API_KEY
 EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY
 
 npm install
