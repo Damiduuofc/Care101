@@ -20,7 +20,7 @@ import * as ImagePicker from 'expo-image-picker';
 import PatientBottomNavBar from '../../components/PatientBottomNavBar';
 import { useAuth } from '@/context/auth';
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.1.100:5000/api';
+const API_URL = process.env.EXPO_PUBLIC_API_URL;
 
 export default function ProfileScreen() {
     const { token, signOut } = useAuth();

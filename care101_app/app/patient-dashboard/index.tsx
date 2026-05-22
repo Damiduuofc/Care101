@@ -35,7 +35,7 @@ import PatientBottomNavBar from '../../components/PatientBottomNavBar';
 import { useAuth } from '@/context/auth';
 import AiAssistant from '@/components/ui/AiAssistant';
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.1.100:5000/api';
+const API_URL = process.env.EXPO_PUBLIC_API_URL;
 
 export default function PatientDashboardScreen() {
     const router = useRouter();

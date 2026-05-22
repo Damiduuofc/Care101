@@ -101,7 +101,7 @@ export default function FinanceScreen() {
     try {
       const token = await SecureStore.getItemAsync('token');
 
-      const response = await fetch(`${API_URL}/api/finance/add-hospital`, {
+      const response = await fetch(`${API_URL}/finance/add-hospital`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -136,7 +136,7 @@ export default function FinanceScreen() {
         text: "Delete", style: 'destructive', onPress: async () => {
           try {
             const token = await SecureStore.getItemAsync('token');
-            await fetch(`${API_URL}/api/finance/${id}`, {
+            await fetch(`${API_URL}/finance/${id}`, {
               method: 'DELETE',
               headers: { Authorization: `Bearer ${token}` }
             });

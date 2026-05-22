@@ -61,7 +61,10 @@
           "enableGooglePay": true
         }
       ],
-      "expo-web-browser"
+      "expo-web-browser",
+      "@react-native-community/datetimepicker",
+      "expo-font",
+      "expo-image"
     ],
     "experiments": {
       "typedRoutes": true,

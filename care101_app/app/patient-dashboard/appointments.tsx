@@ -29,7 +29,7 @@ import {
 import { useAuth } from '@/context/auth';
 import { useStripe } from '@stripe/stripe-react-native';
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.1.100:5000/api';
+const API_URL = process.env.EXPO_PUBLIC_API_URL;
 
 const HOSPITAL_FEE = 1500;
 const DOCTOR_FEE = 2000;

@@ -24,7 +24,7 @@ import {
 import { useAuth } from '@/context/auth';
 import { useStripe } from '@stripe/stripe-react-native';
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.1.100:5000/api';
+const API_URL = process.env.EXPO_PUBLIC_API_URL;
 
 export default function BillingScreen() {
     const router = useRouter();

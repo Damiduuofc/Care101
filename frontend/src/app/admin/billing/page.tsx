@@ -42,7 +42,7 @@ import { useToast } from "@/hooks/use-toast";
 import InvoiceTemplate from "@/components/admin/InvoiceTemplate";
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api";
+const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
 export default function BillingPage() {
     const { toast } = useToast();
