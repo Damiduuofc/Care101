@@ -2,23 +2,22 @@
 
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { clearAdminSession, getAdminLandingPath, getAdminToken, getAdminUser } from "@/lib/adminSession";
 
 export default function AdminGatekeeper() {
   const router = useRouter();
 
   useEffect(() => {
-    const token = localStorage.getItem("adminToken");
-    
-    // SAFETY CHECK: Ensure token is a string and looks like a JWT (3 parts)
-    const isValidStructure = token && typeof token === "string" && token.split('.').length === 3;
-    
-    if (isValidStructure) {
-      router.replace("/admin/dashboard");
-    } else {
-      // If token is garbage/corrupt, clear it so we don't crash the app later
-      if (token) localStorage.removeItem("adminToken");
-      router.replace("/admin/login");
+    const token = getAdminToken();
+    const user = getAdminUser();
+
+    if (token && user) {
+      router.replace(getAdminLandingPath(user));
+      return;
     }
+
+    clearAdminSession();
+    router.replace("/admin/login");
   }, [router]);
 
   return (
