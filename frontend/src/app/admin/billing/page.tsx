@@ -41,8 +41,9 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import InvoiceTemplate from "@/components/admin/InvoiceTemplate";
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { getAdminToken } from "@/lib/adminSession";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api";
+const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
 export default function BillingPage() {
     const { toast } = useToast();
@@ -112,7 +113,7 @@ export default function BillingPage() {
 const fetchHistoryAndDoctors = async () => {
         setLoading(true);
         try {
-            const token = localStorage.getItem("adminToken");
+            const token = getAdminToken();
             const headers = {
                 "x-auth-token": token || "",
                 "ngrok-skip-browser-warning": "true"
@@ -163,7 +164,7 @@ fetch(`${API_URL}/admin/doctors`, { headers })
         setSearching(true);
         setSelectedPatient(null);
         try {
-            const token = localStorage.getItem("adminToken");
+            const token = getAdminToken();
             const res = await fetch(`${API_URL}/admin/patients/search/nic/${searchNic}`, {
                 headers: {
                     "x-auth-token": token || "",
@@ -198,7 +199,7 @@ fetch(`${API_URL}/admin/doctors`, { headers })
 
         setIsSubmitting(true);
         try {
-            const token = localStorage.getItem("adminToken");
+            const token = getAdminToken();
             const headers = {
                 "Content-Type": "application/json",
                 "x-auth-token": token || "",
