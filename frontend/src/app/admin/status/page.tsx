@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Activity, Save, ArrowLeft, Loader2 } from "lucide-react";
+import { getAdminToken } from "@/lib/adminSession";
 
 export default function ManageStatus() {
   const router = useRouter();
@@ -20,7 +21,7 @@ export default function ManageStatus() {
   // 1. Load Current Status on Page Load (Safe Version)
   useEffect(() => {
     const fetchStatus = async () => {
-      const token = localStorage.getItem("adminToken");
+      const token = getAdminToken();
       try {
         const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/admin/stats`, {
           headers: {
@@ -67,7 +68,7 @@ export default function ManageStatus() {
     setLoading(true);
 
     try {
-      const token = localStorage.getItem("adminToken");
+      const token = getAdminToken();
       const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/admin/status`, {
         method: "PUT",
         headers: {
