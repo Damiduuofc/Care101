@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Lock, Mail, Loader2, ShieldCheck, ArrowLeft } from "lucide-react";
+import { getAdminLandingPath, saveAdminSession } from "@/lib/adminSession";
 
 export default function AdminLogin() {
   const router = useRouter();
@@ -40,18 +41,8 @@ export default function AdminLogin() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.msg || "Login failed");
 
-      localStorage.setItem("adminToken", data.token);
-      localStorage.setItem("adminUser", JSON.stringify(data.admin));
-
-      if (data.admin.role === "receptionist") {
-        router.push("/admin/receptionist-dashboard");
-      } else if (data.admin.role === "nurse") {
-        router.push("/admin/queue");
-      } else if (data.admin.role === "lab_assistant") {
-        router.push("/admin/lab-assistant-dashboard");
-      } else {
-        router.push("/admin/dashboard");
-      }
+      saveAdminSession(data.token, data.admin);
+      router.push(getAdminLandingPath(data.admin));
     } catch (err: any) {
       setError(err.message || "Invalid credentials. Access denied.");
     } finally {

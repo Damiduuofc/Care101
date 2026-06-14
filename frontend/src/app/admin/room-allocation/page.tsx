@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Loader2, DoorOpen, Save, Clock, CheckCircle2, AlertTriangle, X, Pencil } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { clearAdminSession, getAdminToken, getAdminUser } from "@/lib/adminSession";
 
 // ─── Toast ────────────────────────────────────────────────────────────────────
 type ToastType = "success" | "warning" | "error";
@@ -68,15 +69,17 @@ export default function RoomAllocation() {
     const [confirming, setConfirming] = useState<{ [id: string]: boolean }>({});
 
     useEffect(() => {
-        const storedUser = localStorage.getItem("adminUser");
-        if (!storedUser || JSON.parse(storedUser).role !== "receptionist") {
+        const storedUser = getAdminUser();
+        if (!storedUser || storedUser.role !== "receptionist") {
+            clearAdminSession();
             router.push("/admin/dashboard");
+            return;
         }
     }, [router]);
 
     const fetchData = async () => {
         try {
-            const token = localStorage.getItem("adminToken");
+            const token = getAdminToken();
 
             const resSchedules = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/schedule-requests/approved/today`, {
                 headers: { "x-auth-token": token || "", "ngrok-skip-browser-warning": "true" }
@@ -142,7 +145,7 @@ export default function RoomAllocation() {
     const saveAllocation = async (doc: any) => {
         setSaving(prev => ({ ...prev, [doc._id]: true }));
         try {
-            const token = localStorage.getItem("adminToken");
+            const token = getAdminToken();
             const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/admin/doctors/${doc._id}/status`, {
                 method: "PUT",
                 headers: {

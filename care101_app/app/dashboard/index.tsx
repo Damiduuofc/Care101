@@ -310,9 +310,14 @@ export default function DashboardScreen() {
         </View>
       </ScrollView>
 
-      {/* NOTIFICATIONS MODAL */}
-      <Modal visible={showNotifModal} animationType="slide" onRequestClose={() => setShowNotifModal(false)}>
-        <SafeAreaView style={styles.modalContainer}>
+{/* NOTIFICATIONS MODAL */}
+      <Modal 
+        visible={showNotifModal} 
+        animationType="slide" 
+        presentationStyle="pageSheet" 
+        onRequestClose={() => setShowNotifModal(false)}
+      >
+        <SafeAreaView edges={['top']} style={styles.modalContainer}>
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>Notifications</Text>
             <TouchableOpacity onPress={() => setShowNotifModal(false)} style={styles.closeBtn}>

@@ -6,6 +6,8 @@ import HospitalFinance from "../models/Finance.js";
 import Doctor from "../models/Doctor.js";
 import ScheduleRequest from "../models/ScheduleRequest.js";
 import { auth } from "../middleware/auth.js";
+import Patient from "../models/Patient.js";
+import { sendBookingConfirmation } from "../utils/emailService.js";
 
 const router = express.Router();
 
@@ -84,6 +86,7 @@ router.post("/book", auth, async (req, res) => {
     const savedAppointment = await newAppointment.save();
 
     // 2. Automatically Create Bill
+    let createdBill = null;
     try {
       const newBill = new Bill({
         patientId: req.user.id,
@@ -94,7 +97,7 @@ router.post("/book", auth, async (req, res) => {
         status: paymentStatus === 'paid' ? "Paid" : "Pending",
         date: new Date()
       });
-      await newBill.save();
+      createdBill = await newBill.save();
     } catch (billError) {
       console.error("Bill Creation Failed:", billError);
     }
@@ -179,6 +182,28 @@ router.post("/book", auth, async (req, res) => {
 
     } catch (notifError) {
       console.error("Notification Error:", notifError);
+    }
+    // 5. ✅ SEND EMAIL CONFIRMATION
+    try {
+      const patient = await Patient.findById(req.user.id);
+      if (patient && patient.email) {
+        const doctorInfo = await Doctor.findById(doctorId);
+        const doctorRoom = doctorInfo ? doctorInfo.allocatedRoom : "TBA";
+        
+        let pdfBuffer = null;
+        if (paymentStatus === 'paid' && createdBill) {
+          try {
+            const { generateReceiptPdf } = await import("../utils/pdfService.js");
+            pdfBuffer = await generateReceiptPdf(createdBill, savedAppointment, doctorInfo, patient);
+          } catch (pdfErr) {
+            console.error("Failed to generate PDF receipt:", pdfErr);
+          }
+        }
+        
+        await sendBookingConfirmation(patient.email, savedAppointment, doctorRoom, pdfBuffer);
+      }
+    } catch (emailErr) {
+      console.error("Failed to send booking confirmation email:", emailErr);
     }
 
     res.json(savedAppointment);

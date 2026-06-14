@@ -4,6 +4,10 @@ import { auth } from "../middleware/auth.js";
 import Bill from "../models/Bill.js";
 import Appointment from "../models/Appointment.js";
 import Notification from "../models/Notification.js";
+import Patient from "../models/Patient.js";
+import Doctor from "../models/Doctor.js";
+import { generateReceiptPdf } from "../utils/pdfService.js";
+import { sendPaymentReceipt } from "../utils/emailService.js";
 
 const router = express.Router();
 // Initialize Stripe with your Secret Key
@@ -75,6 +79,25 @@ router.put("/pay-bill/:billId", auth, async (req, res) => {
       type: "payment",
       message: `Payment Successful! LKR ${bill.amount} paid for ${bill.title}.`
     });
+
+    // Generate PDF and Email Receipt
+    try {
+      const patient = await Patient.findById(req.user.id);
+      if (patient && patient.email) {
+        let appointment = null;
+        let doctor = null;
+        if (bill.appointmentId) {
+          appointment = await Appointment.findById(bill.appointmentId);
+          if (appointment) {
+            doctor = await Doctor.findById(appointment.doctorId);
+          }
+        }
+        const pdfBuffer = await generateReceiptPdf(bill, appointment, doctor, patient);
+        await sendPaymentReceipt(patient.email, bill, pdfBuffer);
+      }
+    } catch (pdfEmailErr) {
+      console.error("Failed to generate/send PDF receipt:", pdfEmailErr);
+    }
 
     res.json({ msg: "Bill marked as Paid", bill });
   } catch (err) {

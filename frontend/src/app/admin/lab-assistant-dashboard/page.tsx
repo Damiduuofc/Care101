@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { clearAdminSession, getAdminToken, getAdminUser } from "@/lib/adminSession";
 
 export default function LabAssistantDashboard() {
   const [loading, setLoading] = useState(true);
@@ -39,7 +40,7 @@ export default function LabAssistantDashboard() {
 
   const fetchPatients = async () => {
     try {
-      const token = localStorage.getItem("adminToken");
+      const token = getAdminToken();
       const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/patients/all-patients`, {
         headers: {
           "Authorization": `Bearer ${token}`,
@@ -60,7 +61,7 @@ export default function LabAssistantDashboard() {
 
   const fetchRequests = async () => {
     try {
-      const token = localStorage.getItem("adminToken");
+      const token = getAdminToken();
       const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/lab-requests/all`, {
         headers: {
           "Authorization": `Bearer ${token}`,
@@ -77,8 +78,9 @@ export default function LabAssistantDashboard() {
   };
 
   useEffect(() => {
-    const user = localStorage.getItem("adminUser");
-    if (!user || JSON.parse(user).role !== "lab_assistant") {
+    const user = getAdminUser();
+    if (!user || user.role !== "lab_assistant") {
+      clearAdminSession();
       window.location.href = "/admin/login";
       return;
     }
@@ -97,7 +99,7 @@ export default function LabAssistantDashboard() {
   const fetchPatientRecords = async (patientId: string) => {
     setLoadingRecords(true);
     try {
-      const token = localStorage.getItem("adminToken");
+      const token = getAdminToken();
       const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/medical-records/patient/${patientId}`, {
         headers: {
           "Authorization": `Bearer ${token}`,
@@ -162,8 +164,8 @@ export default function LabAssistantDashboard() {
 
     setUploadLoading(true);
     try {
-      const token = localStorage.getItem("adminToken");
-      const adminUser = JSON.parse(localStorage.getItem("adminUser") || "{}");
+      const token = getAdminToken();
+      const adminUser = getAdminUser() || {};
 
       let endpoint = `/medical-records/upload`;
       let payload: any = {
@@ -215,7 +217,7 @@ export default function LabAssistantDashboard() {
 
   const downloadRecord = async (id: string, fileName: string) => {
     try {
-      const token = localStorage.getItem("adminToken");
+      const token = getAdminToken();
       const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/medical-records/download/${id}`, {
         headers: {
           "Authorization": `Bearer ${token}`

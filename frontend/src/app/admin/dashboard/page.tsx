@@ -8,6 +8,7 @@ import {
 import Sidebar from "@/components/admin/Sidebar";
 
 import { useRouter } from "next/navigation";
+import { clearAdminSession, getAdminToken, getAdminUser } from "@/lib/adminSession";
 
 export default function Dashboard() {
   const router = useRouter();
@@ -28,22 +29,22 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const storedUser = localStorage.getItem("adminUser");
-    if (storedUser) {
-      const parsed = JSON.parse(storedUser);
+    const parsed = getAdminUser();
+    if (parsed) {
       if (parsed.role === "receptionist") {
         router.push("/admin/receptionist-dashboard");
         return;
       }
       setUser(parsed);
     } else {
+      clearAdminSession();
       router.push("/admin/login");
       return;
     }
 
     const fetchStats = async () => {
       try {
-        const token = localStorage.getItem("adminToken");
+        const token = getAdminToken();
         const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/admin/stats`, {
           headers: {
             "x-auth-token": token || "",

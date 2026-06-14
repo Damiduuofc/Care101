@@ -11,6 +11,7 @@ import {
     CheckCircle2, CircleOff, Users 
 } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { clearAdminSession, getAdminToken, getAdminUser } from "@/lib/adminSession";
 
 export default function DoctorArrivals() {
     const router = useRouter();
@@ -20,16 +21,18 @@ export default function DoctorArrivals() {
     const [updatingId, setUpdatingId] = useState<string | null>(null);
 
     useEffect(() => {
-        const storedUser = localStorage.getItem("adminUser");
-        if (!storedUser || JSON.parse(storedUser).role !== "receptionist") {
+        const storedUser = getAdminUser();
+        if (!storedUser || storedUser.role !== "receptionist") {
+            clearAdminSession();
             router.push("/admin/dashboard");
+            return;
         }
         fetchDoctors();
     }, [router]);
 
     const fetchDoctors = async () => {
         try {
-            const token = localStorage.getItem("adminToken");
+            const token = getAdminToken();
             const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/admin/doctors`, {
                 headers: {
                     "x-auth-token": token || "",
@@ -51,7 +54,7 @@ export default function DoctorArrivals() {
         setUpdatingId(id);
         const newStatus = !currentStatus;
         try {
-            const token = localStorage.getItem("adminToken");
+            const token = getAdminToken();
             const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/admin/doctors/${id}/status`, {
                 method: "PUT",
                 headers: {

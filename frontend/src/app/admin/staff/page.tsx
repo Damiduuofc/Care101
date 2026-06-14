@@ -11,6 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import Sidebar from "@/components/admin/Sidebar";
+import { clearAdminSession, getAdminToken, getAdminUser } from "@/lib/adminSession";
 
 export default function StaffManagement() {
   const [staffList, setStaffList] = useState<any[]>([]);
@@ -30,7 +31,7 @@ export default function StaffManagement() {
   // 1. Fetch Staff List
   const fetchStaff = async () => {
     try {
-      const token = localStorage.getItem("adminToken");
+      const token = getAdminToken();
       const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/admin/staff`, {
         headers: {
           "x-auth-token": token || "",
@@ -63,9 +64,8 @@ export default function StaffManagement() {
   };
 
   useEffect(() => {
-    const storedUser = localStorage.getItem("adminUser");
-    if (storedUser) {
-      const parsed = JSON.parse(storedUser);
+    const parsed = getAdminUser();
+    if (parsed) {
       if (parsed.role !== "system_admin") {
         if (parsed.role === "receptionist") {
           window.location.href = "/admin/receptionist-dashboard";
@@ -75,6 +75,7 @@ export default function StaffManagement() {
         return;
       }
     } else {
+      clearAdminSession();
       window.location.href = "/admin/login";
       return;
     }
@@ -89,7 +90,7 @@ export default function StaffManagement() {
     }
 
     setSubmitLoading(true);
-    const token = localStorage.getItem("adminToken");
+    const token = getAdminToken();
 
     try {
       const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/admin/create-staff`, {
@@ -133,7 +134,7 @@ export default function StaffManagement() {
   const handleDelete = async (id: string) => {
     if (!confirm("Are you sure you want to remove this staff member? Access will be revoked immediately.")) return;
 
-    const token = localStorage.getItem("adminToken");
+    const token = getAdminToken();
     try {
       const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/admin/staff/${id}`, {
         method: "DELETE",

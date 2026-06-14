@@ -5,6 +5,7 @@ import {
   CalendarCheck,
   Activity,
   ShieldCheck,
+  Stethoscope,
   UserCheck,
   Building,
   Clock,
@@ -29,6 +30,12 @@ export const menuItems = [
     title: "Manage Staff",
     href: "/admin/staff",
     icon: ShieldCheck,
+    roles: ["system_admin"],
+  },
+    {
+    title: "Doctor Accounts",
+    href: "/admin/doctorsAccounts",
+    icon: Stethoscope,
     roles: ["system_admin"],
   },
 

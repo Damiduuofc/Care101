@@ -21,7 +21,9 @@
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^9.0.1",
     "multer": "^2.0.2",
+    "nodemailer": "^8.0.11",
     "openai": "^6.10.0",
+    "pdfkit": "^0.19.1",
     "stripe": "^20.1.0"
   },
   "devDependencies": {
