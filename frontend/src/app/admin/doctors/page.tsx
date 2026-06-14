@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import Sidebar from "@/components/admin/Sidebar";
 import { useRouter } from "next/navigation";
+import { clearAdminSession, getAdminToken, getAdminUser } from "@/lib/adminSession";
 
 interface Doctor {
   _id: string;
@@ -45,8 +46,9 @@ export default function AllDoctorsPage() {
   const [toast, setToast] = useState<{ msg: string; type: "success" | "error" } | null>(null);
 
   useEffect(() => {
-    const storedUser = localStorage.getItem("adminUser");
-    if (!storedUser || JSON.parse(storedUser).role !== "system_admin") {
+    const storedUser = getAdminUser();
+    if (!storedUser || storedUser.role !== "system_admin") {
+      clearAdminSession();
       router.push("/admin/dashboard");
       return;
     }
@@ -60,7 +62,7 @@ export default function AllDoctorsPage() {
 
   const fetchDoctors = async () => {
     try {
-      const token = localStorage.getItem("adminToken");
+      const token = getAdminToken();
       const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/admin/all-doctors`, {
         headers: {
           "x-auth-token": token || "",
@@ -81,7 +83,7 @@ export default function AllDoctorsPage() {
   const handleApproval = async (doctorId: string, approve: boolean) => {
     setActionLoading(doctorId);
     try {
-      const token = localStorage.getItem("adminToken");
+      const token = getAdminToken();
       const res = await fetch(
         `${process.env.NEXT_PUBLIC_API_URL}/admin/all-doctors/${doctorId}/approve`,
         {
