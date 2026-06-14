@@ -35,7 +35,7 @@ import PatientBottomNavBar from '../../components/PatientBottomNavBar';
 import { useAuth } from '@/context/auth';
 import AiAssistant from '@/components/ui/AiAssistant';
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.1.100:5000/api';
+const API_URL = process.env.EXPO_PUBLIC_API_URL;
 
 export default function PatientDashboardScreen() {
     const router = useRouter();
@@ -357,30 +357,61 @@ export default function PatientDashboardScreen() {
                 </View>
             </Modal>
 
-            <Modal animationType="slide" visible={isNotifVisible} presentationStyle="pageSheet" onRequestClose={() => setNotifVisible(false)}>
-                <SafeAreaView style={{ flex: 1, backgroundColor: '#fff' }}>
-                    <View style={styles.modalHeader}>
-                        <Text style={styles.modalTitle}>Notifications</Text>
-                        <View style={{ flexDirection: 'row', gap: 15 }}>
-                            <TouchableOpacity onPress={markAllRead}><CheckCheck size={24} color="#06b6d4" /></TouchableOpacity>
-                            <TouchableOpacity onPress={clearAllNotifications}><Trash2 size={24} color="#dc2626" /></TouchableOpacity>
-                            <TouchableOpacity onPress={() => setNotifVisible(false)}><X size={24} color="#0f172a" /></TouchableOpacity>
-                        </View>
+       <Modal animationType="slide" visible={isNotifVisible} presentationStyle="pageSheet" onRequestClose={() => setNotifVisible(false)}>
+    <View style={styles.notifModalContainer}>
+        <View style={styles.notifHeader}>
+            <Text style={styles.notifTitle}>Notifications</Text>
+            <View style={styles.notifHeaderActions}>
+                <TouchableOpacity style={styles.iconButton} onPress={markAllRead}>
+                    <CheckCheck size={20} color="#06b6d4" />
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.iconButton} onPress={clearAllNotifications}>
+                    <Trash2 size={20} color="#ef4444" />
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.closeIconButton} onPress={() => setNotifVisible(false)}>
+                    <X size={22} color="#0f172a" />
+                </TouchableOpacity>
+            </View>
+        </View>
+
+        <FlatList
+            data={notifications}
+            keyExtractor={(item) => item._id}
+            contentContainerStyle={styles.notifListContent}
+            showsVerticalScrollIndicator={false}
+            ListEmptyComponent={() => (
+                <View style={styles.emptyNotifContainer}>
+                    <Bell size={48} color="#cbd5e1" />
+                    <Text style={styles.emptyNotifText}>You're all caught up!</Text>
+                </View>
+            )}
+            renderItem={({ item }) => (
+                <TouchableOpacity 
+                    style={[styles.notifCard, !item.read && styles.notifCardUnread]} 
+                    onPress={() => markAsRead(item._id)}
+                    activeOpacity={0.7}
+                >
+                    <View style={[styles.notifIcon, !item.read && styles.notifIconUnread]}>
+                        <Bell size={20} color={item.read ? "#94a3b8" : "#06b6d4"} />
                     </View>
-                    <FlatList
-                        data={notifications}
-                        keyExtractor={(item) => item._id}
-                        contentContainerStyle={{ padding: 20 }}
-                        renderItem={({ item }) => (
-                            <TouchableOpacity style={[styles.notifCard, !item.read && { backgroundColor: '#f0f9ff' }]} onPress={() => markAsRead(item._id)}>
-                                <View style={styles.notifIcon}><Bell size={20} color="#64748b" /></View>
-                                <View style={{ flex: 1 }}><Text style={[styles.notifMessage, !item.read && { fontWeight: '700' }]}>{item.message}</Text></View>
-                                <TouchableOpacity onPress={() => deleteNotification(item._id)}><Trash2 size={18} color="#cbd5e1" /></TouchableOpacity>
-                            </TouchableOpacity>
-                        )}
-                    />
-                </SafeAreaView>
-            </Modal>
+                    
+                    <View style={styles.notifTextContainer}>
+                        <Text style={[styles.notifMessage, !item.read && styles.notifMessageUnread]}>
+                            {item.message}
+                        </Text>
+                    </View>
+
+                    <TouchableOpacity style={styles.notifDeleteBtn} onPress={() => deleteNotification(item._id)}>
+                        <Trash2 size={18} color="#cbd5e1" />
+                    </TouchableOpacity>
+
+                    {/* Unread Indicator Dot */}
+                    {!item.read && <View style={styles.unreadDot} />}
+                </TouchableOpacity>
+            )}
+        />
+    </View>
+</Modal>
 
             {/* ✅ AI Assistant is now safely rendered. 
                 Because it uses ChatContext, it won't reset on dashboard updates! */}
@@ -394,6 +425,7 @@ export default function PatientDashboardScreen() {
 }
 
 const styles = StyleSheet.create({
+    // --- LAYOUT & HEADER ---
     container: { flex: 1, backgroundColor: '#f8fafc' },
     headerSafeArea: { backgroundColor: '#fff', zIndex: 10, paddingTop: Platform.OS === 'android' ? 10 : 0 },
     headerContainer: { paddingHorizontal: 20, paddingVertical: 15, borderBottomWidth: 1, borderBottomColor: '#f1f5f9', backgroundColor: '#fff', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
@@ -404,6 +436,8 @@ const styles = StyleSheet.create({
     avatarContainer: { width: 50, height: 50, borderRadius: 25, backgroundColor: '#ecfeff', alignItems: 'center', justifyContent: 'center', marginRight: 15, borderWidth: 1, borderColor: '#cffafe' },
     welcomeText: { fontSize: 14, color: '#64748b' },
     userName: { fontSize: 18, fontWeight: '700', color: '#0f172a' },
+    
+    // --- MAIN DASHBOARD CONTENT ---
     scrollContent: { paddingBottom: 20 },
     heroContainer: { margin: 20, height: 160, borderRadius: 16, overflow: 'hidden', backgroundColor: '#0f172a' },
     heroImage: { width: '100%', height: '100%', opacity: 0.8 },
@@ -412,19 +446,23 @@ const styles = StyleSheet.create({
     heroSubtitle: { color: '#cbd5e1', fontSize: 14 },
     section: { paddingHorizontal: 20, marginBottom: 24 },
     sectionTitle: { fontSize: 18, fontWeight: '700', color: '#1e293b', marginBottom: 16 },
+    
+    // --- QUICK ACTIONS ---
     actionList: { gap: 12 },
     actionCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', padding: 16, borderRadius: 16, elevation: 2 },
     actionIconBox: { width: 48, height: 48, borderRadius: 12, alignItems: 'center', justifyContent: 'center', marginRight: 16 },
     actionDetails: { flex: 1 },
     actionTitle: { fontSize: 16, fontWeight: '600' },
     actionSubtitle: { fontSize: 12, color: '#94a3b8' },
+    
+    // --- APPOINTMENT CARDS ---
     appointmentCard: { backgroundColor: '#fff', borderRadius: 16, padding: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', elevation: 2 },
     emptyCard: { backgroundColor: '#f8fafc', borderRadius: 16, padding: 24, alignItems: 'center', borderWidth: 1, borderColor: '#e2e8f0', borderStyle: 'dashed' },
     emptyText: { color: '#94a3b8', marginVertical: 8 },
     bookNowText: { color: '#06b6d4', fontWeight: '600' },
     appointLeft: { flexDirection: 'row', alignItems: 'center' },
     dateBox: { backgroundColor: '#eff6ff', borderRadius: 12, width: 50, height: 60, alignItems: 'center', justifyContent: 'center', marginRight: 16 },
-    dateDay: { fontSize: 18, fontWeight: '700', color: '#06B6D4' },
+    dateDay: { fontSize: 18, fontWeight: '700', color: '#06b6d4' },
     dateMonth: { fontSize: 12, fontWeight: '600', color: '#60a5fa' },
     appointDetails: { justifyContent: 'center' },
     doctorName: { fontSize: 16, fontWeight: '600' },
@@ -435,9 +473,13 @@ const styles = StyleSheet.create({
     statusText: { fontSize: 11, fontWeight: '700' },
     viewButton: { backgroundColor: '#f1f5f9', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20 },
     viewButtonText: { fontSize: 12, fontWeight: '600', color: '#475569' },
+    
+    // --- INFO CARD ---
     infoCard: { backgroundColor: '#ecfdf5', borderRadius: 16, padding: 20 },
     infoTitle: { fontSize: 16, fontWeight: '700', color: '#065f46' },
     infoText: { fontSize: 14, color: '#10b981' },
+    
+    // --- QUEUE MODAL ---
     modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' },
     modalContent: { backgroundColor: '#fff', width: '90%', borderRadius: 20, padding: 20 },
     modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
@@ -454,7 +496,24 @@ const styles = StyleSheet.create({
     liveText: { color: '#fff', fontSize: 10, fontWeight: '700' },
     closeButton: { marginTop: 15, backgroundColor: '#0f172a', paddingVertical: 14, borderRadius: 12, alignItems: 'center' },
     closeButtonText: { color: '#fff', fontWeight: '700' },
-    notifCard: { flexDirection: 'row', padding: 16, borderRadius: 12, marginBottom: 10, alignItems: 'center' },
-    notifIcon: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#f1f5f9', alignItems: 'center', justifyContent: 'center', marginRight: 15 },
-    notifMessage: { fontSize: 14, color: '#1e293b' }
+
+    // --- NOTIFICATION MODAL ---
+    notifModalContainer: { flex: 1, backgroundColor: '#f8fafc', paddingTop: Platform.OS === 'ios' ? 20 : 0 },
+    notifHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 16, backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#f1f5f9' },
+    notifTitle: { fontSize: 22, fontWeight: '800', color: '#0f172a' },
+    notifHeaderActions: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+    iconButton: { padding: 8, backgroundColor: '#f8fafc', borderRadius: 10, borderWidth: 1, borderColor: '#f1f5f9' },
+    closeIconButton: { padding: 8, backgroundColor: '#e2e8f0', borderRadius: 20, marginLeft: 4 },
+    notifListContent: { padding: 20, paddingBottom: 40 },
+    notifCard: { flexDirection: 'row', backgroundColor: '#fff', padding: 16, borderRadius: 16, marginBottom: 12, alignItems: 'center', elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 3, borderWidth: 1, borderColor: '#f1f5f9' },
+    notifCardUnread: { backgroundColor: '#ecfeff', borderColor: '#cffafe' },
+    notifIcon: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#f8fafc', alignItems: 'center', justifyContent: 'center', marginRight: 15 },
+    notifIconUnread: { backgroundColor: '#cffafe' },
+    notifTextContainer: { flex: 1, paddingRight: 10 },
+    notifMessage: { fontSize: 14, color: '#475569', lineHeight: 20 },
+    notifMessageUnread: { fontWeight: '700', color: '#0f172a' },
+    notifDeleteBtn: { padding: 8 },
+    unreadDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#06b6d4', position: 'absolute', top: 16, right: 16 },
+    emptyNotifContainer: { alignItems: 'center', justifyContent: 'center', marginTop: 80 },
+    emptyNotifText: { marginTop: 16, color: '#94a3b8', fontSize: 16, fontWeight: '500' }
 });
