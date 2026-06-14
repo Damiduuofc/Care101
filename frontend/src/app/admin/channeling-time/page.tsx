@@ -9,6 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { 
     Loader2, Clock, CalendarDays, Check, User 
 } from "lucide-react";
+import { getAdminToken } from "@/lib/adminSession";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
@@ -23,7 +24,7 @@ export default function ChannelingRequestPage() {
 
     const fetchRequests = async () => {
         try {
-            const token = localStorage.getItem("adminToken");
+            const token = getAdminToken();
             const response = await fetch(`${API_URL}/schedule-requests/all`, {
                 headers: { 
                     "x-auth-token": token || "",
@@ -44,7 +45,7 @@ export default function ChannelingRequestPage() {
     const handleAction = async (id: string, newStatus: "approved" | "rejected") => {
         setLoadingAction(id);
         try {
-            const token = localStorage.getItem("adminToken");
+            const token = getAdminToken();
             const response = await fetch(`${API_URL}/schedule-requests/${id}/status`, {
                 method: "PUT",
                 headers: { 
