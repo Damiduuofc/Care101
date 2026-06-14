@@ -10,7 +10,9 @@ import HospitalStatus from "../models/HospitalStatus.js";
 import Bill from "../models/Bill.js";
 import HospitalFinance from "../models/Finance.js";
 import Notification from "../models/Notification.js";
+import ScheduleRequest from "../models/ScheduleRequest.js";
 import { protect, authorize } from "../middleware/authRole.js";
+import { sendBookingConfirmation } from "../utils/emailService.js";
 
 const router = express.Router();
 
@@ -152,6 +154,235 @@ router.get("/appointments", protect, async (req, res) => {
   }
 });
 
+// ==========================================
+// 4A. WALK-IN APPOINTMENT BOOKING
+// ==========================================
+router.post("/appointments/walkin", protect, async (req, res) => {
+  try {
+    const { patientDetails, appointmentDetails } = req.body;
+
+    if (!patientDetails || !appointmentDetails) {
+      return res.status(400).json({ msg: "Patient details and appointment details are required." });
+    }
+
+    const { fullName, nic, dob, phone, email } = patientDetails;
+    const { doctorId, doctorName, department, date, visitType, reason, paymentStatus, amount } = appointmentDetails;
+
+    if (!fullName || !nic || !dob || !phone || !email) {
+      return res.status(400).json({ msg: "All patient details (Name, NIC, DOB, Phone, Email) are required." });
+    }
+
+    if (!doctorId || !date) {
+      return res.status(400).json({ msg: "Doctor and Date are required." });
+    }
+
+    // --- 1. FIND OR CREATE PATIENT ---
+    let patient = await Patient.findOne({ nicNumber: nic });
+    if (!patient) {
+      patient = await Patient.findOne({ email: email.toLowerCase() });
+    }
+
+    if (!patient) {
+      // Create new patient
+      const baseUsername = fullName.toLowerCase().replace(/\s+/g, "") || "patient";
+      const randomSuffix = Math.floor(1000 + Math.random() * 9000);
+      const username = `${baseUsername}${randomSuffix}`;
+
+      const salt = await bcrypt.genSalt(10);
+      const hashedPassword = await bcrypt.hash("Walkin123!", salt);
+
+      patient = new Patient({
+        fullName,
+        username,
+        email: email.toLowerCase(),
+        nicNumber: nic,
+        password: hashedPassword,
+        mobileNumber: phone,
+        dateOfBirth: new Date(dob),
+        gender: "Other", // Default for walk-in
+        district: "Colombo" // Default for walk-in
+      });
+
+      await patient.save();
+    }
+
+    // --- 2. CHECK IF DOCTOR HAS AN APPROVED SCHEDULE ---
+    const bookingDate = new Date(date);
+    const startOfDay = new Date(bookingDate);
+    startOfDay.setHours(0, 0, 0, 0);
+    const endOfDay = new Date(bookingDate);
+    endOfDay.setHours(23, 59, 59, 999);
+
+    const approvedSchedule = await ScheduleRequest.findOne({
+      doctorId,
+      status: "approved",
+      date: { $gte: startOfDay, $lte: endOfDay }
+    });
+
+    if (!approvedSchedule) {
+      return res.status(400).json({ msg: "This doctor is not available on the selected date (No approved schedule)." });
+    }
+
+    // --- 3. CHECK QUEUE LIMIT ---
+    const currentAppointmentCount = await Appointment.countDocuments({
+      doctorId,
+      date: { $gte: startOfDay, $lte: endOfDay },
+      status: { $ne: "cancelled" }
+    });
+
+    if (!approvedSchedule.isUnlimited && approvedSchedule.queueLimit) {
+      if (currentAppointmentCount >= approvedSchedule.queueLimit) {
+        return res.status(400).json({ msg: "Sorry, this session is full. Maximum patient count reached." });
+      }
+    }
+
+    // --- 4. GENERATE QUEUE NUMBER ---
+    const queueNumber = currentAppointmentCount + 1;
+    
+    // Set total amount (2000 Doctor + 1500 Hospital = 3500)
+    const totalAmount = amount || 3500; 
+
+    // --- 5. CREATE APPOINTMENT ---
+    const newAppointment = new Appointment({
+      patientId: patient._id,
+      doctorId,
+      doctorName,
+      department,
+      date,
+      queueNumber,
+      visitType: visitType || 'Consultation',
+      reason,
+      amount: totalAmount,
+      status: 'confirmed', // Walk-ins confirmed automatically by admin/receptionist
+      paymentStatus: paymentStatus || 'pending'
+    });
+
+    const savedAppointment = await newAppointment.save();
+
+    // --- 6. AUTOMATICALLY CREATE BILL ---
+    let createdBill = null;
+    try {
+      const newBill = new Bill({
+        patientId: patient._id,
+        appointmentId: savedAppointment._id,
+        title: `Consultation - ${doctorName}`,
+        type: "Appointment",
+        amount: totalAmount,
+        status: paymentStatus === 'paid' ? "Paid" : "Pending",
+        date: new Date()
+      });
+      createdBill = await newBill.save();
+    } catch (billError) {
+      console.error("Bill Creation Failed:", billError);
+    }
+
+    // --- 7. ADD TO CHANNELING INCOME (Split: 2000 Doctor, 1500 Hospital) ---
+    if (paymentStatus === 'paid') {
+      try {
+        const hospitalName = "Suwasevana";
+        
+        // Define the exact split
+        const hospitalIncome = 1500;
+        const doctorIncome = totalAmount > hospitalIncome ? (totalAmount - hospitalIncome) : 0;
+
+        // Update DOCTOR'S Finance Record
+        let doctorFinance = await HospitalFinance.findOne({
+          doctorId: doctorId,
+          name: hospitalName
+        });
+
+        if (!doctorFinance) {
+          doctorFinance = new HospitalFinance({
+            doctorId: doctorId,
+            name: hospitalName,
+            records: []
+          });
+        }
+
+        doctorFinance.records.unshift({
+          type: 'channeling',
+          date: new Date(date),
+          patients: 1,
+          income: doctorIncome
+        });
+
+        await doctorFinance.save();
+
+        // Update HOSPITAL'S Finance Record (doctorId is null)
+        let systemFinance = await HospitalFinance.findOne({
+          doctorId: null, 
+          name: hospitalName
+        });
+
+        if (!systemFinance) {
+          systemFinance = new HospitalFinance({
+            doctorId: null,
+            name: hospitalName,
+            records: []
+          });
+        }
+
+        systemFinance.records.unshift({
+          type: 'channeling',
+          date: new Date(date),
+          patients: 1,
+          income: hospitalIncome
+        });
+
+        await systemFinance.save();
+
+      } catch (financeError) {
+        console.error("Finance Update Failed:", financeError);
+      }
+    }
+
+    // --- 8. CREATE NOTIFICATIONS ---
+    try {
+      await Notification.create({
+        userId: patient._id,
+        type: 'appointment',
+        message: `Booking Confirmed! Queue #${queueNumber} for Dr. ${doctorName}.`
+      });
+
+      if (paymentStatus === 'paid') {
+        await Notification.create({
+          userId: patient._id,
+          type: 'payment',
+          message: `Payment of LKR ${totalAmount} received successfully.`
+        });
+      }
+    } catch (notifError) {
+      console.error("Notification Error:", notifError);
+    }
+
+    // --- 9. SEND EMAIL CONFIRMATION ---
+    try {
+      const doctorInfo = await Doctor.findById(doctorId);
+      const doctorRoom = doctorInfo ? doctorInfo.allocatedRoom : "TBA";
+      
+      let pdfBuffer = null;
+      if (paymentStatus === 'paid' && createdBill) {
+        try {
+          const { generateReceiptPdf } = await import("../utils/pdfService.js");
+          pdfBuffer = await generateReceiptPdf(createdBill, savedAppointment, doctorInfo, patient);
+        } catch (pdfErr) {
+          console.error("Failed to generate PDF receipt:", pdfErr);
+        }
+      }
+      
+      await sendBookingConfirmation(patient.email, savedAppointment, doctorRoom, pdfBuffer);
+    } catch (emailErr) {
+      console.error("Failed to send booking confirmation email:", emailErr);
+    }
+
+    res.status(201).json(savedAppointment);
+
+  } catch (err) {
+    console.error("Walkin Booking Error:", err.message);
+    res.status(500).json({ msg: `Booking Failed: ${err.message}` });
+  }
+});
+
 router.put("/appointments/:id", protect, async (req, res) => {
   try {
     const { status, paymentStatus } = req.body;
@@ -170,7 +401,21 @@ router.put("/appointments/:id", protect, async (req, res) => {
       appointment.paymentStatus = paymentStatus;
 
       if (isBecomingPaid) {
-        await Bill.findOneAndUpdate({ appointmentId: appointment._id }, { status: "Paid" });
+        const updatedBill = await Bill.findOneAndUpdate({ appointmentId: appointment._id }, { status: "Paid" }, { new: true });
+
+        // Generate and email PDF Receipt
+        try {
+          const patient = await Patient.findById(appointment.patientId);
+          if (patient && patient.email) {
+            const doctorInfo = await Doctor.findById(appointment.doctorId);
+            const { generateReceiptPdf } = await import("../utils/pdfService.js");
+            const { sendPaymentReceipt } = await import("../utils/emailService.js");
+            const pdfBuffer = await generateReceiptPdf(updatedBill || {}, appointment, doctorInfo, patient);
+            await sendPaymentReceipt(patient.email, updatedBill || { _id: appointment._id, amount: appointment.amount || 3500, title: `Consultation - ${appointment.doctorName}` }, pdfBuffer);
+          }
+        } catch (pdfEmailErr) {
+          console.error("Failed to generate/send PDF receipt on admin update:", pdfEmailErr);
+        }
 
         try {
           const hospitalName = "Suwasevana";
@@ -306,6 +551,25 @@ router.post("/bills/create", protect, authorize(["system_admin", "receptionist"]
 
       } catch (finErr) { 
         console.error("Finance Error:", finErr); 
+      }
+    }
+
+    // Generate and email PDF Receipt if manual bill is paid immediately
+    if (status === "Paid") {
+      try {
+        const patient = await Patient.findById(newBill.patientId);
+        if (patient && patient.email) {
+          let doctor = null;
+          if (doctorId) {
+            doctor = await Doctor.findById(doctorId);
+          }
+          const { generateReceiptPdf } = await import("../utils/pdfService.js");
+          const { sendPaymentReceipt } = await import("../utils/emailService.js");
+          const pdfBuffer = await generateReceiptPdf(newBill, null, doctor, patient);
+          await sendPaymentReceipt(patient.email, newBill, pdfBuffer);
+        }
+      } catch (pdfEmailErr) {
+        console.error("Failed to generate/send PDF receipt for manual bill:", pdfEmailErr);
       }
     }
 
