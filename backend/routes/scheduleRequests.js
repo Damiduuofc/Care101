@@ -199,4 +199,63 @@ router.get('/approved/today', auth, async (req, res) => {
   }
 });
 
+// 8. RECEPTIONIST/ADMIN: Create a schedule on behalf of a doctor
+router.post('/admin/create', auth, async (req, res) => {
+  try {
+    const { doctorId, date, startTime, endTime, isUnlimited, queueLimit } = req.body;
+
+    // Check authorization (Only receptionist or system_admin)
+    if (!['receptionist', 'system_admin'].includes(req.user?.role)) {
+      return res.status(403).json({ msg: 'Not authorized. Only receptionists and system admins can perform this action.' });
+    }
+
+    if (!doctorId || !date || !startTime || !endTime) {
+      return res.status(400).json({ msg: 'Doctor ID, date, start time, and end time are required.' });
+    }
+
+    const doctor = await Doctor.findById(doctorId);
+    if (!doctor) return res.status(404).json({ msg: 'Doctor not found.' });
+
+    const parsedDate = new Date(date);
+    const parsedStartTime = new Date(startTime);
+    const parsedEndTime = new Date(endTime);
+
+    if (parsedEndTime <= parsedStartTime) {
+      return res.status(400).json({ msg: 'End time must be after start time.' });
+    }
+
+    const newRequest = new ScheduleRequest({
+      doctorId,
+      doctorName: doctor.name || doctor.fullName || 'Doctor',
+      date: parsedDate,
+      startTime: parsedStartTime,
+      endTime: parsedEndTime,
+      isUnlimited,
+      queueLimit: isUnlimited ? null : queueLimit,
+      status: 'approved' // Automatically approved
+    });
+
+    const savedRequest = await newRequest.save();
+
+    // Create a Notification for the doctor
+    const doctorNotification = new Notification({
+      userId: doctorId,
+      type: 'schedule_request',
+      message: `A new schedule for ${parsedDate.toDateString()} was created and approved for you by the administration.`,
+      data: { 
+        requestId: savedRequest._id,
+        status: 'approved',
+        allocatedRoom: 'TBA',
+        allocatedNurse: 'TBA'
+      }
+    });
+    await doctorNotification.save();
+
+    res.status(201).json({ msg: 'Schedule created and approved successfully', request: savedRequest });
+  } catch (err) {
+    console.error('Admin Create Schedule Error:', err);
+    res.status(500).json({ msg: 'Server error' });
+  }
+});
+
 export default router;

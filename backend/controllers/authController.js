@@ -48,36 +48,88 @@ export const registerPatient = async (req, res) => {
       mobileNumber, email, district, username, password
     } = req.body;
 
-    // 1. Check uniqueness across BOTH collections
-    const existingPatient = await Patient.findOne({ email });
-    const existingDoctor = await Doctor.findOne({ email });
-
-    if (existingPatient || existingDoctor) {
+    // 1. Check uniqueness across Doctor collection
+    const existingDoctor = await Doctor.findOne({ email: email.toLowerCase() });
+    if (existingDoctor) {
       return res.status(400).json({ message: "User with this email already exists" });
+    }
+
+    // Check existing patients by email and NIC
+    const existingPatientByEmail = await Patient.findOne({ email: email.toLowerCase() });
+    const existingPatientByNic = await Patient.findOne({ nicNumber });
+
+    let patientToUpgrade = null;
+
+    if (existingPatientByEmail) {
+      if (existingPatientByEmail.isRegistered === false) {
+        patientToUpgrade = existingPatientByEmail;
+      } else {
+        return res.status(400).json({ message: "User with this email already exists" });
+      }
+    }
+
+    if (existingPatientByNic) {
+      if (existingPatientByNic.isRegistered === false) {
+        if (patientToUpgrade && patientToUpgrade._id.toString() !== existingPatientByNic._id.toString()) {
+          return res.status(400).json({ message: "NIC number is already in use by another account." });
+        }
+        patientToUpgrade = existingPatientByNic;
+      } else {
+        return res.status(400).json({ message: "User with this NIC number already exists" });
+      }
+    }
+
+    // Check if username is already in use by another registered patient
+    const existingUsername = await Patient.findOne({ username });
+    if (existingUsername) {
+      if (!patientToUpgrade || patientToUpgrade._id.toString() !== existingUsername._id.toString()) {
+        return res.status(400).json({ message: "Username is already in use by another account." });
+      }
     }
 
     // 2. Hash Password
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
-    // 3. Create Patient
-    const newPatient = new Patient({
-      fullName,
-      dateOfBirth,
-      gender,
-      nicNumber,
-      mobileNumber,
-      email,
-      district,
-      username,
-      password: hashedPassword
-    });
+    let finalPatient;
 
-    await newPatient.save();
+    if (patientToUpgrade) {
+      // Upgrade existing walk-in patient
+      patientToUpgrade.fullName = fullName;
+      patientToUpgrade.email = email.toLowerCase();
+      patientToUpgrade.username = username;
+      patientToUpgrade.nicNumber = nicNumber;
+      patientToUpgrade.password = hashedPassword;
+      patientToUpgrade.mobileNumber = mobileNumber;
+      patientToUpgrade.dateOfBirth = new Date(dateOfBirth);
+      patientToUpgrade.gender = gender;
+      patientToUpgrade.district = district;
+      patientToUpgrade.isRegistered = true; // Mark as fully registered
+
+      await patientToUpgrade.save();
+      finalPatient = patientToUpgrade;
+    } else {
+      // 3. Create new Patient
+      const newPatient = new Patient({
+        fullName,
+        dateOfBirth: new Date(dateOfBirth),
+        gender,
+        nicNumber,
+        mobileNumber,
+        email: email.toLowerCase(),
+        district,
+        username,
+        password: hashedPassword,
+        isRegistered: true
+      });
+
+      await newPatient.save();
+      finalPatient = newPatient;
+    }
 
     // 4. Create Token
     const token = jwt.sign(
-      { id: newPatient._id, role: 'patient' },
+      { id: finalPatient._id, role: 'patient' },
       process.env.JWT_SECRET,
       { expiresIn: "30d" }
     );
@@ -85,10 +137,10 @@ export const registerPatient = async (req, res) => {
     res.status(201).json({
       token,
       user: {
-        id: newPatient._id,
-        name: newPatient.fullName,
-        email: newPatient.email,
-        nicNumber: newPatient.nicNumber,
+        id: finalPatient._id,
+        name: finalPatient.fullName,
+        email: finalPatient.email,
+        nicNumber: finalPatient.nicNumber,
         role: "patient"
       }
     });
@@ -178,7 +230,7 @@ export const registerDoctorsBulk = async (req, res) => {
     const doctorsWithHashedPassword = doctorsList.map(doc => ({
       ...doc,
       password: hashedPassword,
-      // Map JSON fields to Schema if needed, assuming JSON matches Schema for bulk
+      isApproved: false
     }));
 
     // ordered: false allows successful inserts even if some fail (duplicates)

@@ -12,7 +12,7 @@ import HospitalFinance from "../models/Finance.js";
 import Notification from "../models/Notification.js";
 import ScheduleRequest from "../models/ScheduleRequest.js";
 import { protect, authorize } from "../middleware/authRole.js";
-import { sendBookingConfirmation } from "../utils/emailService.js";
+import { sendBookingConfirmation, sendDoctorWelcomeEmail } from "../utils/emailService.js";
 
 const router = express.Router();
 
@@ -200,7 +200,8 @@ router.post("/appointments/walkin", protect, async (req, res) => {
         mobileNumber: phone,
         dateOfBirth: new Date(dob),
         gender: "Other", // Default for walk-in
-        district: "Colombo" // Default for walk-in
+        district: "Colombo", // Default for walk-in
+        isRegistered: false
       });
 
       await patient.save();
@@ -631,6 +632,80 @@ router.delete("/staff/:id", protect, authorize(["system_admin"]), async (req, re
 // ==========================================
 // 7. DOCTOR MANAGEMENT
 // ==========================================
+router.post("/create-doctor", protect, authorize(["system_admin"]), async (req, res) => {
+  try {
+    const {
+      fullName,
+      nameWithInitials,
+      slmcRegistrationNumber,
+      specialization,
+      nicNumber,
+      email,
+      phoneNumber,
+      password
+    } = req.body;
+
+    // 1. Validation
+    if (!fullName || !nameWithInitials || !slmcRegistrationNumber || !specialization || !nicNumber || !email || !phoneNumber || !password) {
+      return res.status(400).json({ msg: "All fields are required." });
+    }
+
+    // 2. Uniqueness Checks
+    const existingDoctorEmail = await Doctor.findOne({ email });
+    const existingPatientEmail = await Patient.findOne({ email });
+    const existingAdminEmail = await Admin.findOne({ email });
+
+    if (existingDoctorEmail || existingPatientEmail || existingAdminEmail) {
+      return res.status(400).json({ msg: "A user with this email already exists." });
+    }
+
+    const existingSlmc = await Doctor.findOne({ slmcReg: slmcRegistrationNumber });
+    if (existingSlmc) {
+      return res.status(400).json({ msg: "A doctor with this SLMC registration number already exists." });
+    }
+
+    const existingNic = await Doctor.findOne({ nic: nicNumber });
+    if (existingNic) {
+      return res.status(400).json({ msg: "A doctor with this NIC number already exists." });
+    }
+
+    // 3. Hash Password
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
+
+    // 4. Create Doctor
+    const newDoctor = new Doctor({
+      name: fullName,
+      fullName,
+      email,
+      password: hashedPassword,
+      specialization,
+      nic: nicNumber,
+      phone: phoneNumber,
+      slmcReg: slmcRegistrationNumber,
+      nameWithInitials,
+      isApproved: true // Direct approval
+    });
+
+    await newDoctor.save();
+
+    // 5. Send Welcome Email
+    sendDoctorWelcomeEmail(email, fullName, password).catch(err => {
+      console.error("Failed to send welcome email to doctor", err);
+    });
+
+    // Return the created doctor without password
+    const docResponse = newDoctor.toObject();
+    delete docResponse.password;
+
+    res.status(201).json({ msg: "Doctor account created successfully and welcome email sent.", doctor: docResponse });
+
+  } catch (err) {
+    console.error("Create Doctor Error:", err);
+    res.status(500).send("Server Error");
+  }
+});
+
 router.get("/all-doctors", protect, authorize(["system_admin"]), async (req, res) => {
   try {
     const doctors = await Doctor.find().select("-password").sort({ createdAt: -1 });

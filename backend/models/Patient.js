@@ -60,6 +60,11 @@ const PatientSchema = new mongoose.Schema({
   policyNumber: { type: String, default: "" },
   profileImage: { type: String, default: "" },
   
+  isRegistered: {
+    type: Boolean,
+    default: true
+  },
+
   role: { 
     type: String, 
     default: "patient" 

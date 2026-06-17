@@ -170,3 +170,82 @@ Kindly limit visitors to the hospital for your own safety. Patients are advised 
     console.error("❌ Error sending payment receipt email:", err);
   }
 };
+
+/**
+ * Sends a welcome email to the newly created doctor.
+ * @param {string} email - Doctor's email address
+ * @param {string} doctorName - Doctor's full name
+ * @param {string} password - Doctor's temporary password
+ */
+export const sendDoctorWelcomeEmail = async (email, doctorName, password) => {
+  if (!email) {
+    console.log("⚠️ No email address provided, skipping doctor welcome email.");
+    return;
+  }
+
+  try {
+    const transporter = await getTransporter();
+
+    const textBody = `Dear Dr. ${doctorName},
+
+Welcome to Suwasewana Kandy Hospital!
+
+Your doctor account has been successfully created by the system administrator. You can now access the Care101 Healthcare Management System using the credentials below.
+
+Login Details:
+- Email: ${email}
+- Temporary Password: ${password}
+
+Download the Care101 App:
+Please download the Care101 mobile application from the Google Play Store or the Apple App Store.
+After installing the app, sign in using the login credentials provided above.
+
+For security reasons, please log in as soon as possible and change your temporary password after your first login.
+
+If you experience any issues accessing your account, please contact the system administrator for assistance.
+
+Thank you, and welcome to Suwasewana Kandy Hospital. We look forward to working with you.
+
+Kind regards,
+
+Suwasewana Kandy Hospital Administration Team
+
+Email: support@suwasewana.com
+Phone: +94 81 222 3223`;
+
+    const htmlBody = `<p>Dear Dr. <strong>${doctorName}</strong>,</p>
+<p>Welcome to <strong>Suwasewana Kandy Hospital</strong>!</p>
+<p>Your doctor account has been successfully created by the system administrator. You can now access the <strong>Care101 Healthcare Management System</strong> using the credentials below.</p>
+<h3>Login Details</h3>
+<ul>
+  <li><strong>Email:</strong> ${email}</li>
+  <li><strong>Temporary Password:</strong> ${password}</li>
+</ul>
+<h3>Download the Care101 App</h3>
+<p>Please download the <strong>Care101</strong> mobile application from the <strong>Google Play Store</strong> or the <strong>Apple App Store</strong>.</p>
+<p>After installing the app, sign in using the login credentials provided above.</p>
+<p>For security reasons, please log in as soon as possible and change your temporary password after your first login.</p>
+<p>If you experience any issues accessing your account, please contact the system administrator for assistance.</p>
+<p>Thank you, and welcome to <strong>Suwasewana Kandy Hospital</strong>. We look forward to working with you.</p>
+<br/>
+<p>Kind regards,</p>
+<p><strong>Suwasewana Kandy Hospital Administration Team</strong></p>
+<p><strong>Email:</strong> <a href="mailto:support@suwasewana.com">support@suwasewana.com</a><br/>
+<strong>Phone:</strong> +94 81 222 3223</p>`;
+
+    const mailOptions = {
+      from: process.env.EMAIL_USER || '"Suwasewana Kandy Hospital" <no-reply@suwasevana.com>',
+      to: email,
+      subject: 'Welcome to Suwasewana Kandy Hospital - Doctor Account Created',
+      text: textBody,
+      html: htmlBody
+    };
+
+    const info = await transporter.sendMail(mailOptions);
+    console.log(`✅ Doctor welcome email sent: ${info.messageId}`);
+    return info;
+  } catch (err) {
+    console.error("❌ Error sending doctor welcome email:", err);
+  }
+};
+
