@@ -1,8 +1,10 @@
 import Doctor from "../models/Doctor.js";
 import Patient from "../models/Patient.js";
-import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import Notification from "../models/Notification.js";
+import bcrypt from "bcryptjs";
+import nodemailer from "nodemailer";
+
 // 1. REGISTER SINGLE DOCTOR
 export const registerDoctor = async (req, res) => {
   try {
@@ -327,3 +329,117 @@ export const getNotifications = async (req, res) => {
   }
 };
 
+// ==========================================
+// FORGOT PASSWORD (Generate & Send OTP)
+// ==========================================
+export const forgotPassword = async (req, res) => {
+  const { email } = req.body;
+
+  try {
+    // 1. Search Patient DB first, then Doctor DB
+    let user = await Patient.findOne({ email });
+    let userType = 'Patient';
+
+    if (!user) {
+      user = await Doctor.findOne({ email });
+      userType = 'Doctor';
+    }
+
+    if (!user) {
+      // Security: Do not reveal if the email exists
+      return res.json({ msg: "If the email is registered, an OTP has been sent." });
+    }
+
+    // 2. Generate a 6-digit OTP
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+
+    // 3. Save OTP and set expiration (10 minutes)
+    user.resetPasswordOtp = otp;
+    user.resetPasswordExpire = Date.now() + 10 * 60 * 1000;
+    await user.save();
+
+    // 4. Send Email using Nodemailer
+    const transporter = nodemailer.createTransport({
+      host: process.env.EMAIL_HOST,
+      port: process.env.EMAIL_PORT,
+      auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASS,
+      },
+    });
+
+    await transporter.sendMail({
+      from: '"Care101 App" <noreply@care101.com>',
+      to: user.email,
+      subject: "Your Password Reset Code",
+      text: `Your password reset code is: ${otp}\n\nThis code will expire in 10 minutes.`,
+    });
+
+    res.json({ msg: "If the email is registered, an OTP has been sent." });
+
+  } catch (err) {
+    console.error("Forgot Password Error:", err);
+    res.status(500).send("Server Error");
+  }
+};
+
+// ==========================================
+// VERIFY OTP
+// ==========================================
+export const verifyOtp = async (req, res) => {
+  const { email, otp } = req.body;
+
+  try {
+    let user = await Patient.findOne({ email }) || await Doctor.findOne({ email });
+
+    if (!user) return res.status(400).json({ msg: "Invalid request." });
+
+    // Check if OTP matches and is not expired
+    if (user.resetPasswordOtp !== otp) {
+      return res.status(400).json({ msg: "Invalid OTP." });
+    }
+
+    if (user.resetPasswordExpire < Date.now()) {
+      return res.status(400).json({ msg: "OTP has expired. Please request a new one." });
+    }
+
+    res.json({ msg: "OTP verified successfully." });
+
+  } catch (err) {
+    console.error("Verify OTP Error:", err);
+    res.status(500).send("Server Error");
+  }
+};
+
+// ==========================================
+// RESET PASSWORD (Set new password)
+// ==========================================
+export const resetPassword = async (req, res) => {
+  const { email, otp, newPassword } = req.body;
+
+  try {
+    let user = await Patient.findOne({ email }) || await Doctor.findOne({ email });
+
+    if (!user) return res.status(400).json({ msg: "Invalid request." });
+
+    // Final security check
+    if (user.resetPasswordOtp !== otp || user.resetPasswordExpire < Date.now()) {
+      return res.status(400).json({ msg: "Invalid or expired OTP." });
+    }
+
+    // Hash new password
+    const salt = await bcrypt.genSalt(10);
+    user.password = await bcrypt.hash(newPassword, salt);
+
+    // Clear the OTP fields
+    user.resetPasswordOtp = undefined;
+    user.resetPasswordExpire = undefined;
+    await user.save();
+
+    res.json({ msg: "Password reset successfully. You can now log in." });
+
+  } catch (err) {
+    console.error("Reset Password Error:", err);
+    res.status(500).send("Server Error");
+  }
+};
