@@ -13,7 +13,8 @@ import Notification from "../models/Notification.js";
 import ScheduleRequest from "../models/ScheduleRequest.js";
 import { protect, authorize } from "../middleware/authRole.js";
 import { sendBookingConfirmation, sendDoctorWelcomeEmail } from "../utils/emailService.js";
-
+import crypto from "crypto"; 
+import nodemailer from "nodemailer"; 
 const router = express.Router();
 
 // ==========================================
@@ -788,6 +789,166 @@ router.put("/doctors/:id/status", protect, authorize(["system_admin", "reception
     res.json(doctor);
   } catch (err) {
     console.error("Update Doctor Status Error:", err);
+    res.status(500).send("Server Error");
+  }
+});
+
+// ==========================================
+// 1A. FORGOT PASSWORD (ADMIN)
+// ==========================================
+router.post("/forgot-password", async (req, res) => {
+  try {
+    const { email } = req.body;
+    const admin = await Admin.findOne({ email });
+
+    // Security check: Don't reveal if the email exists
+    if (!admin) {
+      return res.json({ msg: "If that email exists, a reset link has been sent." });
+    }
+
+    // 1. Generate a random reset token
+    const resetToken = crypto.randomBytes(32).toString("hex");
+
+    // 2. Hash the token and set expiration (15 minutes) to save in DB
+    admin.resetPasswordToken = crypto.createHash("sha256").update(resetToken).digest("hex");
+    admin.resetPasswordExpire = Date.now() + 15 * 60 * 1000;
+    await admin.save();
+
+    // 3. Create the reset URL (Points to your Next.js frontend)
+    // Make sure NEXT_PUBLIC_FRONTEND_URL or a similar variable exists in your .env
+    const frontendUrl = process.env.FRONTEND_URL || "http://localhost:3000";
+    const resetUrl = `${frontendUrl}/admin/reset-password/${resetToken}`;
+
+    // 4. Send the Email using Nodemailer
+    const transporter = nodemailer.createTransport({
+      host: process.env.EMAIL_HOST,
+      port: process.env.EMAIL_PORT,
+      auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASS,
+      },
+    });
+
+    const message = {
+      from: '"Care101 IT" <noreply@care101.com>',
+      to: admin.email,
+      subject: "Admin Password Reset Request",
+      text: `You requested a password reset. Please go to this link to reset your password: \n\n ${resetUrl} \n\n This link expires in 15 minutes.`,
+    };
+
+    await transporter.sendMail(message);
+    res.json({ msg: "If that email exists, a reset link has been sent." });
+
+  } catch (err) {
+    console.error("Forgot Password Error:", err);
+    res.status(500).send("Server Error");
+  }
+});
+
+// ==========================================
+// 1B. RESET PASSWORD WITH TOKEN (ADMIN)
+// ==========================================
+router.put("/reset-password/:token", async (req, res) => {
+  try {
+    const { newPassword } = req.body;
+
+    // 1. Re-hash the token from the URL so we can compare it to the DB
+    const resetPasswordToken = crypto
+      .createHash("sha256")
+      .update(req.params.token)
+      .digest("hex");
+
+    // 2. Find the admin with this token AND ensure it hasn't expired
+    const admin = await Admin.findOne({
+      resetPasswordToken,
+      resetPasswordExpire: { $gt: Date.now() }
+    });
+
+    if (!admin) {
+      return res.status(400).json({ msg: "Invalid or expired reset token." });
+    }
+
+    // 3. Hash the new password
+    const salt = await bcrypt.genSalt(10);
+    admin.password = await bcrypt.hash(newPassword, salt);
+
+    // 4. Clear the reset token fields so they can't be used again
+    admin.resetPasswordToken = undefined;
+    admin.resetPasswordExpire = undefined;
+    await admin.save();
+
+    res.json({ msg: "Password successfully reset. You can now log in." });
+
+  } catch (err) {
+    console.error("Reset Password Error:", err);
+    res.status(500).send("Server Error");
+  }
+});
+
+// ==========================================
+// 6A. RESET STAFF PASSWORD (ADMIN OVERRIDE)
+// ==========================================
+router.post("/staff/:id/reset-password", protect, authorize(["system_admin"]), async (req, res) => {
+  try {
+    // Find the staff member (Admins, Nurses, Receptionists are in Admin model)
+    const staff = await Admin.findById(req.params.id);
+    if (!staff) return res.status(404).json({ msg: "Staff member not found" });
+
+    // 1. Generate a temporary password (e.g., Care101@4928)
+    const randomPin = Math.floor(1000 + Math.random() * 9000);
+    const tempPassword = `Care101@${randomPin}`;
+
+    // 2. Hash the temporary password
+    const salt = await bcrypt.genSalt(10);
+    staff.password = await bcrypt.hash(tempPassword, salt);
+
+    // Optional: If you added the requiresPasswordChange flag to your schema earlier
+    // staff.requiresPasswordChange = true;
+
+    await staff.save();
+
+    // 3. Return the RAW password to the admin frontend
+    res.json({
+      msg: "Password reset successfully",
+      tempPassword: tempPassword
+    });
+
+  } catch (err) {
+    console.error("Reset Staff Password Error:", err.message);
+    res.status(500).send("Server Error");
+  }
+});
+
+// ==========================================
+// 1C. CHANGE OWN PASSWORD (LOGGED IN USER)
+// ==========================================
+router.put("/change-password", protect, async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+
+    // 1. Find the logged-in user (req.user.id comes from your 'protect' middleware)
+    const admin = await Admin.findById(req.user.id);
+    if (!admin) {
+      return res.status(404).json({ msg: "User not found" });
+    }
+
+    // 2. Check if the current password provided matches the database
+    const isMatch = await bcrypt.compare(currentPassword, admin.password);
+    if (!isMatch) {
+      return res.status(400).json({ msg: "Incorrect current password." });
+    }
+
+    // 3. Hash the new password
+    const salt = await bcrypt.genSalt(10);
+    admin.password = await bcrypt.hash(newPassword, salt);
+
+    // 4. Save the updated user
+    await admin.save();
+
+    res.json({ msg: "Password successfully updated." });
+
+  } catch (err) {
+    console.error("Change Password Error:", err.message);
     res.status(500).send("Server Error");
   }
 });

@@ -74,6 +74,8 @@ const PatientSchema = new mongoose.Schema({
     type: Date, 
     default: Date.now 
   },
+  resetPasswordOtp: { type: String },
+  resetPasswordExpire: { type: Date }
 });
 
 export default mongoose.model("Patient", PatientSchema);

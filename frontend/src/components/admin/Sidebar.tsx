@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ElementType } from "react";
 import { menuItems } from "@/lib/adminMenu";
 import { LogOut, Shield } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -53,7 +53,7 @@ export default function Sidebar() {
       {/* MENU */}
       <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
         {filteredMenu.map((item) => {
-          const Icon = item.icon;
+          const Icon = item.icon as ElementType;
           const isActive = pathname === item.href;
 
           return (
