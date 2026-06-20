@@ -1,14 +1,16 @@
 import express from "express";
-// ✅ FIXED: Added all missing controller functions to the import
 import { 
   registerDoctor, 
   registerPatient, 
   login, 
   registerDoctorsBulk,
-  getMe,             // <--- Added
-  updateProfile,     // <--- Added
-  changePassword,    // <--- Added
-  getNotifications   // <--- Added
+  getMe,             
+  updateProfile,     
+  changePassword,    
+  getNotifications,
+  forgotPassword,    // <-- Import the new functions
+  verifyOtp,
+  resetPassword
 } from "../controllers/authController.js";
 
 import { auth } from "../middleware/auth.js";
@@ -16,7 +18,7 @@ import { auth } from "../middleware/auth.js";
 const router = express.Router();
 
 // ==========================================
-// AUTH ROUTES
+// AUTH ROUTES (Public)
 // ==========================================
 
 // 1. Register Doctor (Single)
@@ -31,20 +33,26 @@ router.post("/register-patient", registerPatient);
 // 4. Login
 router.post("/login", login);
 
+// 5. Password Reset Flow (OTP)
+router.post("/forgot-password", forgotPassword);
+router.post("/verify-otp", verifyOtp);
+router.post("/reset-password", resetPassword);
+
+
 // ==========================================
 // PROTECTED ROUTES (Require Token)
 // ==========================================
 
-// 5. Get Current User Profile
+// 6. Get Current User Profile
 router.get("/me", auth, getMe);
 
-// 6. Update Profile
+// 7. Update Profile
 router.put("/update-profile", auth, updateProfile);
 
-// 7. Change Password
+// 8. Change Password
 router.put("/change-password", auth, changePassword);
 
-// 8. Get Notifications
+// 9. Get Notifications
 router.get("/notifications", auth, getNotifications);
 
 export default router;
