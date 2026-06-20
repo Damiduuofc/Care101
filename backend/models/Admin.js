@@ -14,6 +14,9 @@ const StaffSchema = new mongoose.Schema({
   department: { type: String, default: "General" },
 
   createdAt: { type: Date, default: Date.now },
+
+    resetPasswordToken: String,
+    resetPasswordExpire: Date
 });
 
 export default mongoose.model("Admin", StaffSchema); 
