@@ -151,7 +151,7 @@ export default function LoginScreen() {
                   <View style={styles.header}>
                     <Text style={styles.title}>Welcome back</Text>
                     <Text style={styles.subtitle}>
-                      Enter your credentials to access your patient portal.
+                      Enter your credentials to access your portal.
                     </Text>
                   </View>
 
@@ -168,6 +168,14 @@ export default function LoginScreen() {
                     icon="lock-closed-outline"
                     isPassword={true}
                   />
+
+                  {/* --- NEW FORGOT PASSWORD LINK --- */}
+                  <TouchableOpacity 
+                    style={styles.forgotPasswordContainer}
+                    onPress={() => router.push('/forgot-password' as any)}
+                  >
+                    <Text style={styles.forgotPasswordText}>Forgot Password?</Text>
+                  </TouchableOpacity>
 
                   <TouchableOpacity
                     style={[styles.loginButton, isLoading && styles.loginButtonDisabled]}
@@ -258,4 +266,14 @@ const styles = StyleSheet.create({
   signupContainer: { flexDirection: 'row', justifyContent: 'center', marginTop: 32, paddingBottom: 20 },
   signupText: { fontSize: 14, color: '#475569' },
   signupLink: { fontSize: 14, fontWeight: '600', color: '#06b6d4' },
+  forgotPasswordContainer: { 
+    alignSelf: 'flex-end', 
+    marginBottom: 24, 
+    marginTop: -8 
+  },
+  forgotPasswordText: { 
+    fontSize: 14, 
+    fontWeight: '600', 
+    color: '#0891b2' 
+  },
 });
