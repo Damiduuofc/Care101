@@ -32,7 +32,8 @@ const DoctorSchema = new mongoose.Schema({
   currentQueueNumber: { type: Number, default: 0 },
 
   createdAt: { type: Date, default: Date.now },
-
+  resetPasswordOtp: { type: String },
+  resetPasswordExpire: { type: Date }
 
 });
 
