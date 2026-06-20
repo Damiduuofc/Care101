@@ -9,6 +9,7 @@ import {
   UserCheck,
   Building,
   Clock,
+  Lock,
   FileText
 } from "lucide-react";
 
@@ -93,5 +94,11 @@ export const menuItems = [
     icon: FileText,
     roles: ["lab_assistant"],
   },
+  {
+    title: "Forget Password",
+    href: "/admin/forget-password",
+    icon: Lock,
+    roles: [ "nurse", "receptionist", "lab_assistant"]
+  }
 
 ];
