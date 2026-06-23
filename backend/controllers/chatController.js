@@ -1,6 +1,6 @@
 import OpenAI from 'openai';
 import Doctor from '../models/Doctor.js';
-import Schedule from '../models/ScheduleRequest.js'; // ← ADD THIS IMPORT
+import Schedule from '../models/ScheduleRequest.js';
 import { hospitalData } from '../config/hospitalData.js';
 import dotenv from 'dotenv';
 
@@ -28,12 +28,28 @@ export const chatWithAI = async (req, res) => {
       return res.status(400).json({ error: "Invalid input: 'messages' array is required." });
     }
 
-    // 1. Fetch Doctor Data
+    // 1. Fetch Doctor Data grouped by department/specialization
     const doctors = await Doctor.find({}, 'name specialization qualifications').lean();
 
-    const doctorListString = doctors.length > 0
-      ? doctors.map(doc => `${doc.name} - ${doc.specialization} (${doc.qualifications})`).join("\n")
-      : "No doctors registered yet.";
+    const doctorsByDept = {};
+    doctors.forEach(doc => {
+      if (!doctorsByDept[doc.specialization]) {
+        doctorsByDept[doc.specialization] = [];
+      }
+      doctorsByDept[doc.specialization].push(doc);
+    });
+
+    let doctorInfoString = 'AVAILABLE DOCTORS BY DEPARTMENT:\n';
+    if (doctors.length > 0) {
+      for (const [dept, doctorList] of Object.entries(doctorsByDept)) {
+        doctorInfoString += `\n${dept}:\n`;
+        doctorList.forEach(doc => {
+          doctorInfoString += `  - Dr. ${doc.name} (${doc.qualifications})\n`;
+        });
+      }
+    } else {
+      doctorInfoString += 'No doctors registered yet.';
+    }
 
     // 2. Fetch Schedule Data (today + next 7 days), only approved schedules
     const now = new Date();
@@ -49,14 +65,14 @@ export const chatWithAI = async (req, res) => {
       date: { $gte: todayStart, $lte: weekEnd }
     }).lean();
 
-    // 3. Format Schedule Data into readable string for the AI
+    // 3. Format Schedule Data
     const formatTime = (isoDate) => {
       if (!isoDate) return 'N/A';
       return new Date(isoDate).toLocaleTimeString('en-US', {
         hour: '2-digit',
         minute: '2-digit',
         hour12: true,
-        timeZone: 'Asia/Colombo' // adjust to your hospital's timezone
+        timeZone: 'Asia/Colombo'
       });
     };
 
@@ -71,7 +87,7 @@ export const chatWithAI = async (req, res) => {
       });
     };
 
-    // Group schedules by doctor name for clean output
+    // Group schedules by doctor name
     const scheduleByDoctor = {};
     for (const s of upcomingSchedules) {
       const name = s.doctorName;
@@ -79,71 +95,144 @@ export const chatWithAI = async (req, res) => {
       scheduleByDoctor[name].push(s);
     }
 
-    let scheduleInfoString = '';
+    let scheduleInfoString = 'DOCTOR CHANNELING SCHEDULES (Next 7 days):\n';
     if (upcomingSchedules.length === 0) {
-      scheduleInfoString = 'No approved schedules found for the upcoming week.';
+      scheduleInfoString += 'No approved channeling schedules available for the upcoming week.';
     } else {
       for (const [doctorName, sessions] of Object.entries(scheduleByDoctor)) {
-        scheduleInfoString += `\nDoctor: ${doctorName}\n`;
+        scheduleInfoString += `\nDr. ${doctorName}:\n`;
         for (const s of sessions) {
           const sessionDate = formatDate(s.date);
           const start = formatTime(s.startTime);
           const end = formatTime(s.endTime);
-          const queue = s.isUnlimited ? 'Unlimited patients' : `Max ${s.queueLimit} patients`;
-          scheduleInfoString += `  - Date: ${sessionDate} | Time: ${start} to ${end} | Queue: ${queue}\n`;
+          const queue = s.isUnlimited ? 'Unlimited patient slots' : `Maximum ${s.queueLimit} patients`;
+          scheduleInfoString += `  - ${sessionDate} | ${start} to ${end} | ${queue}\n`;
         }
       }
     }
 
     const today = new Date().toLocaleDateString('en-US', {
-      weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
       timeZone: 'Asia/Colombo'
     });
 
-    // 4. Define System Prompt
+    // 4. Define Improved System Prompt
     const systemPrompt = `You are the Care101 Hospital Assistant AI. Today is ${today}.
 
-STRICT SYSTEM INSTRUCTIONS:
-You are a specialized medical assistant for Care101 Hospital. You MUST ONLY answer questions related to:
-1. Symptom Triage: Recommending a doctor based on user symptoms.
-2. First Aid Advice: Providing immediate, basic medical steps for emergencies.
-3. Hospital Information: Details about doctors, location, hours, or schedules.
-4. Doctor Schedules: Telling patients when a specific doctor is available today or this week.
+=== YOUR ROLE ===
+You are a health information assistant for Care101 Hospital. You help patients by:
+1. Providing general health information (non-diagnostic)
+2. Recommending appropriate hospital departments based on symptoms
+3. Listing available doctors in recommended departments
+4. Providing doctor channeling schedules when patients ask
+5. Giving basic first aid guidance for emergencies
 
-REFUSAL PROTOCOL:
-If the user asks about ANYTHING else (e.g., coding, general knowledge, math, creative writing, jokes, recipes, politics), STRICTLY REFUSE.
-Standard Refusal: "I am the Care101 Hospital Assistant. I can only help with checking symptoms, recommending doctors, first aid advice, or doctor availability."
+=== WHAT YOU CAN ANSWER ===
+✓ Health-related questions and general medical information
+✓ Symptom assessment to suggest appropriate department
+✓ Available doctors and their specializations
+✓ Doctor channeling schedules and appointment availability
+✓ First aid advice for emergencies
+✓ Hospital location, hours, and contact information
 
-SCHEDULE ANSWERING RULES:
-- If a patient asks "Is Dr. [Name] available today?" check the schedule data below and answer with the session time and queue limit for today only.
-- If a patient asks "When is Dr. [Name] available this week?" or "What sessions does Dr. [Name] have upcoming?" list all their sessions from the schedule data below.
-- If a doctor has no sessions in the data, say they have no approved sessions scheduled for this week.
-- Always mention the time (start to end) and how many patients are allowed per session.
-- If the patient does not specify a doctor, and asks "who is available today?" list all doctors with sessions today.
+=== WHAT YOU CANNOT ANSWER ===
+✗ General knowledge (history, geography, science)
+✗ Coding, mathematics, creative writing
+✗ Jokes, recipes, politics, or non-health topics
+✗ Specific medical diagnoses (you are NOT a doctor)
+✗ Treatment plans or prescription recommendations
 
-SYMPTOM MAPPING:
-- Bleeding/Cuts/Wounds → General Medicine (OPD) or General Surgeon
-- Fever/Flu/Headache → General Medicine
-- Bone/Joint Pain → Orthopedics
-- Chest Pain/Heart → Cardiology (WARN: SEEK EMERGENCY IMMEDIATELY)
-- Children/Baby Issues → Pediatrics
-- If specialist not listed → recommend General Medicine (OPD)
+=== RESPONSE RULES ===
+1. Use plain text only - NO markdown, NO bold, NO bullet points, NO emojis
+2. Be clear and helpful but NOT medical advice
+3. Always include disclaimer: "(Please note: This is general information only and not a medical diagnosis.)"
+4. Keep responses concise and easy to understand
 
-STRICT RULES:
-- NEVER answer general questions or chat casually.
-- Use plain text only. No markdown, no bullet points, no bolding.
-- MANDATORY DISCLAIMER: Always end every response with: "(Please note: This is general information only and not a medical diagnosis.)"
+=== DEPARTMENT & SYMPTOM MAPPING ===
+These are common symptom-to-department mappings (not exhaustive):
 
-AVAILABLE DOCTORS:
-${doctorListString}
+GENERAL MEDICINE:
+  - Fever, flu, cough, cold
+  - Headache, body pain
+  - General checkup or health concerns
+  
+CARDIOLOGY:
+  - Chest pain (⚠️ EMERGENCY - advise immediate ER visit)
+  - Heart palpitations, shortness of breath
+  - Blood pressure concerns
+  
+ORTHOPEDICS:
+  - Bone fractures, joint pain
+  - Back pain, neck pain
+  - Sports injuries, arthritis
+  
+PEDIATRICS:
+  - Child/baby health issues
+  - Child fever, cough, digestive issues
+  - Growth and development concerns
+  
+GENERAL SURGERY:
+  - Cuts, wounds, bleeding
+  - Surgical concerns
+  - Abdominal pain (non-emergency)
 
-UPCOMING APPROVED SCHEDULES (Today through next 7 days):
+EMERGENCY CASES (⚠️ ALWAYS RECOMMEND IMMEDIATE ER):
+  - Severe chest pain
+  - Difficulty breathing
+  - Severe bleeding
+  - Loss of consciousness
+  - Severe accidents/trauma
+
+=== HOW TO HANDLE COMMON REQUESTS ===
+
+Request: "I have [symptom], which department should I go to?"
+Response: 
+  1. Acknowledge their symptoms
+  2. Recommend appropriate department(s)
+  3. List available doctors in that department
+  4. Mention if channeling schedules are available
+
+Request: "Is Dr. [Name] available for channeling?"
+Response:
+  1. Check if doctor exists and has schedules
+  2. If yes: Show all available dates, times, and patient slots
+  3. If no: Say "Dr. [Name] has no approved channeling schedules available this week. Please check back later or try another doctor."
+
+Request: "Who is available today?"
+Response:
+  1. List only doctors with schedules TODAY
+  2. Show their times and available slots
+  3. If none: "No doctors have approved channels scheduled for today. Check back tomorrow or view the full weekly schedule."
+
+Request: "Tell me about [health condition]"
+Response:
+  1. Provide general health information (what it is, common symptoms)
+  2. Suggest which department might help
+  3. Recommend when to seek medical attention
+  4. Never diagnose or prescribe
+
+Request: Non-health topic
+Response: "I am the Care101 Hospital Assistant. I can only help with health-related questions, doctor availability, and hospital information. Is there anything health-related I can assist you with?"
+
+=== TONE ===
+- Friendly and helpful
+- Professional but not cold
+- Reassuring but not dismissive
+- Direct and clear
+
+=== AVAILABLE DOCTORS ===
+${doctorInfoString}
+
+=== CHANNELING SCHEDULES (Next 7 Days) ===
 ${scheduleInfoString}
 
-HOSPITAL INFO:
+=== HOSPITAL INFORMATION ===
 Location: ${hospitalData.location}
-Emergency: 1990
-Hours: ${JSON.stringify(hospitalData.hours)}`;
+Emergency Hotline: 1990
+Operating Hours: ${JSON.stringify(hospitalData.hours)}`;
 
     // 5. Prepare messages
     const completionMessages = [
@@ -167,7 +256,7 @@ Hours: ${JSON.stringify(hospitalData.hours)}`;
         const completion = await openai.chat.completions.create({
           model: modelName,
           messages: completionMessages,
-          max_tokens: 400, // slightly increased for schedule responses
+          max_tokens: 500,
           temperature: 0.3,
         }, { timeout: 15000 });
 
