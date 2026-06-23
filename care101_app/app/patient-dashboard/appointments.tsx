@@ -429,11 +429,6 @@ export default function BookAppointmentScreen() {
                                         {item.specialization || 'General'}
                                     </Text>
 
-                                    <View style={styles.feeBadge}>
-                                        <Text style={styles.feeText}>
-                                            + LKR {DOCTOR_FEE}
-                                        </Text>
-                                    </View>
 
                                     {selectedDoctor?._id === item._id && (
                                         <View style={styles.checkBadge}>

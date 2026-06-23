@@ -1,7 +1,7 @@
 export const hospitalData = {
-  name: "Care101 Hospital",
-  location: "123 Health Avenue, Colombo",
-  emergencyContact: "1990",
+  name: "Suwasewana Kandy Hospital",
+  location: "532 Peradeniya Rd, Kandy 20000, Sri Lanka",
+  emergencyContact: "0812 223 223",
   hours: {
     emergency: "24/7",
     opd: "8:00 AM - 8:00 PM Daily"

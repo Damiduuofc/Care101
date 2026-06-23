@@ -227,7 +227,7 @@ export const registerDoctorsBulk = async (req, res) => {
     if (!Array.isArray(doctorsList)) return res.status(400).json({ message: "Input must be an array." });
 
     const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash("Damidu12", salt);
+    const hashedPassword = await bcrypt.hash("Damidu12.", salt);
 
     const doctorsWithHashedPassword = doctorsList.map(doc => ({
       ...doc,
@@ -369,7 +369,7 @@ export const forgotPassword = async (req, res) => {
     });
 
     await transporter.sendMail({
-      from: '"Care101 App" <noreply@care101.com>',
+      from: '"Care101" <noreply@care101.com>',
       to: user.email,
       subject: "Your Password Reset Code",
       text: `Your password reset code is: ${otp}\n\nThis code will expire in 10 minutes.`,

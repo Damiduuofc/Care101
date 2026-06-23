@@ -16,7 +16,7 @@ const DoctorSchema = new mongoose.Schema({
   nameWithInitials: { type: String },
   nic: { type: String },
   phone: { type: String },
-  slmcReg: { type: String, unique: true },
+  slmcReg: { type: Number, unique: true },
 
   profileImage: { type: String, default: "" },
 
