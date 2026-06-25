@@ -67,7 +67,7 @@ NVIDIA_API_KEY
 
 npm run dev
 ```
-The server will typically start on `http://localhost:5000`.
+The server will typically start on `http://localhost:5001`.
 
 ### 2. Frontend Setup (Web App)
 
