@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import {
-  Users, UserPlus, Trash2, Mail, Lock, Building, Briefcase, ShieldAlert, Loader2, Key, Copy, CheckCircle2
+ Eye, EyeOff, UserPlus, Trash2, Mail, Lock, Building, Briefcase, Loader2, Key, Copy, CheckCircle2
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -25,7 +25,7 @@ export default function StaffManagement() {
   const [selectedStaff, setSelectedStaff] = useState<any>(null);
   const [tempPassword, setTempPassword] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
-
+const [showPassword, setShowPassword] = useState(false);
   // Form State
   const [formData, setFormData] = useState({
     name: "",
@@ -260,13 +260,31 @@ export default function StaffManagement() {
                       <Input className="pl-9" placeholder="staff@hospital.com" value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} />
                     </div>
                   </div>
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Password</label>
-                    <div className="relative">
-                      <Lock className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-                      <Input className="pl-9" type="password" placeholder="••••••••" value={formData.password} onChange={(e) => setFormData({ ...formData, password: e.target.value })} />
-                    </div>
-                  </div>
+<div className="space-y-2">
+  <label className="text-sm font-medium">Password</label>
+  <div className="relative">
+    <Lock className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+    <input
+      type={showPassword ? "text" : "password"}
+      className="flex h-10 w-full rounded-md border border-slate-200 bg-white px-9 py-2 text-sm outline-none focus:ring-2 focus:ring-cyan-500"
+      placeholder="••••••••"
+      value={formData.password}
+      onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+      required
+    />
+    <button
+      type="button"
+      onClick={() => setShowPassword(!showPassword)}
+      className="absolute right-3 top-2.5 text-slate-400 hover:text-cyan-600 transition-colors"
+    >
+      {showPassword ? (
+        <EyeOff className="h-4 w-4" />
+      ) : (
+        <Eye className="h-4 w-4" />
+      )}
+    </button>
+  </div>
+</div>
                   <Button className="w-full bg-cyan-600" onClick={handleAddStaff} disabled={submitLoading}>
                     {submitLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Create Account
                   </Button>
