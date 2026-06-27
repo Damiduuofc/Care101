@@ -15,10 +15,16 @@ import {
   Calendar,
   ShieldCheck,
   Phone,
+  Lock,
+  Eye,
+  EyeOff,
+  RefreshCw,
+  PlusCircle,
 } from "lucide-react";
 import Sidebar from "@/components/admin/Sidebar";
 import { useRouter } from "next/navigation";
 import { clearAdminSession, getAdminToken, getAdminUser } from "@/lib/adminSession";
+import { departments } from "@/lib/data";
 
 interface Doctor {
   _id: string;
@@ -44,6 +50,7 @@ export default function AllDoctorsPage() {
   const [selectedDoctor, setSelectedDoctor] = useState<Doctor | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [toast, setToast] = useState<{ msg: string; type: "success" | "error" } | null>(null);
+  const [showCreateModal, setShowCreateModal] = useState(false);
 
   useEffect(() => {
     const storedUser = getAdminUser();
@@ -117,17 +124,25 @@ export default function AllDoctorsPage() {
     }
   };
 
-  const filtered = doctors.filter((d) => {
-    const displayName = (d.fullName || d.nameWithInitials || d.name || "").toLowerCase();
-    const matchesSearch =
-      displayName.includes(searchTerm.toLowerCase()) ||
-      d.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (d.specialization || "").toLowerCase().includes(searchTerm.toLowerCase());
+  // Called by the create-account modal once the doctor is successfully created
+  const handleDoctorCreated = (newDoctor?: Doctor) => {
+    showToast("Doctor account created successfully. Welcome email sent!", "success");
+    setShowCreateModal(false);
+    fetchDoctors();
+  };
 
-    if (filterStatus === "pending") return matchesSearch && !d.isApproved;
-    if (filterStatus === "approved") return matchesSearch && d.isApproved;
-    return matchesSearch;
-  });
+const filtered = doctors.filter((d) => {
+  const displayName = String(d.fullName || d.nameWithInitials || d.name || "").toLowerCase();
+  const search = searchTerm.toLowerCase();
+  const matchesSearch =
+    displayName.includes(search) ||
+    String(d.specialization || "").toLowerCase().includes(search) ||
+    String(d.slmcReg || "").toLowerCase().includes(search);
+
+  if (filterStatus === "pending") return matchesSearch && !d.isApproved;
+  if (filterStatus === "approved") return matchesSearch && d.isApproved;
+  return matchesSearch;
+});
 
   if (loading)
     return (
@@ -159,18 +174,30 @@ export default function AllDoctorsPage() {
             <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Practitioners</h1>
             <p className="text-slate-500 text-sm">Manage verification and access for medical staff.</p>
           </div>
-          <div className="flex bg-slate-200/60 p-1 rounded-xl">
-            {(["all", "pending", "approved"] as const).map((status) => (
-              <button
-                key={status}
-                onClick={() => setFilterStatus(status)}
-                className={`px-4 py-1.5 text-xs font-bold rounded-lg transition-all capitalize ${
-                  filterStatus === status ? "bg-white shadow-sm text-[#06B6D4]" : "text-slate-500 hover:text-slate-700"
-                }`}
-              >
-                {status}
-              </button>
-            ))}
+
+          <div className="flex items-center gap-3 w-full sm:w-auto">
+            <div className="flex bg-slate-200/60 p-1 rounded-xl">
+              {(["all", "pending", "approved"] as const).map((status) => (
+                <button
+                  key={status}
+                  onClick={() => setFilterStatus(status)}
+                  className={`px-4 py-1.5 text-xs font-bold rounded-lg transition-all capitalize ${
+                    filterStatus === status ? "bg-white shadow-sm text-[#06B6D4]" : "text-slate-500 hover:text-slate-700"
+                  }`}
+                >
+                  {status}
+                </button>
+              ))}
+            </div>
+
+            <Button
+              onClick={() => setShowCreateModal(true)}
+              style={{ backgroundColor: "#06B6D4" }}
+              className="hover:bg-[#0891B2] text-white text-xs font-bold h-9 px-4 rounded-xl shadow-sm shrink-0 flex items-center gap-2"
+            >
+              <PlusCircle className="h-4 w-4" />
+              Create Account
+            </Button>
           </div>
         </div>
 
@@ -179,7 +206,7 @@ export default function AllDoctorsPage() {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
           <input
             type="text"
-            placeholder="Search by name, SLMC or email..."
+            placeholder="Search by name or SLMC..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="w-full pl-10 pr-4 py-2.5 text-sm bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-4 focus:ring-[#06B6D4]/10 focus:border-[#06B6D4] transition-all shadow-sm"
@@ -206,13 +233,22 @@ export default function AllDoctorsPage() {
           </div>
         )}
 
-        {/* Modal */}
+        {/* View/Approve Modal */}
         {selectedDoctor && (
           <DoctorDetailModal
             doctor={selectedDoctor}
             actionLoading={actionLoading}
             onClose={() => setSelectedDoctor(null)}
             onApprove={handleApproval}
+          />
+        )}
+
+        {/* Create Account Modal */}
+        {showCreateModal && (
+          <CreateDoctorModal
+            onClose={() => setShowCreateModal(false)}
+            onCreated={handleDoctorCreated}
+            showToast={showToast}
           />
         )}
       </main>
@@ -370,6 +406,311 @@ function DoctorDetailModal({ doctor, actionLoading, onClose, onApprove }: any) {
               </Button>
             )}
           </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Create Doctor Modal (ported from Doctor Account Provisioning page) ─
+
+function CreateDoctorModal({ onClose, onCreated, showToast }: any) {
+  const [fullName, setFullName] = useState("");
+  const [nameWithInitials, setNameWithInitials] = useState("");
+  const [slmcRegistrationNumber, setSlmcRegistrationNumber] = useState("");
+  const [specialization, setSpecialization] = useState("");
+  const [nicNumber, setNicNumber] = useState("");
+  const [email, setEmail] = useState("");
+  const [phoneNumber, setPhoneNumber] = useState("");
+  const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [formLoading, setFormLoading] = useState(false);
+
+  useEffect(() => {
+    generateTempPassword();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const generateTempPassword = () => {
+    const uppercase = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    const lowercase = "abcdefghijklmnopqrstuvwxyz";
+    const numbers = "0123456789";
+    const symbols = "!@#$%^&*";
+    const allChars = uppercase + lowercase + numbers + symbols;
+
+    let generated = "";
+    generated += uppercase.charAt(Math.floor(Math.random() * uppercase.length));
+    generated += lowercase.charAt(Math.floor(Math.random() * lowercase.length));
+    generated += numbers.charAt(Math.floor(Math.random() * numbers.length));
+    generated += symbols.charAt(Math.floor(Math.random() * symbols.length));
+
+    for (let i = 0; i < 8; i++) {
+      generated += allChars.charAt(Math.floor(Math.random() * allChars.length));
+    }
+
+    generated = generated.split("").sort(() => 0.5 - Math.random()).join("");
+    setPassword(generated);
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (!fullName || !nameWithInitials || !slmcRegistrationNumber || !specialization || !nicNumber || !email || !phoneNumber || !password) {
+      showToast("Please fill in all fields.", "error");
+      return;
+    }
+
+    if (password.length < 8) {
+      showToast("Password must be at least 8 characters.", "error");
+      return;
+    }
+
+    setFormLoading(true);
+    try {
+      const token = getAdminToken();
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/admin/create-doctor`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-auth-token": token || "",
+          "ngrok-skip-browser-warning": "true",
+        },
+        body: JSON.stringify({
+          fullName,
+          nameWithInitials,
+          slmcRegistrationNumber,
+          specialization,
+          nicNumber,
+          email,
+          phoneNumber,
+          password,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (res.ok) {
+        onCreated(data);
+      } else {
+        showToast(data.msg || "Failed to create doctor account.", "error");
+      }
+    } catch (err) {
+      showToast("A network error occurred. Please try again.", "error");
+      console.error(err);
+    } finally {
+      setFormLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-slate-900/30 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative bg-white w-full max-w-lg rounded-[32px] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 max-h-[90vh] flex flex-col">
+
+        <div className="p-6 border-b border-slate-50 flex justify-between items-center bg-slate-50/30 shrink-0">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-[#06B6D4] rounded-lg shadow-[#06B6D4]/20 shadow-md">
+              <PlusCircle className="h-4 w-4 text-white" />
+            </div>
+            <div>
+              <h2 className="font-bold text-slate-900 text-sm">Create Doctor Account</h2>
+              <p className="text-[11px] text-slate-500">Account is pre-approved and a welcome email is sent immediately.</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-full text-slate-400 transition-colors shrink-0">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="p-6 overflow-y-auto flex-1">
+          <form onSubmit={handleSubmit} className="space-y-4">
+
+            {/* Full Name */}
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Full Name
+              </label>
+              <div className="relative">
+                <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                <input
+                  type="text"
+                  value={fullName}
+                  onChange={(e) => setFullName(e.target.value)}
+                  className="w-full pl-10 pr-4 py-2 text-sm bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-4 focus:ring-[#06B6D4]/10 focus:border-[#06B6D4] transition-all shadow-sm"
+                  required
+                />
+              </div>
+            </div>
+
+            {/* Name with Initials & SLMC Number */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Name with Initials
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. Dr. J. A. Doe"
+                  value={nameWithInitials}
+                  onChange={(e) => setNameWithInitials(e.target.value)}
+                  className="w-full px-4 py-2 text-sm bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-4 focus:ring-[#06B6D4]/10 focus:border-[#06B6D4] transition-all shadow-sm"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  SLMC Reg. Number
+                </label>
+                <div className="relative">
+                  <IdCard className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                  <input
+                    type="text"
+                    placeholder="e.g. 54321"
+                    value={slmcRegistrationNumber}
+                    onChange={(e) => setSlmcRegistrationNumber(e.target.value)}
+                    className="w-full pl-10 pr-4 py-2 text-sm bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-4 focus:ring-[#06B6D4]/10 focus:border-[#06B6D4] transition-all shadow-sm"
+                    required
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Specialization */}
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Specialization / Department
+              </label>
+              <select
+                value={specialization}
+                onChange={(e) => setSpecialization(e.target.value)}
+                className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-4 focus:ring-[#06B6D4]/10 focus:border-[#06B6D4] transition-all shadow-sm"
+                required
+              >
+                <option value="">Select Specialization...</option>
+                {departments.map((dept: any) => (
+                  <option key={dept.slug} value={dept.name}>
+                    {dept.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* NIC & Phone */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  National ID (NIC)
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. 199012345678"
+                  value={nicNumber}
+                  onChange={(e) => setNicNumber(e.target.value)}
+                  className="w-full px-4 py-2 text-sm bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-4 focus:ring-[#06B6D4]/10 focus:border-[#06B6D4] transition-all shadow-sm"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Phone Number
+                </label>
+                <div className="relative">
+                  <Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                  <input
+                    type="text"
+                    placeholder="e.g. +94 77 123 4567"
+                    value={phoneNumber}
+                    onChange={(e) => setPhoneNumber(e.target.value)}
+                    className="w-full pl-10 pr-4 py-2 text-sm bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-4 focus:ring-[#06B6D4]/10 focus:border-[#06B6D4] transition-all shadow-sm"
+                    required
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Email */}
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Email Address
+              </label>
+              <div className="relative">
+                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                <input
+                  type="email"
+                  placeholder="e.g. doctor@hospital.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="w-full pl-10 pr-4 py-2 text-sm bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-4 focus:ring-[#06B6D4]/10 focus:border-[#06B6D4] transition-all shadow-sm"
+                  required
+                />
+              </div>
+            </div>
+
+            {/* Password */}
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Temporary Password
+              </label>
+              <div className="relative flex gap-2">
+                <div className="relative flex-1">
+                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    placeholder="Enter or generate password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="w-full pl-10 pr-10 py-2 text-sm bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-4 focus:ring-[#06B6D4]/10 focus:border-[#06B6D4] transition-all shadow-sm font-mono"
+                    required
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                  >
+                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
+                <Button
+                  type="button"
+                  onClick={generateTempPassword}
+                  variant="outline"
+                  className="border-slate-200 text-slate-600 hover:bg-slate-50 shrink-0"
+                  title="Generate strong random password"
+                >
+                  <RefreshCw className="h-4 w-4 mr-2" />
+                  Generate
+                </Button>
+              </div>
+            </div>
+
+            {/* Submit */}
+            <div className="flex gap-3 pt-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={onClose}
+                className="flex-1 border-slate-200 text-slate-600 h-11 rounded-xl text-sm font-bold"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                disabled={formLoading}
+                className="flex-[2] text-white font-semibold text-sm rounded-xl h-11 shadow-md flex items-center justify-center gap-2"
+                style={{ backgroundColor: "#06B6D4" }}
+              >
+                {formLoading ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin text-white" />
+                    Creating...
+                  </>
+                ) : (
+                  "Create Account & Notify Doctor"
+                )}
+              </Button>
+            </div>
+
+          </form>
         </div>
       </div>
     </div>
