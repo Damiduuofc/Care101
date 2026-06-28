@@ -12,7 +12,7 @@ import HospitalFinance from "../models/Finance.js";
 import Notification from "../models/Notification.js";
 import ScheduleRequest from "../models/ScheduleRequest.js";
 import { protect, authorize } from "../middleware/authRole.js";
-import { sendBookingConfirmation, sendDoctorWelcomeEmail } from "../utils/emailService.js";
+import { sendBookingConfirmation, sendDoctorWelcomeEmail, sendDoctorApprovalEmail } from "../utils/emailService.js";
 import crypto from "crypto"; 
 import nodemailer from "nodemailer"; 
 const router = express.Router();
@@ -169,8 +169,8 @@ router.post("/appointments/walkin", protect, async (req, res) => {
     const { fullName, nic, dob, phone, email } = patientDetails;
     const { doctorId, doctorName, department, date, visitType, reason, paymentStatus, amount } = appointmentDetails;
 
-    if (!fullName || !nic || !dob || !phone || !email) {
-      return res.status(400).json({ msg: "All patient details (Name, NIC, DOB, Phone, Email) are required." });
+    if (!fullName || !phone) {
+      return res.status(400).json({ msg: "Patient Name and Phone number are required." });
     }
 
     if (!doctorId || !date) {
@@ -178,9 +178,15 @@ router.post("/appointments/walkin", protect, async (req, res) => {
     }
 
     // --- 1. FIND OR CREATE PATIENT ---
-    let patient = await Patient.findOne({ nicNumber: nic });
-    if (!patient) {
+    let patient = null;
+    if (nic && nic.trim() !== "") {
+      patient = await Patient.findOne({ nicNumber: nic });
+    }
+    if (!patient && email && email.trim() !== "") {
       patient = await Patient.findOne({ email: email.toLowerCase() });
+    }
+    if (!patient && phone && phone.trim() !== "") {
+      patient = await Patient.findOne({ mobileNumber: phone });
     }
 
     if (!patient) {
@@ -192,20 +198,54 @@ router.post("/appointments/walkin", protect, async (req, res) => {
       const salt = await bcrypt.genSalt(10);
       const hashedPassword = await bcrypt.hash("Walkin123!", salt);
 
+      // Generate unique values for optional fields if not provided
+      const resolvedNic = (nic && nic.trim() !== "")
+        ? nic
+        : `WALKIN-NIC-${phone}-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`;
+      const resolvedEmail = (email && email.trim() !== "")
+        ? email.toLowerCase()
+        : `walkin-${phone}-${Date.now()}@care101.com`;
+      const resolvedDob = (dob && dob.trim() !== "")
+        ? new Date(dob)
+        : new Date("1970-01-01");
+
       patient = new Patient({
         fullName,
         username,
-        email: email.toLowerCase(),
-        nicNumber: nic,
+        email: resolvedEmail,
+        nicNumber: resolvedNic,
         password: hashedPassword,
         mobileNumber: phone,
-        dateOfBirth: new Date(dob),
+        dateOfBirth: resolvedDob,
         gender: "Other", // Default for walk-in
         district: "Colombo", // Default for walk-in
         isRegistered: false
       });
 
       await patient.save();
+    } else {
+      // Update missing/mock details if admin has now provided real data
+      let detailsUpdated = false;
+      if (nic && nic.trim() !== "" && patient.nicNumber.startsWith("WALKIN-NIC-")) {
+        patient.nicNumber = nic;
+        detailsUpdated = true;
+      }
+      if (email && email.trim() !== "" && (patient.email.startsWith("walkin-") || patient.email.endsWith("@care101.com"))) {
+        patient.email = email.toLowerCase();
+        detailsUpdated = true;
+      }
+      if (dob && dob.trim() !== "" && patient.dateOfBirth.getTime() === new Date("1970-01-01").getTime()) {
+        patient.dateOfBirth = new Date(dob);
+        detailsUpdated = true;
+      }
+
+      if (detailsUpdated) {
+        try {
+          await patient.save();
+        } catch (saveErr) {
+          console.error("Failed to update patient walkin details:", saveErr.message);
+        }
+      }
     }
 
     // --- 2. CHECK IF DOCTOR HAS AN APPROVED SCHEDULE ---
@@ -719,9 +759,28 @@ router.get("/all-doctors", protect, authorize(["system_admin"]), async (req, res
 router.put("/all-doctors/:id/approve", protect, authorize(["system_admin"]), async (req, res) => {
   try {
     const { isApproved } = req.body;
-    const doctor = await Doctor.findByIdAndUpdate(req.params.id, { isApproved }, { new: true }).select("-password");
-    res.json({ msg: isApproved ? "Doctor approved" : "Doctor rejected", doctor });
+    const doctor = await Doctor.findById(req.params.id);
+    if (!doctor) {
+      return res.status(404).json({ msg: "Doctor not found" });
+    }
+
+    const wasApproved = doctor.isApproved;
+    doctor.isApproved = isApproved;
+    await doctor.save();
+
+    // If newly approved, send automated notification email
+    if (isApproved && !wasApproved) {
+      sendDoctorApprovalEmail(doctor.email, doctor.name || doctor.fullName).catch(err => {
+        console.error("Failed to send approval email to doctor", err);
+      });
+    }
+
+    const docResponse = doctor.toObject();
+    delete docResponse.password;
+
+    res.json({ msg: isApproved ? "Doctor approved" : "Doctor rejected", doctor: docResponse });
   } catch (err) {
+    console.error("Approve Doctor Error:", err);
     res.status(500).send("Server Error");
   }
 });
