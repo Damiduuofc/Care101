@@ -412,16 +412,16 @@ export default function AppointmentsPage() {
                         <Input required placeholder="07XXXXXXXX" value={formData.phone} onChange={e => setFormData({...formData, phone: e.target.value})} />
                       </div>
                       <div className="space-y-1">
-                        <label className="text-sm font-medium text-slate-700">NIC Number *</label>
-                        <Input required placeholder="National ID" value={formData.nic} onChange={e => setFormData({...formData, nic: e.target.value})} />
+                        <label className="text-sm font-medium text-slate-700">NIC Number (optional)</label>
+                        <Input  placeholder="National ID" value={formData.nic} onChange={e => setFormData({...formData, nic: e.target.value})} />
                       </div>
                       <div className="space-y-1">
-                        <label className="text-sm font-medium text-slate-700">Date of Birth *</label>
-                        <Input required type="date" value={formData.dob} onChange={e => setFormData({...formData, dob: e.target.value})} />
+                        <label className="text-sm font-medium text-slate-700">Date of Birth (optional)</label>
+                        <Input type="date" value={formData.dob} onChange={e => setFormData({...formData, dob: e.target.value})} />
                       </div>
                       <div className="space-y-1 md:col-span-2">
-                        <label className="text-sm font-medium text-slate-700">Email Address *</label>
-                        <Input required type="email" placeholder="john@example.com" value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} />
+                        <label className="text-sm font-medium text-slate-700">Email Address (optional)</label>
+                        <Input type="email" placeholder="john@example.com" value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} />
                       </div>
                     </div>
                   </section>

@@ -56,6 +56,11 @@ export const sendBookingConfirmation = async (email, appointment, doctorRoom = "
     return;
   }
 
+  if (email.startsWith("walkin-") && email.includes("@care101.com")) {
+    console.log("⚠️ Walk-in mock email detected, skipping sending booking confirmation email.");
+    return;
+  }
+
   try {
     const transporter = await getTransporter();
 
@@ -125,6 +130,11 @@ Kindly limit visitors to the hospital for your own safety. Patients are advised 
 export const sendPaymentReceipt = async (email, bill, pdfBuffer) => {
   if (!email) {
     console.log("⚠️ No email address provided, skipping payment receipt email.");
+    return;
+  }
+
+  if (email.startsWith("walkin-") && email.includes("@care101.com")) {
+    console.log("⚠️ Walk-in mock email detected, skipping sending payment receipt email.");
     return;
   }
 
@@ -248,4 +258,63 @@ Phone: +94 81 222 3223`;
     console.error("❌ Error sending doctor welcome email:", err);
   }
 };
+
+/**
+ * Sends an account activation/approval email to the doctor.
+ * @param {string} email - Doctor's email address
+ * @param {string} doctorName - Doctor's full name
+ */
+export const sendDoctorApprovalEmail = async (email, doctorName) => {
+  if (!email) {
+    console.log("⚠️ No email address provided, skipping doctor approval email.");
+    return;
+  }
+
+  try {
+    const transporter = await getTransporter();
+
+    const textBody = `Dear Dr. ${doctorName},
+
+Your doctor account on the Care101 Healthcare Management System has been approved and activated by the administrator.
+
+You can now log in to the Care101 mobile application or dashboard using your registered credentials.
+
+If you experience any issues accessing your account, please contact the system administrator for assistance.
+
+Thank you, and welcome to Suwasewana Kandy Hospital.
+
+Kind regards,
+
+Suwasewana Kandy Hospital Administration Team
+
+Email: support@suwasewana.com
+Phone: +94 81 222 3223`;
+
+    const htmlBody = `<p>Dear Dr. <strong>${doctorName}</strong>,</p>
+<p>Your doctor account on the <strong>Care101 Healthcare Management System</strong> has been approved and activated by the administrator.</p>
+<p>You can now log in to the <strong>Care101</strong> mobile application or dashboard using your registered credentials.</p>
+<p>If you experience any issues accessing your account, please contact the system administrator for assistance.</p>
+<p>Thank you, and welcome to <strong>Suwasewana Kandy Hospital</strong>.</p>
+<br/>
+<p>Kind regards,</p>
+<p><strong>Suwasewana Kandy Hospital Administration Team</strong></p>
+<p><strong>Email:</strong> <a href="mailto:support@suwasewana.com">support@suwasewana.com</a><br/>
+<strong>Phone:</strong> +94 81 222 3223</p>`;
+
+    const mailOptions = {
+      from: process.env.EMAIL_USER || '"Suwasewana Kandy Hospital" <no-reply@suwasevana.com>',
+      to: email,
+      subject: 'Care101 - Doctor Account Approved & Activated',
+      text: textBody,
+      html: htmlBody
+    };
+
+    const info = await transporter.sendMail(mailOptions);
+    console.log(`✅ Doctor approval email sent: ${info.messageId}`);
+    return info;
+  } catch (err) {
+    console.error("❌ Error sending doctor approval email:", err);
+  }
+};
+
 
