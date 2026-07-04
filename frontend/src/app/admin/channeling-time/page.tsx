@@ -264,13 +264,14 @@ export default function ChannelingRequestPage() {
                                             <label className="block text-xs font-semibold text-slate-700 mb-1">
                                                 Select Date
                                             </label>
-                                            <input
-                                                type="date"
-                                                value={scheduleDate}
-                                                onChange={(e) => setScheduleDate(e.target.value)}
-                                                className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-4 focus:ring-cyan-500/10 focus:border-cyan-500 transition-all shadow-sm"
-                                                required
-                                            />
+<input
+    type="date"
+    value={scheduleDate}
+    min={new Date().toISOString().split("T")[0]}
+    onChange={(e) => setScheduleDate(e.target.value)}
+    className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-4 focus:ring-cyan-500/10 focus:border-cyan-500 transition-all shadow-sm"
+    required
+/>
                                         </div>
 
                                         {/* 3. Time Selection */}
