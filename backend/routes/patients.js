@@ -6,18 +6,18 @@ import { auth } from "../middleware/auth.js";
 const router = express.Router();
 
 // ==========================================
-// 1. SEARCH PATIENT BY NIC (For Doctor)
+// 1. SEARCH PATIENT BY PATIENT ID (For Doctor)
 // ==========================================
-router.get("/search-by-nic/:nic", auth, async (req, res) => {
+router.get("/search-by-patientid/:patientId", auth, async (req, res) => {
     try {
-        const { nic } = req.params;
+        const { patientId } = req.params;
 
-        if (!nic || nic.trim().length === 0) {
-            return res.status(400).json({ msg: "NIC is required" });
+        if (!patientId || patientId.trim().length === 0) {
+            return res.status(400).json({ msg: "Patient ID is required" });
         }
 
-        // Search for patient by NIC
-        const patient = await Patient.findOne({ nic: nic.trim() })
+        // Search for patient by PatientID
+        const patient = await Patient.findOne({ patientId: patientId.trim().toUpperCase() })
             .select("-password")
             .lean();
 
@@ -28,7 +28,7 @@ router.get("/search-by-nic/:nic", auth, async (req, res) => {
         res.json({ found: true, patient });
 
     } catch (err) {
-        console.error("NIC Search Error:", err);
+        console.error("Patient ID Search Error:", err);
         res.status(500).send("Server Error");
     }
 });
@@ -53,21 +53,20 @@ router.post("/add-patient", auth, async (req, res) => {
         } = req.body;
 
         // Validation
-        if (!username || !email || !password || !fullName || !nic) {
+        if (!password || !fullName) {
             return res.status(400).json({
-                msg: "Please provide username, email, password, full name, and NIC"
+                msg: "Please provide password and full name"
             });
         }
 
         // Check if patient already exists
-        let existingPatient = await Patient.findOne({
-            $or: [{ email }, { username }, { nic }]
-        });
-
-        if (existingPatient) {
-            return res.status(400).json({
-                msg: "Patient already exists with this email, username, or NIC"
-            });
+        if (username) {
+            let existingPatient = await Patient.findOne({ username });
+            if (existingPatient) {
+                return res.status(400).json({
+                    msg: "Patient already exists with this username"
+                });
+            }
         }
 
         // Hash password
@@ -76,14 +75,14 @@ router.post("/add-patient", auth, async (req, res) => {
 
         // Create new patient
         const newPatient = new Patient({
-            username,
-            email,
+            username: username || undefined,
+            email: email ? email.toLowerCase() : undefined,
             password: hashedPassword,
             fullName,
-            nic,
+            nicNumber: nic || undefined,
             mobileNumber: mobileNumber || "",
             dateOfBirth: dateOfBirth || null,
-            gender: gender || "",
+            gender: gender || "Other",
             emergencyContact: emergencyContact || "",
             medicalConditions: medicalConditions || [],
             allergies: allergies || [],
@@ -112,7 +111,7 @@ router.post("/add-patient", auth, async (req, res) => {
 router.get("/all-patients", auth, async (req, res) => {
     try {
         const patients = await Patient.find()
-            .select("username fullName nic mobileNumber email dateOfBirth gender createdAt")
+            .select("patientId username fullName nicNumber mobileNumber email dateOfBirth gender createdAt")
             .sort({ createdAt: -1 })
             .limit(100)
             .lean();
