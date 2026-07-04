@@ -169,8 +169,9 @@ router.get("/search", auth, async (req, res) => {
     // Build search criteria
     const searchCriteria = {
       $or: [
+        { patientId: { $regex: query, $options: 'i' } },
         { username: { $regex: query, $options: 'i' } },
-        { nic: { $regex: query, $options: 'i' } },
+        { nicNumber: { $regex: query, $options: 'i' } },
         { fullName: { $regex: query, $options: 'i' } },
         { email: { $regex: query, $options: 'i' } }
       ]
@@ -183,7 +184,7 @@ router.get("/search", auth, async (req, res) => {
 
     // Find patients
     const patients = await Patient.find(searchCriteria)
-      .select("username fullName nic mobileNumber email dateOfBirth gender profileImage createdAt")
+      .select("patientId username fullName nicNumber mobileNumber email dateOfBirth gender profileImage createdAt")
       .limit(20)
       .lean();
 
@@ -246,17 +247,7 @@ router.get("/:id/medical-history", auth, async (req, res) => {
       .limit(10)
       .lean();
 
-    // Get surgery records if available
-    let surgeryRecords = [];
-    try {
-      const SurgeryRecord = (await import("../models/SurgeryRecord.js")).default;
-      surgeryRecords = await SurgeryRecord.find({ patientId })
-        .sort({ date: -1 })
-        .limit(10)
-        .lean();
-    } catch (err) {
-      console.log("Surgery records not available");
-    }
+ 
 
     res.json({
       patient,
