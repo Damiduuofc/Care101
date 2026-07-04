@@ -47,47 +47,33 @@ export const registerPatient = async (req, res) => {
   try {
     const {
       fullName, dateOfBirth, gender, nicNumber,
-      mobileNumber, email, district, username, password
+      mobileNumber, email, district, password
     } = req.body;
 
-    // 1. Check uniqueness across Doctor collection
-    const existingDoctor = await Doctor.findOne({ email: email.toLowerCase() });
-    if (existingDoctor) {
-      return res.status(400).json({ message: "User with this email already exists" });
-    }
-
-    // Check existing patients by email and NIC
-    const existingPatientByEmail = await Patient.findOne({ email: email.toLowerCase() });
-    const existingPatientByNic = await Patient.findOne({ nicNumber });
-
+    // Check existing patients by email and NIC (but only if provided)
     let patientToUpgrade = null;
 
-    if (existingPatientByEmail) {
-      if (existingPatientByEmail.isRegistered === false) {
-        patientToUpgrade = existingPatientByEmail;
-      } else {
+    if (email && email.trim() !== "") {
+      // 1. Check uniqueness across Doctor collection
+      const existingDoctor = await Doctor.findOne({ email: email.toLowerCase() });
+      if (existingDoctor) {
         return res.status(400).json({ message: "User with this email already exists" });
       }
+
+      const existingPatientByEmail = await Patient.findOne({ email: email.toLowerCase(), isRegistered: false });
+      if (existingPatientByEmail) {
+        patientToUpgrade = existingPatientByEmail;
+      }
     }
 
-    if (existingPatientByNic) {
-      if (existingPatientByNic.isRegistered === false) {
-        if (patientToUpgrade && patientToUpgrade._id.toString() !== existingPatientByNic._id.toString()) {
-          return res.status(400).json({ message: "NIC number is already in use by another account." });
-        }
+    if (!patientToUpgrade && nicNumber && nicNumber.trim() !== "") {
+      const existingPatientByNic = await Patient.findOne({ nicNumber, isRegistered: false });
+      if (existingPatientByNic) {
         patientToUpgrade = existingPatientByNic;
-      } else {
-        return res.status(400).json({ message: "User with this NIC number already exists" });
       }
     }
 
-    // Check if username is already in use by another registered patient
-    const existingUsername = await Patient.findOne({ username });
-    if (existingUsername) {
-      if (!patientToUpgrade || patientToUpgrade._id.toString() !== existingUsername._id.toString()) {
-        return res.status(400).json({ message: "Username is already in use by another account." });
-      }
-    }
+
 
     // 2. Hash Password
     const salt = await bcrypt.genSalt(10);
@@ -98,9 +84,8 @@ export const registerPatient = async (req, res) => {
     if (patientToUpgrade) {
       // Upgrade existing walk-in patient
       patientToUpgrade.fullName = fullName;
-      patientToUpgrade.email = email.toLowerCase();
-      patientToUpgrade.username = username;
-      patientToUpgrade.nicNumber = nicNumber;
+      patientToUpgrade.email = email ? email.toLowerCase() : patientToUpgrade.email;
+      patientToUpgrade.nicNumber = nicNumber ? nicNumber : patientToUpgrade.nicNumber;
       patientToUpgrade.password = hashedPassword;
       patientToUpgrade.mobileNumber = mobileNumber;
       patientToUpgrade.dateOfBirth = new Date(dateOfBirth);
@@ -116,11 +101,10 @@ export const registerPatient = async (req, res) => {
         fullName,
         dateOfBirth: new Date(dateOfBirth),
         gender,
-        nicNumber,
+        nicNumber: nicNumber || undefined,
         mobileNumber,
-        email: email.toLowerCase(),
+        email: email ? email.toLowerCase() : undefined,
         district,
-        username,
         password: hashedPassword,
         isRegistered: true
       });
@@ -136,6 +120,29 @@ export const registerPatient = async (req, res) => {
       { expiresIn: "30d" }
     );
 
+    // Send Welcome Email if patient has an email address
+    if (finalPatient.email) {
+      try {
+        const transporter = nodemailer.createTransport({
+          host: process.env.EMAIL_HOST,
+          port: process.env.EMAIL_PORT,
+          auth: {
+            user: process.env.EMAIL_USER,
+            pass: process.env.EMAIL_PASS,
+          },
+        });
+
+        await transporter.sendMail({
+          from: '"Care101" <noreply@care101.com>',
+          to: finalPatient.email,
+          subject: "Welcome to Care101 - Your Patient ID Details",
+          text: `Hello ${finalPatient.fullName},\n\nWelcome to Care101! Your patient account has been successfully created.\n\nYour Patient ID is: ${finalPatient.patientId}\n\nYou should use this Patient ID (along with your password) to log in to the Care101 mobile application.\n\nBest regards,\nThe Care101 Team`
+        });
+      } catch (emailErr) {
+        console.error("Welcome email failed to send:", emailErr);
+      }
+    }
+
     res.status(201).json({
       token,
       user: {
@@ -143,7 +150,8 @@ export const registerPatient = async (req, res) => {
         name: finalPatient.fullName,
         email: finalPatient.email,
         nicNumber: finalPatient.nicNumber,
-        role: "patient"
+        role: "patient",
+        patientId: finalPatient.patientId
       }
     });
 
@@ -176,7 +184,13 @@ export const login = async (req, res) => {
 
     // 2. Check Patient Collection (if not found in Doctor)
     if (!user) {
-      const patient = await Patient.findOne({ email });
+      const patient = await Patient.findOne({
+        $or: [
+          { email: email.toLowerCase() },
+          { patientId: email.toUpperCase() },
+          {  email }
+        ]
+      });
       if (patient) {
         user = patient;
         role = "patient";
@@ -209,7 +223,8 @@ export const login = async (req, res) => {
         email: user.email,
         role: role,
         specialization: user.specialization || null,
-        nicNumber: user.nicNumber || user.nic || null  // Include NIC for patients/doctors
+        nicNumber: user.nicNumber || user.nic || null,  // Include NIC for patients/doctors
+        patientId: user.patientId || null
       }
     });
 
@@ -227,7 +242,7 @@ export const registerDoctorsBulk = async (req, res) => {
     if (!Array.isArray(doctorsList)) return res.status(400).json({ message: "Input must be an array." });
 
     const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash("Damidu12", salt);
+    const hashedPassword = await bcrypt.hash("Damidu12.", salt);
 
     const doctorsWithHashedPassword = doctorsList.map(doc => ({
       ...doc,
@@ -337,17 +352,27 @@ export const forgotPassword = async (req, res) => {
 
   try {
     // 1. Search Patient DB first, then Doctor DB
-    let user = await Patient.findOne({ email });
+    let user = await Patient.findOne({
+      $or: [
+        { email: email.toLowerCase() },
+        { patientId: email.toUpperCase() },
+        {  email }
+      ]
+    });
     let userType = 'Patient';
 
     if (!user) {
-      user = await Doctor.findOne({ email });
+      user = await Doctor.findOne({ email: email.toLowerCase() });
       userType = 'Doctor';
     }
 
     if (!user) {
-      // Security: Do not reveal if the email exists
-      return res.json({ msg: "If the email is registered, an OTP has been sent." });
+      // Security: Do not reveal if the email/account exists
+      return res.json({ msg: "If the email/account is registered, an OTP has been sent." });
+    }
+
+    if (!user.email) {
+      return res.status(400).json({ msg: "This account has no associated email address for password reset. Please contact administration." });
     }
 
     // 2. Generate a 6-digit OTP
@@ -369,7 +394,7 @@ export const forgotPassword = async (req, res) => {
     });
 
     await transporter.sendMail({
-      from: '"Care101 App" <noreply@care101.com>',
+      from: '"Care101" <noreply@care101.com>',
       to: user.email,
       subject: "Your Password Reset Code",
       text: `Your password reset code is: ${otp}\n\nThis code will expire in 10 minutes.`,
@@ -390,7 +415,13 @@ export const verifyOtp = async (req, res) => {
   const { email, otp } = req.body;
 
   try {
-    let user = await Patient.findOne({ email }) || await Doctor.findOne({ email });
+    let user = await Patient.findOne({
+      $or: [
+        { email: email.toLowerCase() },
+        { patientId: email.toUpperCase() },
+        {email }
+      ]
+    }) || await Doctor.findOne({ email: email.toLowerCase() });
 
     if (!user) return res.status(400).json({ msg: "Invalid request." });
 
@@ -418,7 +449,13 @@ export const resetPassword = async (req, res) => {
   const { email, otp, newPassword } = req.body;
 
   try {
-    let user = await Patient.findOne({ email }) || await Doctor.findOne({ email });
+    let user = await Patient.findOne({
+      $or: [
+        { email: email.toLowerCase() },
+        { patientId: email.toUpperCase() },
+        { email }
+      ]
+    }) || await Doctor.findOne({ email: email.toLowerCase() });
 
     if (!user) return res.status(400).json({ msg: "Invalid request." });
 
@@ -441,5 +478,29 @@ export const resetPassword = async (req, res) => {
   } catch (err) {
     console.error("Reset Password Error:", err);
     res.status(500).send("Server Error");
+  }
+};
+
+export const getNextPatientId = async (req, res) => {
+  try {
+    const lastPatient = await Patient.findOne(
+      { patientId: /^SHP\d+$/ },
+      {},
+      { sort: { patientId: -1 } }
+    );
+    
+    let nextNum = 1;
+    if (lastPatient && lastPatient.patientId) {
+      const match = lastPatient.patientId.match(/^SHP(\d+)$/);
+      if (match) {
+        nextNum = parseInt(match[1], 10) + 1;
+      }
+    }
+    
+    const paddedNum = String(nextNum).padStart(3, '0');
+    res.json({ patientId: `SHP${paddedNum}` });
+  } catch (error) {
+    console.error("Error getting next patient ID:", error);
+    res.status(500).json({ message: "Server Error" });
   }
 };
