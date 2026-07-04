@@ -24,7 +24,7 @@ export default function AppointmentsPage() {
   // Form State
   const [formData, setFormData] = useState({
     // Patient Details
-    fullName: "", nic: "", dob: "", phone: "", email: "",
+    patientId: "", fullName: "", nic: "", dob: "", phone: "", email: "",
     // Appointment Details
     department: "", doctorId: "", doctorName: "", date: "", visitType: "Consultation", reason: "", paymentStatus: "paid"
   });
@@ -130,7 +130,8 @@ export default function AppointmentsPage() {
             nic: formData.nic,
             dob: formData.dob,
             phone: formData.phone,
-            email: formData.email
+            email: formData.email,
+            patientId: formData.patientId
           },
           appointmentDetails: {
             doctorId: formData.doctorId,
@@ -149,7 +150,7 @@ export default function AppointmentsPage() {
         setIsBookingModalOpen(false);
         fetchAppointments(); // Refresh list
         setFormData({
-          fullName: "", nic: "", dob: "", phone: "", email: "",
+          patientId: "", fullName: "", nic: "", dob: "", phone: "", email: "",
           department: "", doctorId: "", doctorName: "", date: "", visitType: "Consultation", reason: "", paymentStatus: "paid"
         });
         alert("Appointment booked successfully!");
@@ -410,6 +411,10 @@ export default function AppointmentsPage() {
                       <div className="space-y-1">
                         <label className="text-sm font-medium text-slate-700">Phone Number *</label>
                         <Input required placeholder="07XXXXXXXX" value={formData.phone} onChange={e => setFormData({...formData, phone: e.target.value})} />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-sm font-medium text-slate-700">Patient ID (optional)</label>
+                        <Input placeholder="e.g. SHP001" value={formData.patientId} onChange={e => setFormData({...formData, patientId: e.target.value})} />
                       </div>
                       <div className="space-y-1">
                         <label className="text-sm font-medium text-slate-700">NIC Number (optional)</label>

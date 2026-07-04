@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
     View,
     Text,
@@ -24,7 +24,6 @@ import { useAuth } from '@/context/auth';
 
 // --- VALIDATION SCHEMA ---
 const formSchema = z.object({
-    username: z.string().min(4, { message: "Username must be at least 4 characters." }),
     password: z.string().min(6, { message: "Password must be at least 6 characters." }),
     confirmPassword: z.string().min(1, { message: "Please confirm your password." }),
 }).refine((data) => data.password === data.confirmPassword, {
@@ -44,6 +43,25 @@ export default function PatientSignupStep3() {
     const [showPassword, setShowPassword] = useState(false);
     const [showConfirmPassword, setShowConfirmPassword] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
+    const [patientId, setPatientId] = useState<string>("Loading...");
+
+    useEffect(() => {
+        const fetchNextPatientId = async () => {
+            try {
+                const response = await fetch(`${process.env.EXPO_PUBLIC_API_URL}/auth/next-patient-id`);
+                if (response.ok) {
+                    const data = await response.json();
+                    setPatientId(data.patientId);
+                } else {
+                    setPatientId("SHP001");
+                }
+            } catch (err) {
+                console.error("Failed to fetch next patient ID", err);
+                setPatientId("SHP001");
+            }
+        };
+        fetchNextPatientId();
+    }, []);
 
     // --- ASSETS ---
     const logoSource = require('../../../assets/logo1.png');
@@ -53,7 +71,7 @@ export default function PatientSignupStep3() {
     const form = useForm<FormValues>({
         resolver: zodResolver(formSchema),
         defaultValues: {
-            username: "",
+    
             password: "",
             confirmPassword: "",
         },
@@ -144,13 +162,18 @@ export default function PatientSignupStep3() {
                 </Text>
             </View>
 
-            {/* Username */}
-            <FormInput
-                control={form.control}
-                name="username"
-                placeholder="user123"
-                icon="person-circle-outline"
-            />
+            {/* Read-Only Patient ID */}
+            <View style={styles.inputContainer}>
+                <Text style={styles.label}>Patient ID (Assigning to you)</Text>
+                <View style={[styles.inputWrapper, { backgroundColor: '#f1f5f9', borderColor: '#cbd5e1' }]}>
+                    <Ionicons name="finger-print-outline" size={20} color="#64748b" style={styles.inputIcon} />
+                    <Text style={[styles.input, { paddingVertical: 14, color: '#64748b', fontWeight: 'bold' }]}>
+                        {patientId}
+                    </Text>
+                </View>
+            </View>
+
+
 
             {/* Password */}
             <FormInput

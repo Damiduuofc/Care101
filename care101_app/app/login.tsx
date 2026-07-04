@@ -85,7 +85,7 @@ export default function LoginScreen() {
       render={({ field: { onChange, onBlur, value } }) => (
         <View style={styles.inputContainer}>
           <Text style={styles.label}>
-            {name === 'email' ? 'Email or Username' : 'Password'}
+            {name === 'email' ? 'Email or Patient ID' : 'Password'}
           </Text>
 
           <View style={[styles.inputWrapper, errors[name as keyof LoginFormValues] && styles.inputError]}>
@@ -157,7 +157,7 @@ export default function LoginScreen() {
 
                   <FormInput
                     name="email"
-                    placeholder="name@example.com or username"
+                    placeholder="name@example.com or P001"
                     icon="mail-outline"
                     keyboardType="email-address"
                   />

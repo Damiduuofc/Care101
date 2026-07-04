@@ -169,8 +169,9 @@ router.get("/search", auth, async (req, res) => {
     // Build search criteria
     const searchCriteria = {
       $or: [
+        { patientId: { $regex: query, $options: 'i' } },
         { username: { $regex: query, $options: 'i' } },
-        { nic: { $regex: query, $options: 'i' } },
+        { nicNumber: { $regex: query, $options: 'i' } },
         { fullName: { $regex: query, $options: 'i' } },
         { email: { $regex: query, $options: 'i' } }
       ]
@@ -183,7 +184,7 @@ router.get("/search", auth, async (req, res) => {
 
     // Find patients
     const patients = await Patient.find(searchCriteria)
-      .select("username fullName nic mobileNumber email dateOfBirth gender profileImage createdAt")
+      .select("patientId username fullName nicNumber mobileNumber email dateOfBirth gender profileImage createdAt")
       .limit(20)
       .lean();
 

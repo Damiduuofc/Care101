@@ -25,19 +25,14 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 const formSchema = z.object({
     fullName: z.string().min(2, { message: "Full name is required." }),
     nicNumber: z.string()
-        .min(10, { message: "NIC must be at least 10 characters." })
-        .max(12, { message: "NIC cannot exceed 12 characters." }),
-    gender: z.enum(["Male", "Female", "Other"], {
-        errorMap: (issue) => {
-            if (issue.code === 'invalid_enum_value' || issue.code === 'invalid_type') {
-                return { message: "Gender is required." };
-            }
-            return { message: "Invalid selection." };
-        }
-    }),
+        .optional()
+        .or(z.literal(''))
+        .refine(val => !val || (val.length >= 10 && val.length <= 12), {
+            message: "NIC must be between 10 and 12 characters if provided."
+        }),
+    gender: z.enum(["Male", "Female", "Other"]),
     dateOfBirth: z.date({
-        required_error: "Date of birth is required.",
-        invalid_type_error: "Please enter a valid date.",
+        message: "Date of birth is required.",
     }),
 });
 
@@ -158,7 +153,7 @@ export default function PatientSignupStep1() {
 
             {/* NIC Number */}
             <View style={styles.inputContainer}>
-                <Text style={styles.label}>National ID (NIC)</Text>
+                <Text style={styles.label}>National ID (optional)</Text>
                 <Controller
                     control={form.control}
                     name="nicNumber"

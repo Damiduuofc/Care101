@@ -33,7 +33,7 @@ const DISTRICTS = [
 // --- VALIDATION SCHEMA ---
 const formSchema = z.object({
     mobileNumber: z.string().min(9, { message: "Valid mobile number is required." }),
-    email: z.string().email({ message: "Invalid email address" }),
+    email: z.union([z.string().email({ message: "Invalid email address" }), z.literal("")]).optional(),
     district: z.string().min(1, { message: "Please select your district." }),
 });
 
@@ -80,7 +80,7 @@ export default function PatientSignupStep2() {
             name={name}
             render={({ field: { onChange, onBlur, value }, fieldState: { error } }) => (
                 <View style={styles.inputContainer}>
-                    <Text style={styles.label}>{name.replace(/([A-Z])/g, ' $1').replace(/^./, (str: string) => str.toUpperCase())}</Text>
+                    <Text style={styles.label}>{name === 'email' ? 'Email Address' : name.replace(/([A-Z])/g, ' $1').replace(/^./, (str: string) => str.toUpperCase())}</Text>
                     <View style={[styles.inputWrapper, error && styles.inputError]}>
                         <Ionicons name={icon} size={20} color="#64748b" style={styles.inputIcon} />
                         <TextInput
@@ -134,7 +134,7 @@ export default function PatientSignupStep2() {
             <FormInput
                 control={form.control}
                 name="email"
-                placeholder="john@example.com"
+                placeholder="infor@care101.com"
                 icon="mail-outline"
                 keyboardType="email-address"
             />

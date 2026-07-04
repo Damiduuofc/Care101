@@ -63,7 +63,7 @@ export default function ProfileScreen() {
             const response = await fetch(`${API_URL}/notifications`, {
                 headers: { 
                     'Authorization': `Bearer ${token}`,
-                    'x-auth-token': token 
+                    'x-auth-token': token || "" 
                 }
             });
 
@@ -78,7 +78,7 @@ export default function ProfileScreen() {
                         method: 'PUT',
                         headers: { 
                             'Authorization': `Bearer ${token}`, 
-                            'x-auth-token': token 
+                            'x-auth-token': token || "" 
                         }
                     });
                 }
@@ -206,6 +206,12 @@ export default function ProfileScreen() {
                         <Text style={styles.name}>
                             {profile?.fullName || profile?.username || "Patient"}
                         </Text>
+                        
+                        {profile?.patientId && (
+                            <Text style={styles.patientIdText}>
+                                Patient ID: {profile.patientId}
+                            </Text>
+                        )}
                         
                         <Text style={styles.email}>{profile?.email || ""}</Text>
                         <Text style={styles.role}>Patient</Text>
@@ -402,6 +408,7 @@ const styles = StyleSheet.create({
     avatarImage: { width: '100%', height: '100%' },
     name: { fontSize: 20, fontWeight: '700', color: '#0f172a', marginBottom: 4, textAlign: 'center' },
     email: { fontSize: 14, color: '#64748b', marginBottom: 4 },
+    patientIdText: { fontSize: 14, color: '#0891b2', fontWeight: '600', marginBottom: 4 },
     role: { fontSize: 12, color: '#06b6d4', fontWeight: '600', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 16 },
     editButton: { paddingHorizontal: 20, paddingVertical: 10, backgroundColor: '#f1f5f9', borderRadius: 20 },
     editButtonText: { fontSize: 14, fontWeight: '600', color: '#475569' },

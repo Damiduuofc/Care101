@@ -8,9 +8,10 @@ import {
   updateProfile,     
   changePassword,    
   getNotifications,
-  forgotPassword,    // <-- Import the new functions
+  forgotPassword,    
   verifyOtp,
-  resetPassword
+  resetPassword,
+  getNextPatientId
 } from "../controllers/authController.js";
 
 import { auth } from "../middleware/auth.js";
@@ -37,6 +38,7 @@ router.post("/login", login);
 router.post("/forgot-password", forgotPassword);
 router.post("/verify-otp", verifyOtp);
 router.post("/reset-password", resetPassword);
+router.get("/next-patient-id", getNextPatientId);
 
 
 // ==========================================

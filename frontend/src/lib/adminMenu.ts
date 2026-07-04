@@ -33,12 +33,6 @@ export const menuItems = [
     icon: ShieldCheck,
     roles: ["system_admin"],
   },
-    {
-    title: "Doctor Accounts",
-    href: "/admin/doctorsAccounts",
-    icon: Stethoscope,
-    roles: ["system_admin"],
-  },
 
   // --- RECEPTIONIST DASHBOARD DEDICATED ITEMS ---
   {

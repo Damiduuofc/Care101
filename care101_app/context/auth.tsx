@@ -140,8 +140,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         throw new Error(data.message || data.msg || 'Registration failed');
       }
 
-      // ✅ AUTO-LOGIN
-      await signIn(userData.email || userData.username, userData.password);
+      // ✅ SUCCESS: Save Session & Redirect
+      await SecureStore.setItemAsync('token', data.token);
+      await SecureStore.setItemAsync('user_data', JSON.stringify(data.user));
+
+      setToken(data.token);
+      setUser(data.user);
+
+      router.replace('/patient-dashboard' as any);
 
     } catch (error: any) {
       console.error("Patient Signup Error:", error);

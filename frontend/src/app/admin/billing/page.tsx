@@ -1,6 +1,8 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
+import { loadStripe } from "@stripe/stripe-js";
+import { Elements, CardElement, useStripe, useElements } from "@stripe/react-stripe-js";
 import Sidebar from "@/components/admin/Sidebar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, } from "@/components/ui/card";
@@ -36,7 +38,8 @@ import {
     CreditCard,
     Wallet,
     Clock,
-    X
+    X,
+    Smartphone
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import InvoiceTemplate from "@/components/admin/InvoiceTemplate";
@@ -45,6 +48,122 @@ import { getAdminToken } from "@/lib/adminSession";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
+const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY || "");
+
+interface CardFormProps {
+    amount: number;
+    billId: string;
+    onSuccess: (updatedBill: any) => void;
+    onCancel: () => void;
+}
+
+function StripeCardForm({ amount, billId, onSuccess, onCancel }: CardFormProps) {
+    const stripe = useStripe();
+    const elements = useElements();
+    const [error, setError] = useState<string | null>(null);
+    const [processing, setProcessing] = useState(false);
+    const { toast } = useToast();
+
+    const handleSubmit = async (event: React.FormEvent) => {
+        event.preventDefault();
+
+        if (!stripe || !elements) {
+            return;
+        }
+
+        setProcessing(true);
+        setError(null);
+
+        try {
+            const adminToken = getAdminToken();
+            const intentRes = await fetch(`${API_URL}/payments/create-intent`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "x-auth-token": adminToken || "",
+                    "ngrok-skip-browser-warning": "true"
+                },
+                body: JSON.stringify({ amount: amount * 100 })
+            });
+
+            const intentData = await intentRes.json();
+            if (!intentRes.ok) {
+                throw new Error(intentData.msg || "Failed to initiate payment");
+            }
+
+            const clientSecret = intentData.clientSecret;
+
+            const cardElement = elements.getElement(CardElement);
+            if (!cardElement) {
+                throw new Error("Card input not found");
+            }
+
+            const paymentResult = await stripe.confirmCardPayment(clientSecret, {
+                payment_method: {
+                    card: cardElement
+                }
+            });
+
+            if (paymentResult.error) {
+                throw new Error(paymentResult.error.message || "Payment failed");
+            }
+
+            if (paymentResult.paymentIntent?.status === "succeeded") {
+                const payRes = await fetch(`${API_URL}/admin/bills/pay/${billId}`, {
+                    method: "PUT",
+                    headers: {
+                        "Content-Type": "application/json",
+                        "x-auth-token": adminToken || "",
+                        "ngrok-skip-browser-warning": "true"
+                    }
+                });
+
+                const payData = await payRes.json();
+                if (!payRes.ok) {
+                    throw new Error(payData.msg || "Payment recorded but failed to update bill record. Please contact support.");
+                }
+
+                toast({ title: "Payment Successful", description: `LKR ${amount} charged successfully.` });
+                onSuccess(payData.bill);
+            }
+        } catch (err: any) {
+            console.error("Card Payment Error:", err);
+            setError(err.message || "An error occurred during payment");
+            toast({ title: "Payment Failed", description: err.message || "Stripe transaction failed", variant: "destructive" });
+        } finally {
+            setProcessing(false);
+        }
+    };
+
+    return (
+        <form onSubmit={handleSubmit} className="space-y-4 mt-2">
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                <CardElement 
+                    options={{
+                        style: {
+                            base: {
+                                fontSize: "16px",
+                                color: "#0f172a",
+                                "::placeholder": {
+                                    color: "#94a3b8",
+                                },
+                            },
+                        },
+                    }}
+                />
+            </div>
+            {error && <div className="text-xs font-semibold text-rose-500 bg-rose-50 p-3 rounded-lg border border-rose-100">{error}</div>}
+            <div className="flex gap-3 justify-end pt-2">
+                <Button type="button" variant="outline" onClick={onCancel} disabled={processing} className="rounded-xl h-11 px-6">Cancel</Button>
+                <Button type="submit" disabled={!stripe || processing} className="bg-[#06b6d4] hover:bg-[#0891b2] rounded-xl h-11 px-6 shadow-md shadow-cyan-500/10 text-white">
+                    {processing ? <Loader2 className="animate-spin mr-2 h-4 w-4" /> : null}
+                    Confirm Rs. {amount.toLocaleString()}
+                </Button>
+            </div>
+        </form>
+    );
+}
+
 export default function BillingPage() {
     const { toast } = useToast();
     const [history, setHistory] = useState<any[]>([]);
@@ -52,9 +171,11 @@ export default function BillingPage() {
     const [loading, setLoading] = useState(true);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [open, setOpen] = useState(false);
+    const [stripeModalOpen, setStripeModalOpen] = useState(false);
+    const [pendingBill, setPendingBill] = useState<any>(null);
 
     // Search State
-    const [searchNic, setSearchNic] = useState("");
+    const [searchPatientId, setSearchPatientId] = useState("");
     const [searching, setSearching] = useState(false);
     const [selectedPatient, setSelectedPatient] = useState<any>(null);
 
@@ -160,12 +281,12 @@ fetch(`${API_URL}/admin/doctors`, { headers })
     }, []);
 
     const handleSearchPatient = async () => {
-        if (!searchNic) return;
+        if (!searchPatientId) return;
         setSearching(true);
         setSelectedPatient(null);
         try {
             const token = getAdminToken();
-            const res = await fetch(`${API_URL}/admin/patients/search/nic/${searchNic}`, {
+            const res = await fetch(`${API_URL}/admin/patients/search/patientid/${searchPatientId}`, {
                 headers: {
                     "x-auth-token": token || "",
                     "ngrok-skip-browser-warning": "true"
@@ -223,24 +344,36 @@ fetch(`${API_URL}/admin/doctors`, { headers })
             const data = await res.json();
             
             if (res.ok) {
+                if (formData.paymentMethod === "Card") {
+                    setOpen(false);
+                    setFormData({ title: "", type: "Appointment", amount: "", paymentMethod: "App", doctorId: "" });
+                    setSelectedPatient(null);
+                    setSearchPatientId("");
+                    
+                    setPendingBill(data.bill);
+                    setStripeModalOpen(true);
+                    setIsSubmitting(false);
+                    return;
+                }
+
                 // 2. ONLY allocate the 75% from the frontend if they paid CASH right now.
                 // If it is an "App" payment, the backend must handle this when the payment completes.
-if (formData.type === "Surgery" && formData.doctorId && formData.paymentMethod === "Cash") {
-    const doctorShare = parseFloat(formData.amount) * 0.75;
-    try {
-        await fetch(`${API_URL}/admin/doctors/finance/add`, {
-           // ... you can delete this whole try/catch block
-        });
-    } catch (financeErr) {
-        // ...
-    }
-}
+                if (formData.type === "Surgery" && formData.doctorId && formData.paymentMethod === "Cash") {
+                    const doctorShare = parseFloat(formData.amount) * 0.75;
+                    try {
+                        await fetch(`${API_URL}/admin/doctors/finance/add`, {
+                           // ...
+                        });
+                    } catch (financeErr) {
+                        // ...
+                    }
+                }
 
                 toast({ title: "Bill Issued", description: formData.paymentMethod === "Cash" ? "Paid by cash successfully" : "Bill sent to patient app" });
                 setOpen(false);
                 setFormData({ title: "", type: "Appointment", amount: "", paymentMethod: "App", doctorId: "" });
                 setSelectedPatient(null);
-                setSearchNic("");
+                setSearchPatientId("");
                 setHistory([data.bill, ...history]);
 
                 // Automatically show print dialog for the new bill
@@ -286,10 +419,10 @@ if (formData.type === "Surgery" && formData.doctorId && formData.paymentMethod =
                                         <div className="relative flex-1">
                                             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
                                             <Input
-                                                placeholder="Search by NIC Number..."
+                                                placeholder="Search by Patient ID (e.g. SHP001)..."
                                                 className="pl-10 h-11"
-                                                value={searchNic}
-                                                onChange={(e) => setSearchNic(e.target.value)}
+                                                value={searchPatientId}
+                                                onChange={(e) => setSearchPatientId(e.target.value)}
                                                 onKeyDown={(e) => e.key === 'Enter' && handleSearchPatient()}
                                             />
                                         </div>
@@ -305,7 +438,7 @@ if (formData.type === "Surgery" && formData.doctorId && formData.paymentMethod =
                                             </div>
                                             <div>
                                                 <p className="text-sm font-bold text-slate-900">{selectedPatient.fullName}</p>
-                                                <p className="text-xs text-slate-500 font-medium tracking-tight">NIC: {selectedPatient.nicNumber}</p>
+                                                <p className="text-xs text-slate-500 font-medium tracking-tight">Patient ID: {selectedPatient.patientId}</p>
                                             </div>
                                         </div>
                                     )}
@@ -387,14 +520,23 @@ if (formData.type === "Surgery" && formData.doctorId && formData.paymentMethod =
 
                                         <div className="space-y-3 pt-2">
                                             <Label>Payment Strategy</Label>
-                                            <div className="grid grid-cols-2 gap-3">
+                                            <div className="grid grid-cols-3 gap-3">
                                                 <button
                                                     type="button"
                                                     onClick={() => setFormData({ ...formData, paymentMethod: "Cash" })}
                                                     className={`p-4 rounded-xl border-2 flex flex-col items-center gap-2 transition-all ${formData.paymentMethod === "Cash" ? "border-[#06b6d4] bg-cyan-50 shadow-sm" : "border-slate-100 hover:border-slate-200"}`}
                                                 >
                                                     <Wallet className={formData.paymentMethod === "Cash" ? "text-[#06b6d4]" : "text-slate-400"} />
-                                                    <span className={`text-xs font-bold ${formData.paymentMethod === "Cash" ? "text-[#06b6d4]" : "text-slate-500"}`}>CASH (PAID)</span>
+                                                    <span className={`text-[10px] font-bold ${formData.paymentMethod === "Cash" ? "text-[#06b6d4]" : "text-slate-500"}`}>CASH (PAID)</span>
+                                                </button>
+
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setFormData({ ...formData, paymentMethod: "Card" })}
+                                                    className={`p-4 rounded-xl border-2 flex flex-col items-center gap-2 transition-all ${formData.paymentMethod === "Card" ? "border-[#06b6d4] bg-cyan-50 shadow-sm" : "border-slate-100 hover:border-slate-200"}`}
+                                                >
+                                                    <CreditCard className={formData.paymentMethod === "Card" ? "text-[#06b6d4]" : "text-slate-400"} />
+                                                    <span className={`text-[10px] font-bold ${formData.paymentMethod === "Card" ? "text-[#06b6d4]" : "text-slate-500"}`}>CARD (STRIPE)</span>
                                                 </button>
 
                                                 <button
@@ -402,8 +544,8 @@ if (formData.type === "Surgery" && formData.doctorId && formData.paymentMethod =
                                                     onClick={() => setFormData({ ...formData, paymentMethod: "App" })}
                                                     className={`p-4 rounded-xl border-2 flex flex-col items-center gap-2 transition-all ${formData.paymentMethod === "App" ? "border-[#06b6d4] bg-cyan-50 shadow-sm" : "border-slate-100 hover:border-slate-200"}`}
                                                 >
-                                                    <CreditCard className={formData.paymentMethod === "App" ? "text-[#06b6d4]" : "text-slate-400"} />
-                                                    <span className={`text-xs font-bold ${formData.paymentMethod === "App" ? "text-[#06b6d4]" : "text-slate-500"}`}>SEND TO APP</span>
+                                                    <Smartphone className={formData.paymentMethod === "App" ? "text-[#06b6d4]" : "text-slate-400"} />
+                                                    <span className={`text-[10px] font-bold ${formData.paymentMethod === "App" ? "text-[#06b6d4]" : "text-slate-500"}`}>SEND TO APP</span>
                                                 </button>
                                             </div>
                                         </div>
@@ -418,9 +560,9 @@ if (formData.type === "Surgery" && formData.doctorId && formData.paymentMethod =
                                             {isSubmitting ? (
                                                 <Loader2 className="animate-spin mr-2" />
                                             ) : (
-                                                formData.paymentMethod === "Cash" ? <CheckCircle2 className="mr-2" size={20} /> : <FileText className="mr-2" size={20} />
+                                                formData.paymentMethod === "Cash" ? <CheckCircle2 className="mr-2" size={20} /> : (formData.paymentMethod === "Card" ? <CreditCard className="mr-2" size={20} /> : <FileText className="mr-2" size={20} />)
                                             )}
-                                            {formData.paymentMethod === "Cash" ? "Confirm Cash Payment" : "Issue & Send to App"}
+                                            {formData.paymentMethod === "Cash" ? "Confirm Cash Payment" : (formData.paymentMethod === "Card" ? "Issue & Pay by Card" : "Issue & Send to App")}
                                         </Button>
                                     </SheetFooter>
                                 </form>
@@ -490,7 +632,7 @@ if (formData.type === "Surgery" && formData.doctorId && formData.paymentMethod =
                                             </TableCell>
                                             <TableCell>
                                                 <p className="font-medium text-slate-900">{inv.patientId?.fullName || "Patient"}</p>
-                                                <p className="text-xs text-slate-500 font-medium">{inv.patientId?.nicNumber}</p>
+                                                <p className="text-xs text-slate-500 font-medium">Patient ID: {inv.patientId?.patientId || "N/A"}</p>
                                             </TableCell>
                                             <TableCell>
                                                 <p className="text-sm font-medium text-slate-800">{inv.title}</p>
@@ -499,6 +641,19 @@ if (formData.type === "Surgery" && formData.doctorId && formData.paymentMethod =
                                             <TableCell className="font-bold text-slate-900">Rs. {inv.amount.toLocaleString()}</TableCell>
                                             <TableCell className="text-right">
                                                 <div className="flex justify-end gap-2">
+                                                    {inv.status !== "Paid" && (
+                                                        <Button
+                                                            variant="outline"
+                                                            size="sm"
+                                                            className="h-8 border-cyan-200 text-[#06b6d4] hover:bg-cyan-50 font-bold text-xs rounded-lg px-3"
+                                                            onClick={() => {
+                                                                setPendingBill(inv);
+                                                                setStripeModalOpen(true);
+                                                            }}
+                                                        >
+                                                            <CreditCard size={14} className="mr-1" /> Pay Card
+                                                        </Button>
+                                                    )}
                                                     <Button
                                                         variant="ghost"
                                                         size="icon"
@@ -552,6 +707,53 @@ if (formData.type === "Surgery" && formData.doctorId && formData.paymentMethod =
                                 <InvoiceTemplate ref={invoiceRef} bill={selectedBill} />
                             </div>
                         </div>
+                    </DialogContent>
+                </Dialog>
+                {/* Stripe Card Payment Dialog */}
+                <Dialog open={stripeModalOpen} onOpenChange={(open) => { if (!open) { setStripeModalOpen(false); setPendingBill(null); } }}>
+                    <DialogContent className="sm:max-w-[480px] rounded-3xl p-6 bg-white border border-slate-100 shadow-2xl">
+                        <DialogTitle className="text-xl font-bold text-slate-900">Card Payment Confirmation</DialogTitle>
+                        <DialogDescription className="text-sm text-slate-500 mt-1">
+                            Charge patient's card at counter via Stripe.
+                        </DialogDescription>
+                        {pendingBill && (
+                            <div className="space-y-4 mt-4">
+                                <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 flex flex-col gap-1">
+                                    <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Bill Details</p>
+                                    <p className="text-base font-bold text-slate-800">{pendingBill.title}</p>
+                                    <p className="text-sm text-slate-600">Patient: <span className="font-semibold">{pendingBill.patientId?.fullName || "Walk-in Patient"}</span></p>
+                                    <p className="text-lg font-black text-[#06b6d4] mt-2">LKR {pendingBill.amount.toLocaleString()}</p>
+                                </div>
+                                
+                                <Elements stripe={stripePromise}>
+                                    <StripeCardForm 
+                                        amount={pendingBill.amount} 
+                                        billId={pendingBill._id}
+                                        onSuccess={(updatedBill) => {
+                                            setStripeModalOpen(false);
+                                            setPendingBill(null);
+                                            // Update record in history list or add if new
+                                            if (history.some(b => b._id === updatedBill._id)) {
+                                                setHistory(history.map(b => b._id === updatedBill._id ? updatedBill : b));
+                                            } else {
+                                                setHistory([updatedBill, ...history]);
+                                            }
+                                            setSelectedBill(updatedBill);
+                                            setShowPrintDialog(true);
+                                        }}
+                                        onCancel={() => {
+                                            setStripeModalOpen(false);
+                                            // Check if it already exists in history. If not (meaning it was just created), add it as Pending.
+                                            if (!history.some(b => b._id === pendingBill._id)) {
+                                                setHistory([pendingBill, ...history]);
+                                            }
+                                            setPendingBill(null);
+                                            toast({ title: "Payment Postponed", description: "Bill remains in Pending status." });
+                                        }}
+                                    />
+                                </Elements>
+                            </div>
+                        )}
                     </DialogContent>
                 </Dialog>
             </main>

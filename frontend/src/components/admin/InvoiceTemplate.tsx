@@ -11,7 +11,8 @@ interface InvoiceProps {
         date: string;
         patientId: {
             fullName: string;
-            nicNumber: string;
+            nicNumber?: string;
+            patientId: string;
         };
     };
 }
@@ -57,7 +58,7 @@ const InvoiceTemplate = React.forwardRef<HTMLDivElement, InvoiceProps>(({ bill }
                 <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100">
                     <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Patient Information</h3>
                     <p className="text-lg font-bold text-slate-900">{bill.patientId?.fullName}</p>
-                    <p className="text-sm text-slate-600 mt-1">NIC: {bill.patientId?.nicNumber}</p>
+                    <p className="text-sm text-slate-600 mt-1">Patient ID: {bill.patientId?.patientId}</p>
                 </div>
                 <div className="p-6">
                     <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Payment Details</h3>
