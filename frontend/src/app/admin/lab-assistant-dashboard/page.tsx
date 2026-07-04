@@ -92,7 +92,8 @@ export default function LabAssistantDashboard() {
     const lower = search.toLowerCase();
     setFilteredPatients(patients.filter(p => 
       (p.fullName && p.fullName.toLowerCase().includes(lower)) || 
-      (p.nic && p.nic.toLowerCase().includes(lower))
+      (p.patientId && p.patientId.toLowerCase().includes(lower)) ||
+      (p.nicNumber && p.nicNumber.toLowerCase().includes(lower))
     ));
   }, [search, patients]);
 
@@ -262,7 +263,7 @@ export default function LabAssistantDashboard() {
               <Search className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
               <Input 
                 className="pl-9 bg-white" 
-                placeholder="Search by Name or NIC..." 
+                placeholder="Search by Name or Patient ID..." 
                 value={search} 
                 onChange={(e) => setSearch(e.target.value)} 
               />
@@ -304,7 +305,7 @@ export default function LabAssistantDashboard() {
                           {p.fullName}
                         </div>
                         <div className="text-xs text-slate-500 mt-1 flex items-center gap-2">
-                          <Badge variant="outline" className="text-[10px]">{p.nic}</Badge>
+                          <Badge variant="outline" className="text-[10px]">{p.patientId || "N/A"}</Badge>
                         </div>
                       </div>
                     ))
@@ -351,7 +352,13 @@ export default function LabAssistantDashboard() {
                     <div>
                       <h2 className="text-xl font-bold text-slate-800">{selectedPatient.fullName}</h2>
                       <div className="flex gap-3 text-sm text-slate-500 mt-2">
-                        <span>NIC: {selectedPatient.nic}</span>
+                        <span>Patient ID: {selectedPatient.patientId || "N/A"}</span>
+                        {selectedPatient.nicNumber && (
+                          <>
+                            <span>•</span>
+                            <span>NIC: {selectedPatient.nicNumber}</span>
+                          </>
+                        )}
                         <span>•</span>
                         <span>Phone: {selectedPatient.mobileNumber || "N/A"}</span>
                       </div>
