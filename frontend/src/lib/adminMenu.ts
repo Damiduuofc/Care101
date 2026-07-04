@@ -33,12 +33,6 @@ export const menuItems = [
     icon: ShieldCheck,
     roles: ["system_admin"],
   },
-    {
-    title: "Doctor Accounts",
-    href: "/admin/doctorsAccounts",
-    icon: Stethoscope,
-    roles: ["system_admin"],
-  },
 
   // --- RECEPTIONIST DASHBOARD DEDICATED ITEMS ---
   {
@@ -95,7 +89,7 @@ export const menuItems = [
     roles: ["lab_assistant"],
   },
   {
-    title: "Forget Password",
+    title: "Password",
     href: "/admin/forget-password",
     icon: Lock,
     roles: [ "nurse", "receptionist", "lab_assistant"]
