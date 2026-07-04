@@ -146,7 +146,7 @@ router.put("/status", protect, authorize(["system_admin"]), async (req, res) => 
 router.get("/appointments", protect, async (req, res) => {
   try {
     const appointments = await Appointment.find()
-      .populate("patientId", "fullName phone")
+      .populate("patientId", "fullName phone patientId")
       .populate("doctorId", "name department")
       .sort({ date: -1 });
     res.json(appointments);
@@ -166,7 +166,7 @@ router.post("/appointments/walkin", protect, async (req, res) => {
       return res.status(400).json({ msg: "Patient details and appointment details are required." });
     }
 
-    const { fullName, nic, dob, phone, email } = patientDetails;
+    const { fullName, nic, dob, phone, email, patientId } = patientDetails;
     const { doctorId, doctorName, department, date, visitType, reason, paymentStatus, amount } = appointmentDetails;
 
     if (!fullName || !phone) {
@@ -179,7 +179,10 @@ router.post("/appointments/walkin", protect, async (req, res) => {
 
     // --- 1. FIND OR CREATE PATIENT ---
     let patient = null;
-    if (nic && nic.trim() !== "") {
+    if (patientId && patientId.trim() !== "") {
+      patient = await Patient.findOne({ patientId: patientId.toUpperCase() });
+    }
+    if (!patient && nic && nic.trim() !== "") {
       patient = await Patient.findOne({ nicNumber: nic });
     }
     if (!patient && email && email.trim() !== "") {
@@ -501,9 +504,9 @@ router.delete("/appointments/:id", protect, authorize(["system_admin", "receptio
 // ==========================================
 // 5. BILLING MANAGEMENT
 // ==========================================
-router.get("/patients/search/nic/:nic", protect, async (req, res) => {
+router.get("/patients/search/patientid/:patientId", protect, async (req, res) => {
   try {
-    const patient = await Patient.findOne({ nicNumber: req.params.nic }).select("-password");
+    const patient = await Patient.findOne({ patientId: req.params.patientId.toUpperCase() }).select("-password");
     if (!patient) return res.status(404).json({ msg: "Patient not found" });
     res.json(patient);
   } catch (err) {
@@ -513,8 +516,8 @@ router.get("/patients/search/nic/:nic", protect, async (req, res) => {
 
 router.get("/bills/all", protect, authorize(["system_admin", "receptionist"]), async (req, res) => {
   try {
-    const manualBills = await Bill.find().populate("patientId", "fullName nicNumber").lean();
-    const appointments = await Appointment.find({ amount: { $gt: 0 } }).populate("patientId", "fullName nicNumber").lean();
+    const manualBills = await Bill.find().populate("patientId", "fullName nicNumber patientId").lean();
+    const appointments = await Appointment.find({ amount: { $gt: 0 } }).populate("patientId", "fullName nicNumber patientId").lean();
 
     const appointmentBills = appointments.map(app => ({
       _id: app._id,
@@ -623,10 +626,98 @@ router.post("/bills/create", protect, authorize(["system_admin", "receptionist"]
         : `New Bill Issued: LKR ${amount} due for ${title}.`
     });
 
-    const populatedBill = await Bill.findById(newBill._id).populate("patientId", "fullName nicNumber");
+    const populatedBill = await Bill.findById(newBill._id).populate("patientId", "fullName nicNumber patientId");
     res.json({ msg: "Bill created successfully", bill: populatedBill });
   } catch (err) {
     console.error("Create Bill Error:", err);
+    res.status(500).send("Server Error");
+  }
+});
+
+router.put("/bills/pay/:billId", protect, authorize(["system_admin", "receptionist"]), async (req, res) => {
+  try {
+    const bill = await Bill.findById(req.params.billId);
+    if (!bill) {
+      return res.status(404).json({ msg: "Bill not found" });
+    }
+    
+    if (bill.status === "Paid") {
+      return res.status(400).json({ msg: "Bill is already paid" });
+    }
+
+    bill.status = "Paid";
+    await bill.save();
+
+    // 1. Calculate the financial split based on Type
+    try {
+      let hospitalIncome = bill.amount;
+      let doctorIncome = 0;
+
+      if (bill.type === "Surgery") {
+          hospitalIncome = bill.amount * 0.25;
+          doctorIncome = bill.amount * 0.75;
+      }
+
+      // 2. Update HOSPITAL Finance
+      const hospitalName = "Suwasevana";
+      let hospitalFinance = await HospitalFinance.findOne({ name: hospitalName, doctorId: null });
+      if (!hospitalFinance) {
+        hospitalFinance = new HospitalFinance({ name: hospitalName, records: [], doctorId: null });
+      }
+      hospitalFinance.records.unshift({
+        type: bill.type.toLowerCase() === 'appointment' ? 'channeling' : 'surgical',
+        date: new Date(),
+        patients: 1,
+        income: hospitalIncome
+      });
+      await hospitalFinance.save();
+
+      // 3. Update DOCTOR Finance (Only if it's Surgery & Doctor is selected)
+      if (bill.type === "Surgery" && bill.doctorId && doctorIncome > 0) {
+          let doctorFinance = await HospitalFinance.findOne({ doctorId: bill.doctorId });
+          if (!doctorFinance) {
+              doctorFinance = new HospitalFinance({ doctorId: bill.doctorId, name: "Doctor Revenue", records: [] });
+          }
+          doctorFinance.records.unshift({
+              type: 'surgical',
+              date: new Date(),
+              patients: 1,
+              income: doctorIncome
+          });
+          await doctorFinance.save();
+      }
+    } catch (finErr) {
+      console.error("Finance Error:", finErr);
+    }
+
+    // 4. Generate and email PDF Receipt
+    try {
+      const patient = await Patient.findById(bill.patientId);
+      if (patient && patient.email) {
+        let doctor = null;
+        if (bill.doctorId) {
+          doctor = await Doctor.findById(bill.doctorId);
+        }
+        const { generateReceiptPdf } = await import("../utils/pdfService.js");
+        const { sendPaymentReceipt } = await import("../utils/emailService.js");
+        const pdfBuffer = await generateReceiptPdf(bill, null, doctor, patient);
+        await sendPaymentReceipt(patient.email, bill, pdfBuffer);
+      }
+    } catch (pdfEmailErr) {
+      console.error("Failed to generate/send PDF receipt for manual bill:", pdfEmailErr);
+    }
+
+    // 5. Create Notification
+    await Notification.create({
+      userId: bill.patientId,
+      type: "payment",
+      message: `Receipt Confirmed! LKR ${bill.amount} paid for ${bill.title}.`
+    });
+
+    const populatedBill = await Bill.findById(bill._id).populate("patientId", "fullName nicNumber patientId");
+    res.json({ msg: "Bill marked as paid successfully", bill: populatedBill });
+  } catch (err) {
+    console.error("Pay Bill Error:", err);
     res.status(500).send("Server Error");
   }
 });
