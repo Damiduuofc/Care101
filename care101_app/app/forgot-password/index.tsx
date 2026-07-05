@@ -7,28 +7,35 @@ import { Ionicons } from '@expo/vector-icons';
 const API_URL = process.env.EXPO_PUBLIC_API_URL; // Make sure this is set in your .env
 
 export default function ForgotPasswordEmailScreen() {
-  const [email, setEmail] = useState('');
+  const [identifier, setIdentifier] = useState('');
   const [loading, setLoading] = useState(false);
   const router = useRouter();
 
   const handleSendOTP = async () => {
-    if (!email) return Alert.alert("Error", "Please enter your email.");
+    if (!identifier) return Alert.alert("Error", "Please enter your SLMC Number or Patient ID.");
     setLoading(true);
     
     try {
       const res = await fetch(`${API_URL}/auth/forgot-password`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: email.toLowerCase() })
+        body: JSON.stringify({ email: identifier.trim() }) // Send the identifier in the 'email' field for backend compatibility
       });
       
       const data = await res.json();
       
-      // Navigate to the Verify screen and pass the email along
-      router.push({
-        pathname: '/forgot-password/verify',
-        params: { email: email.toLowerCase() }
-      });
+      if (res.ok) {
+        const maskedEmail = data.maskedEmail || "your registered email";
+        const targetEmail = data.email || identifier.trim();
+
+        // Navigate to the Verify screen and pass details
+        router.push({
+          pathname: '/forgot-password/verify',
+          params: { email: targetEmail, maskedEmail }
+        });
+      } else {
+        Alert.alert("Error", data.msg || "Something went wrong.");
+      }
       
     } catch (error) {
       Alert.alert("Error", "Could not connect to the server.");
@@ -44,16 +51,15 @@ export default function ForgotPasswordEmailScreen() {
       </TouchableOpacity>
       
       <Text style={styles.title}>Reset Password</Text>
-      <Text style={styles.subtitle}>Enter the email associated with your account and we'll send you a 6-digit OTP.</Text>
+      <Text style={styles.subtitle}>Enter your SLMC Registration Number or Patient ID. We will send a 6-digit OTP code to the registered email address associated with your account.</Text>
 
       <View style={styles.inputWrapper}>
-        <Ionicons name="mail-outline" size={20} color="#64748b" style={styles.icon} />
+        <Ionicons name="person-outline" size={20} color="#64748b" style={styles.icon} />
         <TextInput
           style={styles.input}
-          placeholder="Enter your email"
-          value={email}
-          onChangeText={setEmail}
-          keyboardType="email-address"
+          placeholder="SLMC Number or Patient ID"
+          value={identifier}
+          onChangeText={setIdentifier}
           autoCapitalize="none"
         />
       </View>

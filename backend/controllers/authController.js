@@ -166,30 +166,36 @@ export const registerPatient = async (req, res) => {
 // ==========================================
 export const login = async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const { identifier, password } = req.body;
 
     let user = null;
     let role = null;
 
-    // 1. Check Doctor Collection
-    const doctor = await Doctor.findOne({ email });
-    if (doctor) {
-      // Block unapproved doctors
-      if (!doctor.isApproved) {
-        return res.status(403).json({ message: "Your account is pending admin approval. Please wait for the administrator to activate your account." });
-      }
-      user = doctor;
-      role = "doctor";
+    if (!identifier) {
+      return res.status(400).json({ message: "Identifier is required" });
     }
 
-    // 2. Check Patient Collection (if not found in Doctor)
-    if (!user) {
+    const trimmedIdentifier = identifier.trim();
+
+    // Check if the identifier is a numeric string (valid SLMC registration number)
+    const isNumeric = /^\d+$/.test(trimmedIdentifier);
+
+    if (isNumeric) {
+      // 1. Check Doctor Collection by SLMC Registration Number
+      const slmcNumber = parseInt(trimmedIdentifier, 10);
+      const doctor = await Doctor.findOne({ slmcReg: slmcNumber });
+      if (doctor) {
+        // Block unapproved doctors
+        if (!doctor.isApproved) {
+          return res.status(403).json({ message: "Your account is pending admin approval. Please wait for the administrator to activate your account." });
+        }
+        user = doctor;
+        role = "doctor";
+      }
+    } else {
+      // 2. Check Patient Collection by Patient ID
       const patient = await Patient.findOne({
-        $or: [
-          { email: email.toLowerCase() },
-          { patientId: email.toUpperCase() },
-          {  email }
-        ]
+        patientId: trimmedIdentifier.toUpperCase()
       });
       if (patient) {
         user = patient;
@@ -344,32 +350,56 @@ export const getNotifications = async (req, res) => {
   }
 };
 
+// Helper to mask email address: e.g. john.doe@example.com -> j***@example.com
+const maskEmail = (email) => {
+  if (!email) return "";
+  const [localPart, domain] = email.split("@");
+  if (!localPart || !domain) return email;
+  const firstChar = localPart.charAt(0);
+  return `${firstChar}***@${domain}`;
+};
+
+// Helper to find patient or doctor by various identifiers
+const findUserByIdentifier = async (identifier) => {
+  if (!identifier) return null;
+  const searchStr = identifier.toString().trim();
+
+  // 1. Try finding patient by patientId (case-insensitive/uppercase) or email
+  let user = await Patient.findOne({
+    $or: [
+      { patientId: searchStr.toUpperCase() },
+      { email: searchStr.toLowerCase() }
+    ]
+  });
+  if (user) return { user, userType: "Patient" };
+
+  // 2. Try finding doctor by slmcReg or email
+  if (/^\d+$/.test(searchStr)) {
+    const slmcNum = parseInt(searchStr, 10);
+    user = await Doctor.findOne({ slmcReg: slmcNum });
+    if (user) return { user, userType: "Doctor" };
+  }
+
+  user = await Doctor.findOne({ email: searchStr.toLowerCase() });
+  if (user) return { user, userType: "Doctor" };
+
+  return null;
+};
+
 // ==========================================
 // FORGOT PASSWORD (Generate & Send OTP)
 // ==========================================
 export const forgotPassword = async (req, res) => {
-  const { email } = req.body;
+  const { email } = req.body; // email parameter acts as the identifier input from user (email, slmcReg, or patientId)
 
   try {
-    // 1. Search Patient DB first, then Doctor DB
-    let user = await Patient.findOne({
-      $or: [
-        { email: email.toLowerCase() },
-        { patientId: email.toUpperCase() },
-        {  email }
-      ]
-    });
-    let userType = 'Patient';
-
-    if (!user) {
-      user = await Doctor.findOne({ email: email.toLowerCase() });
-      userType = 'Doctor';
+    const result = await findUserByIdentifier(email);
+    if (!result) {
+      // Security: Do not reveal if the account exists
+      return res.json({ msg: "If the account is registered, an OTP has been sent." });
     }
 
-    if (!user) {
-      // Security: Do not reveal if the email/account exists
-      return res.json({ msg: "If the email/account is registered, an OTP has been sent." });
-    }
+    const { user } = result;
 
     if (!user.email) {
       return res.status(400).json({ msg: "This account has no associated email address for password reset. Please contact administration." });
@@ -400,7 +430,13 @@ export const forgotPassword = async (req, res) => {
       text: `Your password reset code is: ${otp}\n\nThis code will expire in 10 minutes.`,
     });
 
-    res.json({ msg: "If the email is registered, an OTP has been sent." });
+    const maskedEmail = maskEmail(user.email);
+
+    res.json({ 
+      msg: "If the account is registered, an OTP has been sent.", 
+      maskedEmail,
+      email: user.email
+    });
 
   } catch (err) {
     console.error("Forgot Password Error:", err);
@@ -415,15 +451,10 @@ export const verifyOtp = async (req, res) => {
   const { email, otp } = req.body;
 
   try {
-    let user = await Patient.findOne({
-      $or: [
-        { email: email.toLowerCase() },
-        { patientId: email.toUpperCase() },
-        {email }
-      ]
-    }) || await Doctor.findOne({ email: email.toLowerCase() });
+    const result = await findUserByIdentifier(email);
+    if (!result) return res.status(400).json({ msg: "Invalid request." });
 
-    if (!user) return res.status(400).json({ msg: "Invalid request." });
+    const { user } = result;
 
     // Check if OTP matches and is not expired
     if (user.resetPasswordOtp !== otp) {
@@ -449,15 +480,10 @@ export const resetPassword = async (req, res) => {
   const { email, otp, newPassword } = req.body;
 
   try {
-    let user = await Patient.findOne({
-      $or: [
-        { email: email.toLowerCase() },
-        { patientId: email.toUpperCase() },
-        { email }
-      ]
-    }) || await Doctor.findOne({ email: email.toLowerCase() });
+    const result = await findUserByIdentifier(email);
+    if (!result) return res.status(400).json({ msg: "Invalid request." });
 
-    if (!user) return res.status(400).json({ msg: "Invalid request." });
+    const { user } = result;
 
     // Final security check
     if (user.resetPasswordOtp !== otp || user.resetPasswordExpire < Date.now()) {
