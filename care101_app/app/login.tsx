@@ -26,7 +26,7 @@ import { useAuth } from '../context/auth';
 
 // 3. Define Validation Schema
 const loginSchema = z.object({
-  email: z.string().min(1, "Email or Username is required"),
+  identifier: z.string().min(1, "SLMC Registration Number or Patient ID is required"),
   password: z.string().min(1, "Password is required"),
 });
 
@@ -46,7 +46,7 @@ export default function LoginScreen() {
   const { control, handleSubmit, formState: { errors } } = useForm<LoginFormValues>({
     resolver: zodResolver(loginSchema),
     defaultValues: {
-      email: "",
+      identifier: "",
       password: "",
     },
   });
@@ -56,7 +56,7 @@ export default function LoginScreen() {
     setIsLoading(true);
     try {
       // Attempt to sign in
-      await signIn(data.email, data.password);
+      await signIn(data.identifier, data.password);
 
     } catch (error: any) {
       console.log("Login Error in UI:", error);
@@ -85,7 +85,7 @@ export default function LoginScreen() {
       render={({ field: { onChange, onBlur, value } }) => (
         <View style={styles.inputContainer}>
           <Text style={styles.label}>
-            {name === 'email' ? 'Email or Patient ID' : 'Password'}
+            {name === 'identifier' ? 'SLMC Number or Patient ID' : 'Password'}
           </Text>
 
           <View style={[styles.inputWrapper, errors[name as keyof LoginFormValues] && styles.inputError]}>
@@ -156,10 +156,10 @@ export default function LoginScreen() {
                   </View>
 
                   <FormInput
-                    name="email"
-                    placeholder="name@example.com or P001"
-                    icon="mail-outline"
-                    keyboardType="email-address"
+                    name="identifier"
+                    placeholder="SLMC Number or SHP001"
+                    icon="person-outline"
+                    keyboardType="default"
                   />
 
                   <FormInput
