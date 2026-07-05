@@ -9,7 +9,7 @@ interface AuthProps {
   user: any;
   token: string | null; // <--- ✅ ADDED: Expose token in interface
   isLoading: boolean;
-  signIn: (emailOrUsername: string, pass: string) => Promise<void>;
+  signIn: (identifier: string, pass: string) => Promise<void>;
   signUp: (userData: any) => Promise<void>;
   registerPatient: (userData: any) => Promise<void>;
   signOut: () => Promise<void>;
@@ -53,14 +53,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   // 2. SIGN IN ACTION
-  const signIn = async (email: string, password: string) => {
+  const signIn = async (identifier: string, password: string) => {
     try {
       console.log(`Attempting login to: ${API_URL}/login`);
 
       const response = await fetch(`${API_URL}/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: email, password }),
+        body: JSON.stringify({ identifier, password }),
       });
 
       const contentType = response.headers.get("content-type");
