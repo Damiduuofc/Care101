@@ -7,7 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 const API_URL = process.env.EXPO_PUBLIC_API_URL;
 
 export default function VerifyOTPScreen() {
-  const { email } = useLocalSearchParams(); // Get email passed from previous screen
+  const { email, maskedEmail } = useLocalSearchParams(); // Get email and maskedEmail passed from previous screen
   const [otp, setOtp] = useState('');
   const [loading, setLoading] = useState(false);
   const router = useRouter();
@@ -48,7 +48,7 @@ export default function VerifyOTPScreen() {
       </TouchableOpacity>
       
       <Text style={styles.title}>Enter OTP</Text>
-      <Text style={styles.subtitle}>We sent a 6-digit code to {email}.</Text>
+      <Text style={styles.subtitle}>We sent a 6-digit code to {maskedEmail || email}.</Text>
 
       <View style={styles.inputWrapper}>
         <Ionicons name="keypad-outline" size={20} color="#64748b" style={styles.icon} />
