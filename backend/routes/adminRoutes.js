@@ -822,7 +822,7 @@ router.post("/create-doctor", protect, authorize(["system_admin"]), async (req, 
     await newDoctor.save();
 
     // 5. Send Welcome Email
-    sendDoctorWelcomeEmail(email, fullName, password).catch(err => {
+    sendDoctorWelcomeEmail(email, fullName, password, slmcRegistrationNumber).catch(err => {
       console.error("Failed to send welcome email to doctor", err);
     });
 
