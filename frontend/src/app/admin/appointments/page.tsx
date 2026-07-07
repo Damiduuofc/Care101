@@ -14,7 +14,7 @@ export default function AppointmentsPage() {
   const [appointments, setAppointments] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
-
+const [generatedPatientId, setGeneratedPatientId] = useState("Loading...");
   // Booking Modal States
   const [isBookingModalOpen, setIsBookingModalOpen] = useState(false);
   const [doctors, setDoctors] = useState<any[]>([]);
@@ -28,6 +28,38 @@ export default function AppointmentsPage() {
     // Appointment Details
     department: "", doctorId: "", doctorName: "", date: "", visitType: "Consultation", reason: "", paymentStatus: "paid"
   });
+const fetchNextPatientId = async () => {
+  try {
+    const token = getAdminToken();
+
+    const res = await fetch(
+      `${process.env.NEXT_PUBLIC_API_URL}/auth/next-patient-id`,
+      {
+        headers: {
+          "x-auth-token": token || "",
+          "ngrok-skip-browser-warning": "true",
+        },
+      }
+    );
+
+    if (res.ok) {
+      const data = await res.json();
+
+      setGeneratedPatientId(data.patientId);
+
+      setFormData(prev => ({
+        ...prev,
+        patientId: data.patientId,
+      }));
+    } else {
+      setGeneratedPatientId("SHP001");
+    }
+  } catch (err) {
+    console.error(err);
+    setGeneratedPatientId("SHP001");
+  }
+};
+
 
   // 1. Fetch Appointments
   const fetchAppointments = async () => {
@@ -108,6 +140,7 @@ export default function AppointmentsPage() {
   // Open Modal Logic
   const handleOpenBookingModal = () => {
     fetchDoctors();
+    fetchNextPatientId();
     setIsBookingModalOpen(true);
   };
 
@@ -253,6 +286,8 @@ export default function AppointmentsPage() {
             <div className="flex w-full md:w-auto items-center gap-3">
               <div className="relative w-full md:w-64">
                 <Search className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
+                
+                
                 <Input
                   placeholder="Search bookings..."
                   className="pl-10 bg-white border-slate-200"
@@ -398,23 +433,23 @@ export default function AppointmentsPage() {
               <div className="p-6 overflow-y-auto flex-1">
                 <form id="booking-form" onSubmit={handleBookAppointment} className="space-y-8">
                   
+                  
                   {/* PATIENT DETAILS */}
                   <section>
                     <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-4 flex items-center gap-2">
                       <User className="w-4 h-4" /> Patient Details
                     </h3>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="space-y-1">
+                        <label className="text-sm font-medium text-slate-700">Patient ID</label>
+<Input value={generatedPatientId} readOnly className="bg-slate-100 text-slate-600 font-semibold cursor-not-allowed"/>                      </div>
                       <div className="space-y-1">
                         <label className="text-sm font-medium text-slate-700">Full Name *</label>
-                        <Input required placeholder="John Doe" value={formData.fullName} onChange={e => setFormData({...formData, fullName: e.target.value})} />
+                        <Input required placeholder="Damidu Abeysinghye" value={formData.fullName} onChange={e => setFormData({...formData, fullName: e.target.value})} />
                       </div>
                       <div className="space-y-1">
                         <label className="text-sm font-medium text-slate-700">Phone Number *</label>
                         <Input required placeholder="07XXXXXXXX" value={formData.phone} onChange={e => setFormData({...formData, phone: e.target.value})} />
-                      </div>
-                      <div className="space-y-1">
-                        <label className="text-sm font-medium text-slate-700">Patient ID (optional)</label>
-                        <Input placeholder="e.g. SHP001" value={formData.patientId} onChange={e => setFormData({...formData, patientId: e.target.value})} />
                       </div>
                       <div className="space-y-1">
                         <label className="text-sm font-medium text-slate-700">NIC Number (optional)</label>
@@ -424,7 +459,7 @@ export default function AppointmentsPage() {
                         <label className="text-sm font-medium text-slate-700">Date of Birth (optional)</label>
                         <Input type="date" value={formData.dob} onChange={e => setFormData({...formData, dob: e.target.value})} />
                       </div>
-                      <div className="space-y-1 md:col-span-2">
+                      <div className="space-y-1">
                         <label className="text-sm font-medium text-slate-700">Email Address (optional)</label>
                         <Input type="email" placeholder="john@example.com" value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} />
                       </div>

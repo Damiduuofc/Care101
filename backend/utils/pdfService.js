@@ -55,6 +55,7 @@ export const generateReceiptPdf = (bill, appointment, doctor, patient) => {
         .fontSize(10)
         .text('PATIENT DETAILS:', 50, startY, { underline: true })
         .moveDown(0.3)
+        .text(`Patient ID: ${patient?.patientId || 'N/A'}`)
         .text(`Name: ${patient?.fullName || 'N/A'}`)
         .text(`NIC: ${patient?.nicNumber || 'N/A'}`)
         .text(`Mobile: ${patient?.mobileNumber || 'N/A'}`);
