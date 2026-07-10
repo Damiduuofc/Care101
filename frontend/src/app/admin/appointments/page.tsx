@@ -2,24 +2,83 @@
 
 import { useEffect, useState } from "react";
 import {
-  Search, CheckCircle, Trash2, Clock, DollarSign, Calendar, AlertCircle, XCircle, Plus, X, User, Stethoscope
+  Search, CheckCircle, Trash2, Clock, DollarSign, Calendar, AlertCircle, XCircle, Plus, X, User, Stethoscope, CreditCard, Loader2
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import Sidebar from "@/components/admin/Sidebar";
 import { getAdminToken } from "@/lib/adminSession";
+import { loadStripe } from "@stripe/stripe-js";
+import { Elements, CardElement, useStripe, useElements } from "@stripe/react-stripe-js";
+import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+
+const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY || "");
+
 
 export default function AppointmentsPage() {
   const [appointments, setAppointments] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
-
+const [generatedPatientId, setGeneratedPatientId] = useState("Loading...");
   // Booking Modal States
   const [isBookingModalOpen, setIsBookingModalOpen] = useState(false);
   const [doctors, setDoctors] = useState<any[]>([]);
   const [schedules, setSchedules] = useState<any[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const [isRegistered, setIsRegistered] = useState(false);
+  const [isPatientFound, setIsPatientFound] = useState(false);
+  const [isSearchingPatient, setIsSearchingPatient] = useState(false);
+
+  const [bookingPaymentMethod, setBookingPaymentMethod] = useState<"cash" | "card" | "pending">("cash");
+
+  const [paymentAppointment, setPaymentAppointment] = useState<any>(null);
+  const [isPaymentMethodModalOpen, setIsPaymentMethodModalOpen] = useState(false);
+  const [isStripeModalOpen, setIsStripeModalOpen] = useState(false);
+
+  const handleSearchPatient = async () => {
+    if (!formData.patientId) {
+      alert("Please enter a Patient ID first.");
+      return;
+    }
+    setIsSearchingPatient(true);
+    setIsPatientFound(false);
+    try {
+      const token = getAdminToken();
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/admin/patients/search/patientid/${formData.patientId.toUpperCase()}`, {
+        headers: {
+          "x-auth-token": token || "",
+          "ngrok-skip-browser-warning": "true"
+        }
+      });
+      const data = await res.json();
+      if (res.ok) {
+        let formattedDob = "";
+        if (data.dateOfBirth) {
+          formattedDob = new Date(data.dateOfBirth).toISOString().split('T')[0];
+        }
+        setFormData(prev => ({
+          ...prev,
+          patientId: data.patientId,
+          fullName: data.fullName || "",
+          phone: data.mobileNumber || "",
+          nic: data.nicNumber || "",
+          dob: formattedDob,
+          email: data.email || ""
+        }));
+        setIsPatientFound(true);
+        alert(`Patient ${data.fullName} found.`);
+      } else {
+        alert(data.msg || "Patient not found.");
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Error searching patient.");
+    } finally {
+      setIsSearchingPatient(false);
+    }
+  };
 
   // Form State
   const [formData, setFormData] = useState({
@@ -28,6 +87,38 @@ export default function AppointmentsPage() {
     // Appointment Details
     department: "", doctorId: "", doctorName: "", date: "", visitType: "Consultation", reason: "", paymentStatus: "paid"
   });
+const fetchNextPatientId = async () => {
+  try {
+    const token = getAdminToken();
+
+    const res = await fetch(
+      `${process.env.NEXT_PUBLIC_API_URL}/auth/next-patient-id`,
+      {
+        headers: {
+          "x-auth-token": token || "",
+          "ngrok-skip-browser-warning": "true",
+        },
+      }
+    );
+
+    if (res.ok) {
+      const data = await res.json();
+
+      setGeneratedPatientId(data.patientId);
+
+      setFormData(prev => ({
+        ...prev,
+        patientId: data.patientId,
+      }));
+    } else {
+      setGeneratedPatientId("SHP001");
+    }
+  } catch (err) {
+    console.error(err);
+    setGeneratedPatientId("SHP001");
+  }
+};
+
 
   // 1. Fetch Appointments
   const fetchAppointments = async () => {
@@ -108,12 +199,20 @@ export default function AppointmentsPage() {
   // Open Modal Logic
   const handleOpenBookingModal = () => {
     fetchDoctors();
+    fetchNextPatientId();
+    setIsRegistered(false);
+    setIsPatientFound(false);
+    setBookingPaymentMethod("cash");
     setIsBookingModalOpen(true);
   };
 
 // Submit New Walk-in Appointment
   const handleBookAppointment = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isRegistered && !isPatientFound) {
+      alert("Please search and verify the registered Patient ID before booking.");
+      return;
+    }
     setIsSubmitting(true);
     
     try {
@@ -131,7 +230,7 @@ export default function AppointmentsPage() {
             dob: formData.dob,
             phone: formData.phone,
             email: formData.email,
-            patientId: formData.patientId
+            patientId: isRegistered ? formData.patientId : generatedPatientId
           },
           appointmentDetails: {
             doctorId: formData.doctorId,
@@ -140,20 +239,28 @@ export default function AppointmentsPage() {
             date: formData.date,
             visitType: formData.visitType,
             reason: formData.reason,
-            paymentStatus: formData.paymentStatus,
+            paymentStatus: bookingPaymentMethod === "cash" ? "paid" : "pending",
             amount: 3500 // Base (1500) + Doctor (2000)
           }
         }),
       });
 
       if (res.ok) {
+        const newAppt = await res.json();
         setIsBookingModalOpen(false);
         fetchAppointments(); // Refresh list
         setFormData({
           patientId: "", fullName: "", nic: "", dob: "", phone: "", email: "",
           department: "", doctorId: "", doctorName: "", date: "", visitType: "Consultation", reason: "", paymentStatus: "paid"
         });
-        alert("Appointment booked successfully!");
+        setIsRegistered(false);
+        setIsPatientFound(false);
+        if (bookingPaymentMethod === "card") {
+          setPaymentAppointment(newAppt);
+          setIsStripeModalOpen(true);
+        } else {
+          alert("Appointment booked successfully!");
+        }
       } else {
         // --- FIX IS HERE ---
         // Safely check if the error is JSON before parsing
@@ -253,6 +360,8 @@ export default function AppointmentsPage() {
             <div className="flex w-full md:w-auto items-center gap-3">
               <div className="relative w-full md:w-64">
                 <Search className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
+                
+                
                 <Input
                   placeholder="Search bookings..."
                   className="pl-10 bg-white border-slate-200"
@@ -354,7 +463,10 @@ export default function AppointmentsPage() {
 
                               {appt.paymentStatus?.toLowerCase() !== 'paid' && appt.status.toLowerCase() !== 'cancelled' && (
                                 <Button size="icon" variant="ghost" className="h-8 w-8 text-emerald-600 hover:bg-emerald-100"
-                                  onClick={() => updateStatus(appt._id, 'paymentStatus', 'paid')}
+                                  onClick={() => {
+                                    setPaymentAppointment(appt);
+                                    setIsPaymentMethodModalOpen(true);
+                                  }}
                                   title="Mark Paid"
                                 >
                                   <DollarSign className="h-4 w-4" />
@@ -398,23 +510,85 @@ export default function AppointmentsPage() {
               <div className="p-6 overflow-y-auto flex-1">
                 <form id="booking-form" onSubmit={handleBookAppointment} className="space-y-8">
                   
+                  
                   {/* PATIENT DETAILS */}
                   <section>
                     <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-4 flex items-center gap-2">
                       <User className="w-4 h-4" /> Patient Details
                     </h3>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="flex items-center gap-2 mb-2 col-span-1 md:col-span-2">
+                        <input
+                          type="checkbox"
+                          id="isRegisteredPatient"
+                          checked={isRegistered}
+                          onChange={e => {
+                            const checked = e.target.checked;
+                            setIsRegistered(checked);
+                            if (!checked) {
+                              setFormData(prev => ({
+                                ...prev,
+                                patientId: generatedPatientId,
+                                fullName: "",
+                                phone: "",
+                                nic: "",
+                                dob: "",
+                                email: ""
+                              }));
+                              setIsPatientFound(false);
+                            } else {
+                              setFormData(prev => ({
+                                ...prev,
+                                patientId: "",
+                                fullName: "",
+                                phone: "",
+                                nic: "",
+                                dob: "",
+                                email: ""
+                              }));
+                              setIsPatientFound(false);
+                            }
+                          }}
+                          className="w-4 h-4 text-cyan-600 border-slate-300 rounded focus:ring-cyan-500"
+                        />
+                        <label htmlFor="isRegisteredPatient" className="text-sm font-semibold text-slate-700 cursor-pointer">
+                          Registered Patient?
+                        </label>
+                      </div>
+
+                      <div className="space-y-1 col-span-1 md:col-span-2">
+                        <label className="text-sm font-medium text-slate-700">Patient ID</label>
+                        <div className="flex gap-2">
+                          <Input
+                            value={isRegistered ? formData.patientId : generatedPatientId}
+                            readOnly={!isRegistered}
+                            onChange={e => {
+                              setFormData({ ...formData, patientId: e.target.value });
+                              setIsPatientFound(false);
+                            }}
+                            placeholder="e.g. SHP001"
+                            className={!isRegistered ? "bg-slate-100 text-slate-600 font-semibold cursor-not-allowed" : ""}
+                          />
+                          {isRegistered && (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              onClick={handleSearchPatient}
+                              disabled={isSearchingPatient}
+                              className="h-10 border-cyan-200 text-[#06b6d4] hover:bg-cyan-50"
+                            >
+                              {isSearchingPatient ? "Searching..." : "Search"}
+                            </Button>
+                          )}
+                        </div>
+                      </div>
                       <div className="space-y-1">
                         <label className="text-sm font-medium text-slate-700">Full Name *</label>
-                        <Input required placeholder="John Doe" value={formData.fullName} onChange={e => setFormData({...formData, fullName: e.target.value})} />
+                        <Input required placeholder="Damidu Abeysinghye" value={formData.fullName} onChange={e => setFormData({...formData, fullName: e.target.value})} />
                       </div>
                       <div className="space-y-1">
                         <label className="text-sm font-medium text-slate-700">Phone Number *</label>
                         <Input required placeholder="07XXXXXXXX" value={formData.phone} onChange={e => setFormData({...formData, phone: e.target.value})} />
-                      </div>
-                      <div className="space-y-1">
-                        <label className="text-sm font-medium text-slate-700">Patient ID (optional)</label>
-                        <Input placeholder="e.g. SHP001" value={formData.patientId} onChange={e => setFormData({...formData, patientId: e.target.value})} />
                       </div>
                       <div className="space-y-1">
                         <label className="text-sm font-medium text-slate-700">NIC Number (optional)</label>
@@ -424,7 +598,7 @@ export default function AppointmentsPage() {
                         <label className="text-sm font-medium text-slate-700">Date of Birth (optional)</label>
                         <Input type="date" value={formData.dob} onChange={e => setFormData({...formData, dob: e.target.value})} />
                       </div>
-                      <div className="space-y-1 md:col-span-2">
+                      <div className="space-y-1">
                         <label className="text-sm font-medium text-slate-700">Email Address (optional)</label>
                         <Input type="email" placeholder="john@example.com" value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} />
                       </div>
@@ -506,10 +680,18 @@ export default function AppointmentsPage() {
                       <div className="space-y-1 md:col-span-2">
                         <label className="text-sm font-medium text-slate-700">Payment Status (Counter Collection)</label>
                         <select className="flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
-                          value={formData.paymentStatus}
-                          onChange={e => setFormData({...formData, paymentStatus: e.target.value})}
+                          value={bookingPaymentMethod}
+                          onChange={e => {
+                            const val = e.target.value as "cash" | "card" | "pending";
+                            setBookingPaymentMethod(val);
+                            setFormData({
+                              ...formData,
+                              paymentStatus: val === "cash" ? "paid" : "pending"
+                            });
+                          }}
                         >
-                          <option value="paid">Paid (Cash collected at counter)</option>
+                          <option value="cash">Paid (Cash collected at counter)</option>
+                          <option value="card">Paid (Card payment via Stripe)</option>
                           <option value="pending">Pending</option>
                         </select>
                       </div>
@@ -537,7 +719,203 @@ export default function AppointmentsPage() {
           </div>
         )}
 
+        {/* PAYMENT METHOD SELECTION DIALOG */}
+        <Dialog open={isPaymentMethodModalOpen} onOpenChange={setIsPaymentMethodModalOpen}>
+          <DialogContent className="sm:max-w-[400px] rounded-2xl p-6 bg-white border border-slate-100 shadow-2xl">
+            <DialogTitle className="text-xl font-bold text-slate-900">Select Payment Method</DialogTitle>
+            <DialogDescription className="text-sm text-slate-500 mt-1">
+              Choose how the patient wants to pay.
+            </DialogDescription>
+            {paymentAppointment && (
+              <div className="space-y-4 mt-4">
+                <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                  <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Appointment Info</p>
+                  <p className="text-base font-bold text-slate-800">Consultation - {paymentAppointment.doctorName}</p>
+                  <p className="text-sm text-slate-600">Patient: <span className="font-semibold">{paymentAppointment.patientId?.fullName || "Walk-in Patient"}</span></p>
+                  <p className="text-lg font-black text-[#06b6d4] mt-2">LKR {(paymentAppointment.amount || 3500).toLocaleString()}</p>
+                </div>
+                
+                <div className="grid grid-cols-2 gap-3 pt-2">
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      setIsPaymentMethodModalOpen(false);
+                      await updateStatus(paymentAppointment._id, 'paymentStatus', 'paid');
+                      setPaymentAppointment(null);
+                    }}
+                    className="p-4 rounded-xl border-2 flex flex-col items-center gap-2 transition-all border-slate-100 hover:border-cyan-200 hover:bg-slate-50"
+                  >
+                    <DollarSign className="text-emerald-500 w-8 h-8" />
+                    <span className="text-xs font-bold text-slate-700">CASH</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsPaymentMethodModalOpen(false);
+                      setIsStripeModalOpen(true);
+                    }}
+                    className="p-4 rounded-xl border-2 flex flex-col items-center gap-2 transition-all border-slate-100 hover:border-cyan-200 hover:bg-slate-50"
+                  >
+                    <CreditCard className="text-cyan-500 w-8 h-8" />
+                    <span className="text-xs font-bold text-slate-700">CARD</span>
+                  </button>
+                </div>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
+
+        {/* STRIPE CARD PAYMENT DIALOG */}
+        <Dialog open={isStripeModalOpen} onOpenChange={(open) => { if (!open) { setIsStripeModalOpen(false); setPaymentAppointment(null); } }}>
+          <DialogContent className="sm:max-w-[480px] rounded-3xl p-6 bg-white border border-slate-100 shadow-2xl">
+            <DialogTitle className="text-xl font-bold text-slate-900">Card Payment Confirmation</DialogTitle>
+            <DialogDescription className="text-sm text-slate-500 mt-1">
+              Charge patient's card at counter via Stripe.
+            </DialogDescription>
+            {paymentAppointment && (
+              <div className="space-y-4 mt-4">
+                <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 flex flex-col gap-1">
+                  <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Bill Details</p>
+                  <p className="text-base font-bold text-slate-800">Consultation - {paymentAppointment.doctorName}</p>
+                  <p className="text-sm text-slate-600">Patient: <span className="font-semibold">{paymentAppointment.patientId?.fullName || "Walk-in Patient"}</span></p>
+                  <p className="text-lg font-black text-[#06b6d4] mt-2">LKR {(paymentAppointment.amount || 3500).toLocaleString()}</p>
+                </div>
+                
+                <Elements stripe={stripePromise}>
+                  <StripeCardForm 
+                    amount={paymentAppointment.amount || 3500} 
+                    appointmentId={paymentAppointment._id}
+                    onSuccess={() => {
+                      setIsStripeModalOpen(false);
+                      setPaymentAppointment(null);
+                      fetchAppointments();
+                    }}
+                    onCancel={() => {
+                      setIsStripeModalOpen(false);
+                      setPaymentAppointment(null);
+                    }}
+                  />
+                </Elements>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
+
       </main>
     </div>
+  );
+}
+
+interface StripeCardFormProps {
+  amount: number;
+  appointmentId: string;
+  onSuccess: () => void;
+  onCancel: () => void;
+}
+
+function StripeCardForm({ amount, appointmentId, onSuccess, onCancel }: StripeCardFormProps) {
+  const stripe = useStripe();
+  const elements = useElements();
+  const [error, setError] = useState<string | null>(null);
+  const [processing, setProcessing] = useState(false);
+
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+
+    if (!stripe || !elements) {
+      return;
+    }
+
+    setProcessing(true);
+    setError(null);
+
+    try {
+      const adminToken = getAdminToken();
+      const intentRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/payments/create-intent`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-auth-token": adminToken || "",
+          "ngrok-skip-browser-warning": "true"
+        },
+        body: JSON.stringify({ amount: amount * 100 })
+      });
+
+      const intentData = await intentRes.json();
+      if (!intentRes.ok) {
+        throw new Error(intentData.msg || "Failed to initiate payment");
+      }
+
+      const clientSecret = intentData.clientSecret;
+
+      const cardElement = elements.getElement(CardElement);
+      if (!cardElement) {
+        throw new Error("Card input not found");
+      }
+
+      const paymentResult = await stripe.confirmCardPayment(clientSecret, {
+        payment_method: {
+          card: cardElement
+        }
+      });
+
+      if (paymentResult.error) {
+        throw new Error(paymentResult.error.message || "Payment failed");
+      }
+
+      if (paymentResult.paymentIntent?.status === "succeeded") {
+        const payRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/admin/appointments/${appointmentId}`, {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+            "x-auth-token": adminToken || "",
+            "ngrok-skip-browser-warning": "true"
+          },
+          body: JSON.stringify({ paymentStatus: "paid" })
+        });
+
+        const payData = await payRes.json();
+        if (!payRes.ok) {
+          throw new Error(payData.msg || "Payment recorded but failed to update appointment record.");
+        }
+
+        alert("Payment Successful!");
+        onSuccess();
+      }
+    } catch (err: any) {
+      console.error("Card Payment Error:", err);
+      setError(err.message || "An error occurred during payment");
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-4 mt-2">
+      <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+        <CardElement 
+          options={{
+            style: {
+              base: {
+                fontSize: "16px",
+                color: "#0f172a",
+                "::placeholder": {
+                  color: "#94a3b8",
+                },
+              },
+            },
+          }}
+        />
+      </div>
+      {error && <div className="text-xs font-semibold text-rose-500 bg-rose-50 p-3 rounded-lg border border-rose-100">{error}</div>}
+      <div className="flex gap-3 justify-end pt-2">
+        <Button type="button" variant="outline" onClick={onCancel} disabled={processing} className="rounded-xl h-11 px-6">Cancel</Button>
+        <Button type="submit" disabled={!stripe || processing} className="bg-[#06b6d4] hover:bg-[#0891b2] rounded-xl h-11 px-6 shadow-md shadow-cyan-500/10 text-white">
+          {processing ? <Loader2 className="animate-spin mr-2 h-4 w-4" /> : null}
+          Confirm Rs. {amount.toLocaleString()}
+        </Button>
+      </div>
+    </form>
   );
 }
