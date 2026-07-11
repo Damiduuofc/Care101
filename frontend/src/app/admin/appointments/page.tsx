@@ -31,6 +31,11 @@ const [generatedPatientId, setGeneratedPatientId] = useState("Loading...");
   const [isPatientFound, setIsPatientFound] = useState(false);
   const [isSearchingPatient, setIsSearchingPatient] = useState(false);
 
+  const [isMobileSearchOpen, setIsMobileSearchOpen] = useState(false);
+  const [searchMobileNumber, setSearchMobileNumber] = useState("");
+  const [matchingPatients, setMatchingPatients] = useState<any[]>([]);
+  const [isSearchingMobile, setIsSearchingMobile] = useState(false);
+
   const [bookingPaymentMethod, setBookingPaymentMethod] = useState<"cash" | "card" | "pending">("cash");
 
   const [paymentAppointment, setPaymentAppointment] = useState<any>(null);
@@ -78,6 +83,53 @@ const [generatedPatientId, setGeneratedPatientId] = useState("Loading...");
     } finally {
       setIsSearchingPatient(false);
     }
+  };
+
+  const handleSearchPatientByMobile = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!searchMobileNumber.trim()) {
+      alert("Please enter a mobile number first.");
+      return;
+    }
+    setIsSearchingMobile(true);
+    try {
+      const token = getAdminToken();
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/admin/patients/search/mobile/${searchMobileNumber.trim()}`, {
+        headers: {
+          "x-auth-token": token || "",
+          "ngrok-skip-browser-warning": "true"
+        }
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setMatchingPatients(data);
+      } else {
+        alert(data.msg || "Failed to search patient.");
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Error searching patient.");
+    } finally {
+      setIsSearchingMobile(false);
+    }
+  };
+
+  const handleSelectPatient = (patient: any) => {
+    let formattedDob = "";
+    if (patient.dateOfBirth) {
+      formattedDob = new Date(patient.dateOfBirth).toISOString().split('T')[0];
+    }
+    setFormData(prev => ({
+      ...prev,
+      patientId: patient.patientId,
+      fullName: patient.fullName || "",
+      phone: patient.mobileNumber || "",
+      nic: patient.nicNumber || "",
+      dob: formattedDob,
+      email: patient.email || ""
+    }));
+    setIsPatientFound(true);
+    setIsMobileSearchOpen(false);
   };
 
   // Form State
@@ -547,6 +599,9 @@ const fetchNextPatientId = async () => {
                                 email: ""
                               }));
                               setIsPatientFound(false);
+                              setSearchMobileNumber("");
+                              setMatchingPatients([]);
+                              setIsMobileSearchOpen(true);
                             }
                           }}
                           className="w-4 h-4 text-cyan-600 border-slate-300 rounded focus:ring-cyan-500"
@@ -561,23 +616,22 @@ const fetchNextPatientId = async () => {
                         <div className="flex gap-2">
                           <Input
                             value={isRegistered ? formData.patientId : generatedPatientId}
-                            readOnly={!isRegistered}
-                            onChange={e => {
-                              setFormData({ ...formData, patientId: e.target.value });
-                              setIsPatientFound(false);
-                            }}
+                            readOnly={true}
                             placeholder="e.g. SHP001"
-                            className={!isRegistered ? "bg-slate-100 text-slate-600 font-semibold cursor-not-allowed" : ""}
+                            className="bg-slate-100 text-slate-600 font-semibold cursor-not-allowed"
                           />
                           {isRegistered && (
                             <Button
                               type="button"
                               variant="outline"
-                              onClick={handleSearchPatient}
-                              disabled={isSearchingPatient}
+                              onClick={() => {
+                                setSearchMobileNumber("");
+                                setMatchingPatients([]);
+                                setIsMobileSearchOpen(true);
+                              }}
                               className="h-10 border-cyan-200 text-[#06b6d4] hover:bg-cyan-50"
                             >
-                              {isSearchingPatient ? "Searching..." : "Search"}
+                              Search by Mobile
                             </Button>
                           )}
                         </div>
@@ -801,6 +855,123 @@ const fetchNextPatientId = async () => {
             )}
           </DialogContent>
         </Dialog>
+
+        {/* MOBILE PATIENT SEARCH DIALOG */}
+        {isMobileSearchOpen && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+            <div className="bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[85vh] overflow-hidden flex flex-col animate-in zoom-in-95 duration-200">
+              
+              <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+                <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                  <Search className="w-5 h-5 text-[#06B6D4]" />
+                  Search Registered Patient
+                </h2>
+                <Button 
+                  variant="ghost" 
+                  size="icon" 
+                  className="h-8 w-8 rounded-full" 
+                  onClick={() => {
+                    setIsMobileSearchOpen(false);
+                    if (!isPatientFound) {
+                      setIsRegistered(false);
+                      setFormData(prev => ({
+                        ...prev,
+                        patientId: generatedPatientId
+                      }));
+                    }
+                  }}
+                >
+                  <X className="w-5 h-5 text-slate-500" />
+                </Button>
+              </div>
+
+              <div className="p-6 overflow-y-auto flex-1 space-y-4">
+                <form onSubmit={handleSearchPatientByMobile} className="space-y-3">
+                  <label className="text-sm font-semibold text-slate-700">Enter Mobile Number</label>
+                  <div className="flex gap-2">
+                    <Input
+                      type="text"
+                      placeholder="e.g. 0771234567"
+                      value={searchMobileNumber}
+                      onChange={(e) => setSearchMobileNumber(e.target.value)}
+                      className="bg-white border-slate-200"
+                    />
+                    <Button
+                      type="submit"
+                      disabled={isSearchingMobile}
+                      style={{ backgroundColor: "#06B6D4", color: "#fff" }}
+                      className="hover:opacity-90"
+                    >
+                      {isSearchingMobile ? "Searching..." : "Search"}
+                    </Button>
+                  </div>
+                </form>
+
+                <div className="space-y-3 pt-2">
+                  <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                    Matching Patients ({matchingPatients.length})
+                  </h3>
+                  
+                  {isSearchingMobile ? (
+                    <div className="py-8 text-center text-sm text-slate-500 flex items-center justify-center gap-2">
+                      <Loader2 className="animate-spin h-4 w-4 text-[#06B6D4]" /> Searching patients...
+                    </div>
+                  ) : matchingPatients.length === 0 ? (
+                    <div className="py-8 text-center text-sm text-slate-400 border border-dashed border-slate-200 rounded-xl">
+                      {searchMobileNumber ? "No patients found with this number." : "Enter a number and click search."}
+                    </div>
+                  ) : (
+                    <div className="space-y-2 max-h-[40vh] overflow-y-auto pr-1">
+                      {matchingPatients.map((patient) => (
+                        <div
+                          key={patient._id}
+                          onClick={() => handleSelectPatient(patient)}
+                          className="p-3 border border-slate-100 rounded-xl bg-slate-50 hover:bg-cyan-50/50 hover:border-cyan-200 cursor-pointer transition-all flex items-center justify-between group"
+                        >
+                          <div>
+                            <div className="font-semibold text-slate-800 group-hover:text-cyan-700 transition-colors">
+                              {patient.fullName}
+                            </div>
+                            <div className="text-xs text-slate-500 flex gap-3 mt-1">
+                              <span>ID: {patient.patientId}</span>
+                              {patient.nicNumber && <span>NIC: {patient.nicNumber}</span>}
+                            </div>
+                          </div>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="text-cyan-600 hover:text-cyan-700 hover:bg-cyan-50 font-semibold"
+                          >
+                            Select
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="p-4 border-t border-slate-100 bg-slate-50 flex justify-end">
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={() => {
+                    setIsMobileSearchOpen(false);
+                    if (!isPatientFound) {
+                      setIsRegistered(false);
+                      setFormData(prev => ({
+                        ...prev,
+                        patientId: generatedPatientId
+                      }));
+                    }
+                  }}
+                >
+                  Close
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
 
       </main>
     </div>
