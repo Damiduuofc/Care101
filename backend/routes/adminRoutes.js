@@ -514,6 +514,18 @@ router.get("/patients/search/patientid/:patientId", protect, async (req, res) =>
   }
 });
 
+router.get("/patients/search/mobile/:mobileNumber", protect, async (req, res) => {
+  try {
+    const { mobileNumber } = req.params;
+    const patients = await Patient.find({
+      mobileNumber: { $regex: mobileNumber, $options: "i" }
+    }).select("-password");
+    res.json(patients);
+  } catch (err) {
+    res.status(500).send("Server Error");
+  }
+});
+
 router.get("/bills/all", protect, authorize(["system_admin", "receptionist"]), async (req, res) => {
   try {
     const manualBills = await Bill.find().populate("patientId", "fullName nicNumber patientId").lean();
