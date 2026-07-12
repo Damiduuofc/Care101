@@ -50,68 +50,35 @@ export const registerPatient = async (req, res) => {
       mobileNumber, email, district, password
     } = req.body;
 
-    // Check existing patients by email and NIC (but only if provided)
-    let patientToUpgrade = null;
-
-    if (email && email.trim() !== "") {
-      // 1. Check uniqueness across Doctor collection
-      const existingDoctor = await Doctor.findOne({ email: email.toLowerCase() });
-      if (existingDoctor) {
-        return res.status(400).json({ message: "User with this email already exists" });
-      }
-
-      const existingPatientByEmail = await Patient.findOne({ email: email.toLowerCase(), isRegistered: false });
-      if (existingPatientByEmail) {
-        patientToUpgrade = existingPatientByEmail;
-      }
+    if (!email || email.trim() === "") {
+      return res.status(400).json({ message: "Email is required" });
     }
 
-    if (!patientToUpgrade && nicNumber && nicNumber.trim() !== "") {
-      const existingPatientByNic = await Patient.findOne({ nicNumber, isRegistered: false });
-      if (existingPatientByNic) {
-        patientToUpgrade = existingPatientByNic;
-      }
+    // 1. Check uniqueness across Doctor collection
+    const existingDoctor = await Doctor.findOne({ email: email.toLowerCase() });
+    if (existingDoctor) {
+      return res.status(400).json({ message: "User with this email already exists" });
     }
-
-
 
     // 2. Hash Password
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
-    let finalPatient;
+    // 3. Create new Patient
+    const newPatient = new Patient({
+      fullName,
+      dateOfBirth: new Date(dateOfBirth),
+      gender,
+      nicNumber: nicNumber || undefined,
+      mobileNumber,
+      email: email.toLowerCase(),
+      district,
+      password: hashedPassword,
+      isRegistered: true
+    });
 
-    if (patientToUpgrade) {
-      // Upgrade existing walk-in patient
-      patientToUpgrade.fullName = fullName;
-      patientToUpgrade.email = email ? email.toLowerCase() : patientToUpgrade.email;
-      patientToUpgrade.nicNumber = nicNumber ? nicNumber : patientToUpgrade.nicNumber;
-      patientToUpgrade.password = hashedPassword;
-      patientToUpgrade.mobileNumber = mobileNumber;
-      patientToUpgrade.dateOfBirth = new Date(dateOfBirth);
-      patientToUpgrade.gender = gender;
-      patientToUpgrade.district = district;
-      patientToUpgrade.isRegistered = true; // Mark as fully registered
-
-      await patientToUpgrade.save();
-      finalPatient = patientToUpgrade;
-    } else {
-      // 3. Create new Patient
-      const newPatient = new Patient({
-        fullName,
-        dateOfBirth: new Date(dateOfBirth),
-        gender,
-        nicNumber: nicNumber || undefined,
-        mobileNumber,
-        email: email ? email.toLowerCase() : undefined,
-        district,
-        password: hashedPassword,
-        isRegistered: true
-      });
-
-      await newPatient.save();
-      finalPatient = newPatient;
-    }
+    await newPatient.save();
+    const finalPatient = newPatient;
 
     // 4. Create Token
     const token = jwt.sign(

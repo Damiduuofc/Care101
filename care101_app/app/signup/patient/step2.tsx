@@ -33,7 +33,7 @@ const DISTRICTS = [
 // --- VALIDATION SCHEMA ---
 const formSchema = z.object({
     mobileNumber: z.string().min(9, { message: "Valid mobile number is required." }),
-    email: z.union([z.string().email({ message: "Invalid email address" }), z.literal("")]).optional(),
+    email: z.string().email({ message: "Valid email address is required." }),
     district: z.string().min(1, { message: "Please select your district." }),
 });
 

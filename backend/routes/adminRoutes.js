@@ -182,15 +182,6 @@ router.post("/appointments/walkin", protect, async (req, res) => {
     if (patientId && patientId.trim() !== "") {
       patient = await Patient.findOne({ patientId: patientId.toUpperCase() });
     }
-    if (!patient && nic && nic.trim() !== "") {
-      patient = await Patient.findOne({ nicNumber: nic });
-    }
-    if (!patient && email && email.trim() !== "") {
-      patient = await Patient.findOne({ email: email.toLowerCase() });
-    }
-    if (!patient && phone && phone.trim() !== "") {
-      patient = await Patient.findOne({ mobileNumber: phone });
-    }
 
     if (!patient) {
       // Create new patient
