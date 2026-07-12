@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import {
   Search, CheckCircle, Trash2, Clock, DollarSign, Calendar, AlertCircle, XCircle, Plus, X, User, Stethoscope, CreditCard, Loader2
 } from "lucide-react";
@@ -139,6 +139,44 @@ const [generatedPatientId, setGeneratedPatientId] = useState("Loading...");
     // Appointment Details
     department: "", doctorId: "", doctorName: "", date: "", visitType: "Consultation", reason: "", paymentStatus: "paid"
   });
+
+  const [doctorSearchQuery, setDoctorSearchQuery] = useState("");
+  const [isDoctorDropdownOpen, setIsDoctorDropdownOpen] = useState(false);
+  const doctorSearchRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (doctorSearchRef.current && !doctorSearchRef.current.contains(event.target as Node)) {
+        setIsDoctorDropdownOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, []);
+
+  const handleSelectDoctor = (doc: any) => {
+    setFormData(prev => ({
+      ...prev,
+      doctorId: doc._id,
+      doctorName: doc.name,
+      department: doc.specialization || "General Practitioner",
+      date: ""
+    }));
+    setDoctorSearchQuery(doc.name);
+    setIsDoctorDropdownOpen(false);
+  };
+
+  const filteredDoctors = doctors.filter(doc => {
+    const query = doctorSearchQuery.toLowerCase();
+    const nameMatch = doc.name?.toLowerCase().includes(query) || doc.fullName?.toLowerCase().includes(query);
+    const specMatch = doc.specialization?.toLowerCase().includes(query);
+    if (formData.department) {
+      return nameMatch && doc.specialization === formData.department;
+    }
+    return nameMatch || specMatch;
+  });
 const fetchNextPatientId = async () => {
   try {
     const token = getAdminToken();
@@ -255,6 +293,8 @@ const fetchNextPatientId = async () => {
     setIsRegistered(false);
     setIsPatientFound(false);
     setBookingPaymentMethod("cash");
+    setDoctorSearchQuery("");
+    setIsDoctorDropdownOpen(false);
     setIsBookingModalOpen(true);
   };
 
@@ -263,6 +303,10 @@ const fetchNextPatientId = async () => {
     e.preventDefault();
     if (isRegistered && !isPatientFound) {
       alert("Please search and verify the registered Patient ID before booking.");
+      return;
+    }
+    if (!formData.doctorId) {
+      alert("Please select a doctor by searching and clicking on their name.");
       return;
     }
     setIsSubmitting(true);
@@ -305,6 +349,7 @@ const fetchNextPatientId = async () => {
           patientId: "", fullName: "", nic: "", dob: "", phone: "", email: "",
           department: "", doctorId: "", doctorName: "", date: "", visitType: "Consultation", reason: "", paymentStatus: "paid"
         });
+        setDoctorSearchQuery("");
         setIsRegistered(false);
         setIsPatientFound(false);
         if (bookingPaymentMethod === "card") {
@@ -672,6 +717,7 @@ const fetchNextPatientId = async () => {
                           value={formData.department}
                           onChange={e => {
                             setFormData({...formData, department: e.target.value, doctorId: "", doctorName: "", date: ""});
+                            setDoctorSearchQuery("");
                           }}
                         >
                           <option value="">Select Department...</option>
@@ -681,21 +727,55 @@ const fetchNextPatientId = async () => {
                         </select>
                       </div>
 
-                      <div className="space-y-1">
+                      <div className="space-y-1 relative" ref={doctorSearchRef}>
                         <label className="text-sm font-medium text-slate-700">Doctor *</label>
-                        <select required className="flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400 disabled:opacity-50"
-                          disabled={!formData.department}
-                          value={formData.doctorId}
-                          onChange={e => {
-                            const doc = doctors.find(d => d._id === e.target.value);
-                            setFormData({...formData, doctorId: doc?._id || "", doctorName: doc?.name || "", date: ""});
-                          }}
-                        >
-                          <option value="">Select Specialist...</option>
-                          {doctors.filter(d => d.specialization === formData.department).map(doc => (
-                            <option key={doc._id} value={doc._id}>{doc.name}</option>
-                          ))}
-                        </select>
+                        <div className="relative">
+                          <Input
+                            type="text"
+                            placeholder="Type to search doctor..."
+                            value={doctorSearchQuery}
+                            onChange={e => {
+                              setDoctorSearchQuery(e.target.value);
+                              setIsDoctorDropdownOpen(true);
+                              if (e.target.value !== formData.doctorName) {
+                                setFormData(prev => ({ ...prev, doctorId: "", doctorName: "", date: "" }));
+                              }
+                            }}
+                            onFocus={() => setIsDoctorDropdownOpen(true)}
+                            className="bg-white border-slate-200 pr-8"
+                          />
+                          {formData.doctorId && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setFormData(prev => ({ ...prev, doctorId: "", doctorName: "", date: "" }));
+                                setDoctorSearchQuery("");
+                              }}
+                              className="absolute right-2.5 top-3 text-slate-400 hover:text-slate-600"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
+                          )}
+                        </div>
+
+                        {isDoctorDropdownOpen && (
+                          <div className="absolute z-50 w-full mt-1 bg-white border border-slate-200 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                            {filteredDoctors.length === 0 ? (
+                              <div className="p-3 text-sm text-slate-400 text-center">No doctors found</div>
+                            ) : (
+                              filteredDoctors.map(doc => (
+                                <div
+                                  key={doc._id}
+                                  onClick={() => handleSelectDoctor(doc)}
+                                  className="p-3 text-sm cursor-pointer hover:bg-cyan-50 hover:text-cyan-900 transition-colors border-b border-slate-100 last:border-0"
+                                >
+                                  <div className="font-semibold text-slate-800">{doc.name}</div>
+                                  <div className="text-xs text-slate-500">{doc.specialization || "General Practitioner"}</div>
+                                </div>
+                              ))
+                            )}
+                          </div>
+                        )}
                       </div>
 
                       <div className="space-y-1">
