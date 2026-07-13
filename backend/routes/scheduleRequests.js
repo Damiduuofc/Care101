@@ -33,16 +33,6 @@ router.post('/request', auth, async (req, res) => {
   }
 });
 
-// 2. DOCTOR: Get my requests
-router.get('/my-requests', auth, async (req, res) => {
-  try {
-    const requests = await ScheduleRequest.find({ doctorId: req.user.id }).sort({ createdAt: -1 });
-    res.json(requests);
-  } catch (err) {
-    res.status(500).json({ msg: 'Server error' });
-  }
-});
-
 // 3. RECEPTIONIST: Get pending requests
 router.get('/pending', auth, async (req, res) => {
   try {
