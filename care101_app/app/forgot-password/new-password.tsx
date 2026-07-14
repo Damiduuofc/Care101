@@ -10,6 +10,8 @@ export default function NewPasswordScreen() {
   const { email, otp } = useLocalSearchParams();
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const router = useRouter();
 
@@ -54,8 +56,15 @@ export default function NewPasswordScreen() {
           placeholder="New Password"
           value={newPassword}
           onChangeText={setNewPassword}
-          secureTextEntry
+          secureTextEntry={!showPassword}
         />
+        <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={{ padding: 4 }}>
+          <Ionicons 
+            name={showPassword ? "eye-outline" : "eye-off-outline"} 
+            size={20} 
+            color="#64748b" 
+          />
+        </TouchableOpacity>
       </View>
 
       <View style={styles.inputWrapper}>
@@ -65,8 +74,15 @@ export default function NewPasswordScreen() {
           placeholder="Confirm New Password"
           value={confirmPassword}
           onChangeText={setConfirmPassword}
-          secureTextEntry
+          secureTextEntry={!showConfirmPassword}
         />
+        <TouchableOpacity onPress={() => setShowConfirmPassword(!showConfirmPassword)} style={{ padding: 4 }}>
+          <Ionicons 
+            name={showConfirmPassword ? "eye-outline" : "eye-off-outline"} 
+            size={20} 
+            color="#64748b" 
+          />
+        </TouchableOpacity>
       </View>
 
       <TouchableOpacity style={styles.button} onPress={handleReset} disabled={loading}>
