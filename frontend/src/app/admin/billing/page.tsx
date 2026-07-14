@@ -178,6 +178,8 @@ export default function BillingPage() {
     const [searchPatientId, setSearchPatientId] = useState("");
     const [searching, setSearching] = useState(false);
     const [selectedPatient, setSelectedPatient] = useState<any>(null);
+    const [doctorSearchQuery, setDoctorSearchQuery] = useState("");
+    const [dropdownOpen, setDropdownOpen] = useState(false);
 
     // Form State
     const [formData, setFormData] = useState({
@@ -279,6 +281,17 @@ fetch(`${API_URL}/admin/doctors`, { headers })
     useEffect(() => {
         fetchHistoryAndDoctors();
     }, []);
+
+    useEffect(() => {
+        if (!formData.doctorId) {
+            setDoctorSearchQuery("");
+        } else {
+            const selectedDoc = doctors.find(d => d._id === formData.doctorId);
+            if (selectedDoc) {
+                setDoctorSearchQuery(`Dr. ${selectedDoc.fullName || selectedDoc.name}`);
+            }
+        }
+    }, [formData.doctorId, doctors]);
 
     const handleSearchPatient = async () => {
         if (!searchPatientId) return;
@@ -493,29 +506,86 @@ fetch(`${API_URL}/admin/doctors`, { headers })
                                             </div>
 
                                             {/* Doctor Dropdown specifically for Surgery */}
-                                            {formData.type === "Surgery" && (
-                                                <div className="space-y-2 col-span-2 animate-in fade-in slide-in-from-top-2">
-                                                    <Select
-                                                        value={formData.doctorId}
-                                                        onValueChange={(v) => setFormData({ ...formData, doctorId: v })}
-                                                    >
-                                                        <SelectTrigger className="h-11 border-[#06b6d4]">
-                                                            <SelectValue placeholder="Select Doctor" />
-                                                        </SelectTrigger>
-                                                        <SelectContent>
-                                                            {doctors.length > 0 ? (
-                                                                doctors.map(doc => (
-                                                                    <SelectItem key={doc._id} value={doc._id}>
-                                                                        Dr. {doc.fullName || doc.name}
-                                                                    </SelectItem>
-                                                                ))
-                                                            ) : (
-                                                                <SelectItem value="loading" disabled>No doctors found...</SelectItem>
+                                            {formData.type === "Surgery" && (() => {
+                                                const query = doctorSearchQuery.trim().toLowerCase();
+                                                const filteredDoctorsForSurgery = doctors.filter(doc => {
+                                                    if (!query) return true;
+                                                    if (formData.doctorId) {
+                                                        const selectedDoc = doctors.find(d => d._id === formData.doctorId);
+                                                        if (selectedDoc) {
+                                                            const selectedName = `Dr. ${selectedDoc.fullName || selectedDoc.name}`.toLowerCase();
+                                                            if (query === selectedName) return true;
+                                                        }
+                                                    }
+                                                    const docName = `Dr. ${doc.fullName || doc.name}`.toLowerCase();
+                                                    return docName.includes(query) || (doc.specialization && doc.specialization.toLowerCase().includes(query));
+                                                });
+
+                                                return (
+                                                    <div className="space-y-2 col-span-2 animate-in fade-in slide-in-from-top-2 relative">
+                                                        <Label>Select Doctor (Surgery)</Label>
+                                                        <div className="relative">
+                                                            <div className="relative">
+                                                                <Search className="absolute left-3 top-3.5 h-4 w-4 text-slate-400" />
+                                                                <Input
+                                                                    type="text"
+                                                                    placeholder="Search and select doctor..."
+                                                                    className="h-11 pl-10 pr-10 border-[#06b6d4] shadow-sm bg-white"
+                                                                    value={doctorSearchQuery}
+                                                                    onChange={(e) => {
+                                                                        setDoctorSearchQuery(e.target.value);
+                                                                        setDropdownOpen(true);
+                                                                    }}
+                                                                    onFocus={() => setDropdownOpen(true)}
+                                                                />
+                                                                {formData.doctorId && (
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => {
+                                                                            setFormData({ ...formData, doctorId: "" });
+                                                                            setDoctorSearchQuery("");
+                                                                        }}
+                                                                        className="absolute right-3 top-3.5 text-slate-400 hover:text-slate-600"
+                                                                    >
+                                                                        <X className="h-4 w-4" />
+                                                                    </button>
+                                                                )}
+                                                            </div>
+                                                            {dropdownOpen && (
+                                                                <>
+                                                                    <div 
+                                                                        className="fixed inset-0 z-40 bg-transparent" 
+                                                                        onClick={() => setDropdownOpen(false)}
+                                                                    />
+                                                                    <div className="absolute z-50 w-full mt-1 bg-white border border-slate-200 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                                                                        {filteredDoctorsForSurgery.length > 0 ? (
+                                                                            filteredDoctorsForSurgery.map(doc => (
+                                                                                <button
+                                                                                    key={doc._id}
+                                                                                    type="button"
+                                                                                    className="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 transition-colors border-b border-slate-50 last:border-0"
+                                                                                    onClick={() => {
+                                                                                        setFormData({ ...formData, doctorId: doc._id });
+                                                                                        setDoctorSearchQuery(`Dr. ${doc.fullName || doc.name}`);
+                                                                                        setDropdownOpen(false);
+                                                                                    }}
+                                                                                >
+                                                                                    <span className="font-medium text-slate-800">Dr. {doc.fullName || doc.name}</span>
+                                                                                    {doc.specialization && (
+                                                                                        <span className="text-xs text-slate-400 ml-2">({doc.specialization})</span>
+                                                                                    )}
+                                                                                </button>
+                                                                            ))
+                                                                        ) : (
+                                                                            <div className="px-4 py-3 text-sm text-slate-400 text-center">No doctors found</div>
+                                                                        )}
+                                                                    </div>
+                                                                </>
                                                             )}
-                                                        </SelectContent>
-                                                    </Select>
-                                                </div>
-                                            )}
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })()}
                                         </div>
 
                                         <div className="space-y-3 pt-2">

@@ -26,7 +26,7 @@ export default function ForgotPasswordEmailScreen() {
       
       if (res.ok) {
         const maskedEmail = data.maskedEmail || "your registered email";
-        const targetEmail = data.email || identifier.trim();
+        const targetEmail = identifier.trim();
 
         // Navigate to the Verify screen and pass details
         router.push({

@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import Sidebar from "@/components/admin/Sidebar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Loader2, DoorOpen, Save, Clock, CheckCircle2, AlertTriangle, X, Pencil } from "lucide-react";
+import { Loader2, DoorOpen, Save, Clock, CheckCircle2, AlertTriangle, X, Pencil, Search } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { clearAdminSession, getAdminToken, getAdminUser } from "@/lib/adminSession";
 
@@ -303,6 +303,7 @@ export default function RoomAllocation() {
     const [doctors, setDoctors] = useState<Doctor[]>([]);
     const [nurses, setNurses] = useState<Nurse[]>([]);
     const [loading, setLoading] = useState(true);
+    const [searchQuery, setSearchQuery] = useState("");
 
     useEffect(() => {
         const storedUser = getAdminUser();
@@ -368,6 +369,13 @@ export default function RoomAllocation() {
         ));
     };
 
+    const filteredDoctors = doctors.filter(doc => 
+        doc.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
+        doc.specialization.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (doc.allocatedRoom && doc.allocatedRoom.toLowerCase().includes(searchQuery.toLowerCase())) ||
+        (doc.allocatedNurse && doc.allocatedNurse.toLowerCase().includes(searchQuery.toLowerCase()))
+    );
+
     if (loading) {
         return (
             <div className="p-10 flex justify-center items-center min-h-screen">
@@ -385,8 +393,19 @@ export default function RoomAllocation() {
                 <p className="text-slate-500">Allocate exam rooms and staff nurses for available doctors.</p>
             </div>
 
+            <div className="relative w-full max-w-md">
+                <Search className="absolute left-3 top-3.5 h-4 w-4 text-slate-400" />
+                <input
+                    type="text"
+                    placeholder="Search doctors, specialization, room or nurse..."
+                    value={searchQuery}
+                    onChange={e => setSearchQuery(e.target.value)}
+                    className="w-full h-11 pl-10 pr-4 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 transition-colors bg-white shadow-sm"
+                />
+            </div>
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {doctors.map(doc => (
+                {filteredDoctors.map(doc => (
                     <AllocationCard 
                         key={doc._id} 
                         doctor={doc} 

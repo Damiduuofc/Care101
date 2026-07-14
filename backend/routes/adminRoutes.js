@@ -148,7 +148,7 @@ router.get("/appointments", protect, async (req, res) => {
     const appointments = await Appointment.find()
       .populate("patientId", "fullName phone patientId")
       .populate("doctorId", "name department")
-      .sort({ date: -1 });
+      .sort({ createdAt: -1 });
     res.json(appointments);
   } catch (err) {
     res.status(500).send("Server Error");
@@ -257,6 +257,18 @@ router.post("/appointments/walkin", protect, async (req, res) => {
 
     if (!approvedSchedule) {
       return res.status(400).json({ msg: "This doctor is not available on the selected date (No approved schedule)." });
+    }
+
+    // --- 2A. CHECK DOUBLE BOOKING ---
+    const existingBooking = await Appointment.findOne({
+      patientId: patient._id,
+      doctorId,
+      date: { $gte: startOfDay, $lte: endOfDay },
+      status: { $ne: "cancelled" }
+    });
+
+    if (existingBooking) {
+      return res.status(400).json({ msg: "This patient already has an active appointment with this doctor on the selected date." });
     }
 
     // --- 3. CHECK QUEUE LIMIT ---

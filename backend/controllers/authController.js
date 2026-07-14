@@ -10,8 +10,7 @@ export const registerDoctor = async (req, res) => {
   try {
     const { fullName, email, password, specialization, nicNumber, phoneNumber, slmcRegistrationNumber, nameWithInitials } = req.body;
 
-    const existingDoctor = await Doctor.findOne({ email });
-    if (existingDoctor) return res.status(400).json({ message: "Doctor already exists." });
+    // Email uniqueness check removed to allow duplicate emails
 
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
@@ -54,11 +53,7 @@ export const registerPatient = async (req, res) => {
       return res.status(400).json({ message: "Email is required" });
     }
 
-    // 1. Check uniqueness across Doctor collection
-    const existingDoctor = await Doctor.findOne({ email: email.toLowerCase() });
-    if (existingDoctor) {
-      return res.status(400).json({ message: "User with this email already exists" });
-    }
+    // Email uniqueness check removed to allow duplicate emails
 
     // 2. Hash Password
     const salt = await bcrypt.genSalt(10);
@@ -259,7 +254,7 @@ export const updateProfile = async (req, res) => {
     const {
       fullName, mobileNumber, district,
       emergencyContact, medicalConditions, allergies,
-      insuranceProvider, policyNumber, profileImage
+      insuranceProvider, policyNumber, profileImage, email
     } = req.body;
 
     const patient = await Patient.findById(req.user.id);
@@ -275,6 +270,7 @@ export const updateProfile = async (req, res) => {
     if (insuranceProvider) patient.insuranceProvider = insuranceProvider;
     if (policyNumber) patient.policyNumber = policyNumber;
     if (profileImage) patient.profileImage = profileImage; // Expecting Base64 string
+    if (email) patient.email = email.toLowerCase().trim();
 
     await patient.save();
     res.json({ msg: "Profile updated successfully", patient });
