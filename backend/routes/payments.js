@@ -69,6 +69,7 @@ router.put("/pay-bill/:billId", auth, async (req, res) => {
       const appointment = await Appointment.findById(bill.appointmentId);
       if (appointment) {
         appointment.paymentStatus = "paid";
+        appointment.status = "confirmed";
         await appointment.save();
       }
     }

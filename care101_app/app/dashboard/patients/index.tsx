@@ -22,6 +22,7 @@ export default function PatientsScreen() {
   // State for the temporary selection before confirmation
   const [selectedStatus, setSelectedStatus] = useState<string | null>(null);
   const [isUpdating, setIsUpdating] = useState(false);
+  const [stats, setStats] = useState({ todayAppointmentsCount: 0, todayArrivalsCount: 0 });
 
   useFocusEffect(
     useCallback(() => {
@@ -40,6 +41,10 @@ export default function PatientsScreen() {
         const data = await response.json();
         setChannelingStatus(data.channelingStatus || 'On Time');
         setSelectedStatus(data.channelingStatus || 'On Time');
+        setStats({
+          todayAppointmentsCount: data.todayAppointmentsCount || 0,
+          todayArrivalsCount: data.todayArrivalsCount || 0
+        });
       }
     } catch (error) {
       console.error('Fetch Stats Error:', error);
@@ -108,6 +113,21 @@ export default function PatientsScreen() {
         </View>
 
         <View style={styles.divider} />
+
+        {/* TODAY'S CLINIC STATS */}
+        <View style={styles.statsSection}>
+          <Text style={styles.sectionTitle}>Today's Clinic Stats</Text>
+          <View style={styles.statsRow}>
+            <View style={styles.statCard}>
+              <Text style={styles.statNumber}>{stats.todayAppointmentsCount}</Text>
+              <Text style={styles.statLabel}>Total Appointments</Text>
+            </View>
+            <View style={[styles.statCard, { borderLeftWidth: 1, borderLeftColor: '#e2e8f0' }]}>
+              <Text style={[styles.statNumber, { color: '#10b981' }]}>{stats.todayArrivalsCount}</Text>
+              <Text style={styles.statLabel}>Patients Arrived</Text>
+            </View>
+          </View>
+        </View>
 
         {/* STATUS SECTION */}
         <View style={styles.section}>
@@ -239,5 +259,35 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 6
   },
-  confirmButtonText: { color: '#fff', fontSize: 16, fontWeight: '700' }
+  confirmButtonText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  statsSection: {
+    paddingHorizontal: 20,
+    marginBottom: 20,
+  },
+  statsRow: {
+    flexDirection: 'row',
+    backgroundColor: '#ffffff',
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#f1f5f9',
+    paddingVertical: 18,
+    elevation: 2,
+    marginTop: 10,
+  },
+  statCard: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  statNumber: {
+    fontSize: 28,
+    fontWeight: '800',
+    color: '#0f172a',
+  },
+  statLabel: {
+    fontSize: 12,
+    color: '#64748b',
+    marginTop: 4,
+    fontWeight: '600',
+  },
 });

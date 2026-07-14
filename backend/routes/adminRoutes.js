@@ -148,7 +148,7 @@ router.get("/appointments", protect, async (req, res) => {
     const appointments = await Appointment.find()
       .populate("patientId", "fullName phone patientId")
       .populate("doctorId", "name department")
-      .sort({ createdAt: -1 });
+      .sort({ date: -1, createdAt: -1 });
     res.json(appointments);
   } catch (err) {
     res.status(500).send("Server Error");
@@ -301,7 +301,7 @@ router.post("/appointments/walkin", protect, async (req, res) => {
       visitType: visitType || 'Consultation',
       reason,
       amount: totalAmount,
-      status: 'confirmed', // Walk-ins confirmed automatically by admin/receptionist
+      status: paymentStatus === 'paid' ? 'confirmed' : 'pending',
       paymentStatus: paymentStatus || 'pending'
     });
 
@@ -433,7 +433,7 @@ router.post("/appointments/walkin", protect, async (req, res) => {
 
 router.put("/appointments/:id", protect, async (req, res) => {
   try {
-    const { status, paymentStatus } = req.body;
+    const { status, paymentStatus, arrived } = req.body;
     let appointment = await Appointment.findById(req.params.id);
 
     if (!appointment) return res.status(404).json({ msg: "Not found" });
@@ -444,11 +444,16 @@ router.put("/appointments/:id", protect, async (req, res) => {
 
     if (status) appointment.status = status;
 
+    if (arrived !== undefined) {
+      appointment.arrived = arrived;
+    }
+
     if (paymentStatus) {
       const isBecomingPaid = paymentStatus.toLowerCase() === "paid" && appointment.paymentStatus !== "paid";
       appointment.paymentStatus = paymentStatus;
 
       if (isBecomingPaid) {
+        appointment.status = "confirmed";
         const updatedBill = await Bill.findOneAndUpdate({ appointmentId: appointment._id }, { status: "Paid" }, { new: true });
 
         // Generate and email PDF Receipt
