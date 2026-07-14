@@ -64,6 +64,24 @@ router.get("/dashboard-stats", auth, async (req, res) => {
     const recordCount = await SurgeryRecord.countDocuments({ doctorId }).catch(() => 0);
     const totalIncome = await calculateTotalIncome(doctorId);
 
+    const startOfDay = new Date();
+    startOfDay.setHours(0, 0, 0, 0);
+    const endOfDay = new Date();
+    endOfDay.setHours(23, 59, 59, 999);
+
+    const todayAppointmentsCount = await Appointment.countDocuments({
+      doctorId,
+      date: { $gte: startOfDay, $lte: endOfDay },
+      status: { $ne: "cancelled" }
+    });
+
+    const todayArrivalsCount = await Appointment.countDocuments({
+      doctorId,
+      date: { $gte: startOfDay, $lte: endOfDay },
+      status: { $ne: "cancelled" },
+      arrived: true
+    });
+
     res.json({
       name: doctor.name || doctor.fullName || "Doctor",
       specialization: doctor.specialization || "Specialist",
@@ -73,7 +91,9 @@ router.get("/dashboard-stats", auth, async (req, res) => {
       allocatedRoom: allocatedRoom || "TBA",
       isArrived: doctor.isArrived,
       income: totalIncome,
-      records: recordCount
+      records: recordCount,
+      todayAppointmentsCount,
+      todayArrivalsCount
     });
 
   } catch (err) {
