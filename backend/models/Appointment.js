@@ -28,6 +28,8 @@ const AppointmentSchema = new mongoose.Schema({
     default: "pending"
   },
 
+  arrived: { type: Boolean, default: false },
+
   createdAt: { type: Date, default: Date.now }
 });
 
