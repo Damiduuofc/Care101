@@ -384,7 +384,7 @@ const fetchNextPatientId = async () => {
   };
 
 // 2. Handle Status Update
-  const updateStatus = async (id: string, field: string, value: string) => {
+  const updateStatus = async (id: string, field: string, value: any) => {
     try {
       const token = getAdminToken();
       const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/admin/appointments/${id}`, {
@@ -432,10 +432,21 @@ const fetchNextPatientId = async () => {
     }
   };
 
-  const filteredAppointments = appointments.filter((appt) =>
-    appt.patientId?.fullName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    appt.doctorName?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredAppointments = appointments
+    .filter((appt) =>
+      appt.patientId?.fullName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      appt.doctorName?.toLowerCase().includes(searchTerm.toLowerCase())
+    )
+    .sort((a, b) => {
+      const dateA = new Date(a.date).getTime();
+      const dateB = new Date(b.date).getTime();
+      if (dateA !== dateB) {
+        return dateB - dateA;
+      }
+      const createdA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const createdB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      return createdB - createdA;
+    });
 
   // Derive unique departments from fetched doctors
   const departments = Array.from(new Set(doctors.map(d => d.specialization || "General")));
@@ -493,12 +504,13 @@ const fetchNextPatientId = async () => {
                       <th className="p-4 font-semibold">Queue No.</th>
                       <th className="p-4 font-semibold">Status</th>
                       <th className="p-4 font-semibold">Payment</th>
+                      <th className="p-4 font-semibold">Arrival</th>
                       <th className="p-4 font-semibold text-right">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
                     {filteredAppointments.length === 0 ? (
-                      <tr><td colSpan={7} className="p-8 text-center text-slate-400">No appointments found.</td></tr>
+                      <tr><td colSpan={8} className="p-8 text-center text-slate-400">No appointments found.</td></tr>
                     ) : (
                       filteredAppointments.map((appt) => (
                         <tr key={appt._id} className="border-b border-slate-50 hover:bg-slate-50/80 transition-colors">
@@ -545,6 +557,19 @@ const fetchNextPatientId = async () => {
                                 "PENDING"
                               )}
                             </span>
+                          </td>
+
+                          <td className="p-4 align-top">
+                            <button
+                              onClick={() => updateStatus(appt._id, 'arrived', !appt.arrived)}
+                              className={`px-2.5 py-1 rounded-full text-xs font-semibold border transition-colors ${
+                                appt.arrived 
+                                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100' 
+                                  : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                              }`}
+                            >
+                              {appt.arrived ? "Arrived" : "Mark Arrived"}
+                            </button>
                           </td>
 
                           <td className="p-4 align-top text-right">
