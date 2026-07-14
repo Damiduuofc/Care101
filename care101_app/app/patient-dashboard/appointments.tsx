@@ -29,7 +29,7 @@ import {
 import { useAuth } from '@/context/auth';
 import { useStripe } from '@stripe/stripe-react-native';
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.1.100:5000/api';
+const API_URL = process.env.EXPO_PUBLIC_API_URL;
 
 const HOSPITAL_FEE = 1500;
 const DOCTOR_FEE = 2000;
@@ -92,11 +92,23 @@ export default function BookAppointmentScreen() {
         setSelectedDate(null); // Reset date selection when doctor changes
     }, [selectedDoctor, token]);
 
-    // DERIVED: Available dates from approved schedules
+    // DERIVED: Available dates from approved schedules (deduplicated by day)
     const availableDates = useMemo(() => {
-        if (!selectedDoctor) return [];
-        // Map schedule dates to Date objects
-        return doctorSchedules.map(sch => new Date(sch.date));
+        if (!selectedDoctor || !doctorSchedules.length) return [];
+        
+        const seen = new Set<string>();
+        const uniqueDates: Date[] = [];
+        
+        for (const sch of doctorSchedules) {
+            const dateObj = new Date(sch.date);
+            const dateStr = dateObj.toDateString();
+            if (!seen.has(dateStr)) {
+                seen.add(dateStr);
+                uniqueDates.push(dateObj);
+            }
+        }
+        
+        return uniqueDates.sort((a, b) => a.getTime() - b.getTime());
     }, [doctorSchedules, selectedDoctor]);
 
     // NEW: Get the schedule object for the selected date
@@ -159,7 +171,7 @@ export default function BookAppointmentScreen() {
         });
     }, [doctors, selectedDepartment, searchQuery]);
 
-    const handleConfirmPress = () => {
+    const handleConfirmPress = async () => {
         if (!selectedDoctor || !selectedDate || !reason.trim()) {
             Alert.alert(
                 'Missing Details',
@@ -167,8 +179,33 @@ export default function BookAppointmentScreen() {
             );
             return;
         }
-        setSubmitting(false);
-        setShowPaymentModal(true);
+        setSubmitting(true);
+        try {
+            const response = await fetch(`${API_URL}/appointments/check-booking`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({
+                    doctorId: selectedDoctor._id,
+                    date: selectedDate.toISOString()
+                })
+            });
+
+            const data = await response.json();
+
+            if (response.ok) {
+                setShowPaymentModal(true);
+            } else {
+                Alert.alert('Booking Conflict', data.msg || 'Double booking or slot unavailable');
+            }
+        } catch (error: any) {
+            console.error('Error checking booking status:', error);
+            Alert.alert('Connection Error', 'Could not verify booking status. Please try again.');
+        } finally {
+            setSubmitting(false);
+        }
     };
 
     const processBooking = useCallback(
@@ -429,11 +466,6 @@ export default function BookAppointmentScreen() {
                                         {item.specialization || 'General'}
                                     </Text>
 
-                                    <View style={styles.feeBadge}>
-                                        <Text style={styles.feeText}>
-                                            + LKR {DOCTOR_FEE}
-                                        </Text>
-                                    </View>
 
                                     {selectedDoctor?._id === item._id && (
                                         <View style={styles.checkBadge}>
