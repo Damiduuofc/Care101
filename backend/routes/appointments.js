@@ -12,7 +12,67 @@ import { sendBookingConfirmation } from "../utils/emailService.js";
 const router = express.Router();
 
 // ==========================================
-// 1. BOOK APPOINTMENT (With Notifications & Split Payment Logic)
+// 1. CHECK BOOKING AVAILABILITY & DOUBLE BOOKING
+// ==========================================
+router.post("/check-booking", auth, async (req, res) => {
+  try {
+    const { doctorId, date } = req.body;
+
+    if (!doctorId || !date) {
+      return res.status(400).json({ msg: "Doctor and Date are required" });
+    }
+
+    const bookingDate = new Date(date);
+    const startOfDay = new Date(bookingDate);
+    startOfDay.setHours(0, 0, 0, 0);
+    const endOfDay = new Date(bookingDate);
+    endOfDay.setHours(23, 59, 59, 999);
+
+    // 1. Check if doctor has an approved schedule
+    const approvedSchedule = await ScheduleRequest.findOne({
+      doctorId,
+      status: "approved",
+      date: { $gte: startOfDay, $lte: endOfDay }
+    });
+
+    if (!approvedSchedule) {
+      return res.status(400).json({ msg: "This doctor is not available on the selected date (No approved schedule)." });
+    }
+
+    // 2. Check double booking
+    const existingBooking = await Appointment.findOne({
+      patientId: req.user.id,
+      doctorId,
+      date: { $gte: startOfDay, $lte: endOfDay },
+      status: { $ne: "cancelled" }
+    });
+
+    if (existingBooking) {
+      return res.status(400).json({ msg: "You already have an appointment with this doctor on the selected date." });
+    }
+
+    // 3. Check queue limit
+    const currentAppointmentCount = await Appointment.countDocuments({
+      doctorId,
+      date: { $gte: startOfDay, $lte: endOfDay },
+      status: { $ne: "cancelled" }
+    });
+
+    if (!approvedSchedule.isUnlimited && approvedSchedule.queueLimit) {
+      if (currentAppointmentCount >= approvedSchedule.queueLimit) {
+        return res.status(400).json({ msg: "Sorry, this session is full. Maximum patient count reached." });
+      }
+    }
+
+    return res.status(200).json({ msg: "Booking is available." });
+  } catch (error) {
+    console.error("Check booking error:", error);
+    return res.status(500).json({ msg: "Server error checking booking" });
+  }
+});
+
+// ==========================================
+// 2. BOOK APPOINTMENT (With Notifications & Split Payment Logic)
 // ==========================================
 router.post("/book", auth, async (req, res) => {
   try {
@@ -91,7 +151,7 @@ router.post("/book", auth, async (req, res) => {
       visitType,
       reason,
       amount: totalAmount,
-      status: 'scheduled',
+      status: paymentStatus === 'paid' ? 'confirmed' : 'pending',
       paymentStatus: paymentStatus || 'pending'
     });
 
