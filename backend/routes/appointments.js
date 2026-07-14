@@ -49,6 +49,18 @@ router.post("/book", auth, async (req, res) => {
       return res.status(400).json({ msg: "This doctor is not available on the selected date (No approved schedule)." });
     }
 
+    // --- 1A. CHECK DOUBLE BOOKING ---
+    const existingBooking = await Appointment.findOne({
+      patientId: req.user.id,
+      doctorId,
+      date: { $gte: startOfDay, $lte: endOfDay },
+      status: { $ne: "cancelled" }
+    });
+
+    if (existingBooking) {
+      return res.status(400).json({ msg: "You already have an appointment with this doctor on the selected date." });
+    }
+
     // --- 2. CHECK QUEUE LIMIT ---
     const currentAppointmentCount = await Appointment.countDocuments({
       doctorId,
