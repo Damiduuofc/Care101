@@ -281,6 +281,9 @@ export default function ProfileScreen() {
                         <InputLabel label="Mobile Number" />
                         <TextInput style={styles.input} value={formData.mobileNumber} onChangeText={t => setFormData({...formData, mobileNumber: t})} keyboardType="phone-pad"/>
 
+                        <InputLabel label="Email" />
+                        <TextInput style={styles.input} value={formData.email} onChangeText={t => setFormData({...formData, email: t})} keyboardType="email-address" autoCapitalize="none" />
+
                         <Text style={styles.sectionTitle}>Medical & Emergency</Text>
                         <InputLabel label="Emergency Contact" />
                         <TextInput style={styles.input} value={formData.emergencyContact} onChangeText={t => setFormData({...formData, emergencyContact: t})} placeholder="Name & Phone" />
