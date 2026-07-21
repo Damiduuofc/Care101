@@ -145,10 +145,23 @@ router.put("/status", protect, authorize(["system_admin"]), async (req, res) => 
 router.get("/appointments", protect, async (req, res) => {
   try {
     const appointments = await Appointment.find()
-      .populate("patientId", "fullName phone patientId")
+      .populate("patientId", "fullName phone mobileNumber patientId nicNumber email dateOfBirth")
       .populate("doctorId", "name department")
-      .sort({ date: -1, createdAt: -1 });
-    res.json(appointments);
+      .sort({ createdAt: -1, date: -1 });
+
+    // Sanitize any existing records where payment is pending but status was set to confirmed
+    const sanitizedAppointments = appointments.map((appt) => {
+      const apptObj = appt.toObject();
+      if (
+        apptObj.paymentStatus?.toLowerCase() !== "paid" &&
+        apptObj.status?.toLowerCase() === "confirmed"
+      ) {
+        apptObj.status = "pending";
+      }
+      return apptObj;
+    });
+
+    res.json(sanitizedAppointments);
   } catch (err) {
     res.status(500).send("Server Error");
   }
@@ -441,7 +454,12 @@ router.put("/appointments/:id", protect, async (req, res) => {
       return res.status(400).json({ msg: "Cannot edit a Cancelled appointment" });
     }
 
-    if (status) appointment.status = status;
+    if (status) {
+      if (status.toLowerCase() === "confirmed" && appointment.paymentStatus?.toLowerCase() !== "paid" && paymentStatus?.toLowerCase() !== "paid") {
+        return res.status(400).json({ msg: "Cannot set appointment status to Confirmed until payment is Paid." });
+      }
+      appointment.status = status;
+    }
 
     if (arrived !== undefined) {
       appointment.arrived = arrived;
