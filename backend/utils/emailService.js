@@ -232,6 +232,9 @@ export const sendBookingConfirmation = async (email, appointment, doctorRoom = "
   const from = process.env.HTTPSMS_FROM_NUMBER;
   const hasSmsConfig = apiKey && from && apiKey !== 'your_httpsms_api_key_here' && from !== 'your_httpsms_from_number_here';
 
+  const isPaid = (appointment?.paymentStatus || '').toLowerCase() === 'paid';
+  const amountFormatted = appointment?.amount ? Number(appointment.amount).toLocaleString() : '3,500';
+
   if (hasSmsConfig) {
     try {
       let phone = null;
@@ -253,10 +256,23 @@ export const sendBookingConfirmation = async (email, appointment, doctorRoom = "
         const refNo = appointment.queueNumber ? `${appointment.queueNumber} (ID: ${appointment._id})` : appointment._id;
         const deadline = `${timeStr}, ${dateStr}`;
 
-        const textBody = `Reservation Ref No.: ${refNo}
+        const textBody = isPaid
+          ? `Reservation Ref No.: ${refNo}
+Status: PAID & CONFIRMED
+
+Payment of LKR ${amountFormatted} received successfully.
+
+Dr. ${appointment.doctorName}
+No: ${doctorRoom || "TBA"}
+Hospital: Suwasevana Hospital - Kandy
+Date: ${dateStr}
+Time: ${timeStr}
+
+Kindly limit visitors to the hospital for your own safety. Patients are advised to bring only one person accompanying them for consultations.`
+          : `Reservation Ref No.: ${refNo}
 Deadline: ${deadline}
 
-Due Payment (LKR3500)
+Due Payment (LKR ${amountFormatted})
 
 This Reservation will be confirmed ONLY upon full payment prior to the deadline.
 
@@ -297,10 +313,23 @@ Kindly limit visitors to the hospital for your own safety. Patients are advised 
     const formattedDate = dateStr;
     const formattedTime = timeStr;
 
-    const textBody = `Reservation Ref No.: ${refNo}
+    const textBody = isPaid
+      ? `Reservation Ref No.: ${refNo}
+Status: PAID & CONFIRMED
+
+Payment of LKR ${amountFormatted} received successfully.
+
+Dr. ${appointment.doctorName}
+No: ${doctorRoom || "TBA"}
+Hospital: Suwasevana Hospital - Kandy
+Date: ${formattedDate}
+Time: ${formattedTime}
+
+Kindly limit visitors to the hospital for your own safety. Patients are advised to bring only one person accompanying them for consultations.`
+      : `Reservation Ref No.: ${refNo}
 Deadline: ${deadline}
 
-Due Payment (LKR3500)
+Due Payment (LKR ${amountFormatted})
 
 This Reservation will be confirmed ONLY upon full payment prior to the deadline.
 
@@ -312,48 +341,84 @@ Time: ${formattedTime}
 
 Kindly limit visitors to the hospital for your own safety. Patients are advised to bring only one person accompanying them for consultations.`;
 
-    const bodyHtml = `
-      <p style="margin:0 0 16px 0;">Your appointment reservation has been received. Please complete payment before the deadline below to confirm your booking.</p>
+    const bodyHtml = isPaid
+      ? `
+        <p style="margin:0 0 16px 0;">Your appointment reservation and payment have been successfully confirmed.</p>
 
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#fff7ed; border:1px solid #fed7aa; border-radius:8px; padding:14px 16px; margin-bottom:18px;">
-        <tr>
-          <td style="font-size:13px; color:#9a3412;">
-            <strong>⏰ Payment Deadline:</strong> ${deadline}<br/>
-            This reservation will be confirmed <strong>only</strong> upon full payment prior to the deadline.
-          </td>
-        </tr>
-      </table>
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#ecfdf5; border:1px solid #a7f3d0; border-radius:8px; padding:14px 16px; margin-bottom:18px;">
+          <tr>
+            <td style="font-size:14px; color:#065f46;">
+              <strong>✅ Status:</strong> PAID & CONFIRMED<br/>
+              <strong>Amount Paid:</strong> LKR ${amountFormatted}
+            </td>
+          </tr>
+        </table>
 
-      <h3 style="margin:0 0 8px 0; font-size:14px; color:${BRAND.text};">Reservation Details</h3>
-      ${detailCard(
-        infoRow('Reference No.', refNo) +
-        infoRow('Doctor', `Dr. ${appointment.doctorName}`) +
-        infoRow('Room No.', doctorRoom || 'TBA') +
-        infoRow('Hospital', 'Suwasevana Hospital - Kandy') +
-        infoRow('Date', formattedDate) +
-        infoRow('Time', formattedTime)
-      )}
+        <h3 style="margin:0 0 8px 0; font-size:14px; color:${BRAND.text};">Reservation Details</h3>
+        ${detailCard(
+          infoRow('Reference No.', refNo) +
+          infoRow('Doctor', `Dr. ${appointment.doctorName}`) +
+          infoRow('Room No.', doctorRoom || 'TBA') +
+          infoRow('Hospital', 'Suwasevana Hospital - Kandy') +
+          infoRow('Date', formattedDate) +
+          infoRow('Time', formattedTime)
+        )}
 
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:${BRAND.primary}; border-radius:8px; padding:14px 16px;">
-        <tr>
-          <td style="font-size:14px; color:#ffffff; font-weight:700;">
-            Due Payment: LKR 3,500
-          </td>
-        </tr>
-      </table>
-    `;
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#0d8a6e; border-radius:8px; padding:14px 16px;">
+          <tr>
+            <td style="font-size:14px; color:#ffffff; font-weight:700;">
+              Payment Status: PAID (LKR ${amountFormatted})
+            </td>
+          </tr>
+        </table>
+      `
+      : `
+        <p style="margin:0 0 16px 0;">Your appointment reservation has been received. Please complete payment before the deadline below to confirm your booking.</p>
+
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#fff7ed; border:1px solid #fed7aa; border-radius:8px; padding:14px 16px; margin-bottom:18px;">
+          <tr>
+            <td style="font-size:13px; color:#9a3412;">
+              <strong>⏰ Payment Deadline:</strong> ${deadline}<br/>
+              This reservation will be confirmed <strong>only</strong> upon full payment prior to the deadline.
+            </td>
+          </tr>
+        </table>
+
+        <h3 style="margin:0 0 8px 0; font-size:14px; color:${BRAND.text};">Reservation Details</h3>
+        ${detailCard(
+          infoRow('Reference No.', refNo) +
+          infoRow('Doctor', `Dr. ${appointment.doctorName}`) +
+          infoRow('Room No.', doctorRoom || 'TBA') +
+          infoRow('Hospital', 'Suwasevana Hospital - Kandy') +
+          infoRow('Date', formattedDate) +
+          infoRow('Time', formattedTime)
+        )}
+
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:${BRAND.primary}; border-radius:8px; padding:14px 16px;">
+          <tr>
+            <td style="font-size:14px; color:#ffffff; font-weight:700;">
+              Due Payment: LKR ${amountFormatted}
+            </td>
+          </tr>
+        </table>
+      `;
 
     const html = renderEmailShell({
-      preheader: `Your reservation ${refNo} is pending payment before ${deadline}.`,
-      heading: 'Reservation Received — Payment Pending',
-      subheading: 'Please review your appointment details below.',
-      bodyHtml
+      preheader: isPaid
+        ? `Your reservation ${refNo} is confirmed and fully paid.`
+        : `Your reservation ${refNo} is pending payment before ${deadline}.`,
+      heading: isPaid ? 'Booking & Payment Confirmed' : 'Reservation Received — Payment Pending',
+      subheading: isPaid ? 'Your appointment details and payment status below.' : 'Please review your appointment details below.',
+      bodyHtml,
+      accentColor: isPaid ? '#0d8a6e' : BRAND.primary
     });
 
     const mailOptions = {
       from: process.env.EMAIL_USER || '"Suwasevana Hospital" <no-reply@suwasevana.com>',
       to: email,
-      subject: 'Suwasevana Hospital - Kandy',
+      subject: isPaid
+        ? `Suwasevana Hospital - Booking & Payment Confirmation (Ref: ${appointment.queueNumber || appointment._id})`
+        : 'Suwasevana Hospital - Kandy',
       text: textBody,
       html
     };
@@ -383,6 +448,7 @@ Kindly limit visitors to the hospital for your own safety. Patients are advised 
     console.error("❌ Error sending booking confirmation email:", err);
   }
 };
+
 
 /**
  * Sends a payment receipt email to the patient with a PDF attachment.
