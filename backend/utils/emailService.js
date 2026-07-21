@@ -1,4 +1,60 @@
 import nodemailer from 'nodemailer';
+import HttpSms from 'httpsms';
+import Patient from '../models/Patient.js';
+import Doctor from '../models/Doctor.js';
+
+// Helper to format phone number to E.164
+const formatPhoneNumber = (phone) => {
+  if (!phone) return null;
+  let cleaned = phone.trim().replace(/[\s\-\(\)]/g, '');
+  if (cleaned.startsWith('0')) {
+    cleaned = '+94' + cleaned.slice(1);
+  }
+  if (!cleaned.startsWith('+')) {
+    cleaned = '+' + cleaned;
+  }
+  return cleaned;
+};
+
+// Helper to send SMS via httpSMS
+const sendSms = async (to, content) => {
+  const apiKey = process.env.HTTPSMS_API_KEY;
+  const from = process.env.HTTPSMS_FROM_NUMBER;
+
+  if (!apiKey || !from || apiKey === 'your_httpsms_api_key_here' || from === 'your_httpsms_from_number_here') {
+    console.log("⚠️ httpSMS configuration missing or placeholder detected, skipping SMS send.");
+    return false;
+  }
+
+  const formattedTo = formatPhoneNumber(to);
+  const formattedFrom = formatPhoneNumber(from);
+  if (!formattedTo) {
+    console.log("⚠️ Recipient phone number is invalid, skipping SMS send.");
+    return false;
+  }
+  if (!formattedFrom) {
+    console.log("⚠️ Sender phone number is invalid, skipping SMS send.");
+    return false;
+  }
+
+  try {
+    const client = new HttpSms(apiKey);
+    console.log(`✉️ Sending SMS to ${formattedTo}...`);
+    const message = await client.messages.postSend({
+      content,
+      from: formattedFrom,
+      to: formattedTo
+    });
+    console.log(`✅ SMS sent successfully: ${message.id}`);
+    return true;
+  } catch (err) {
+    const status = err.response?.status;
+    const message = err.response?.data?.message || err.message;
+    console.error(`❌ Error sending SMS via httpSMS (Status: ${status || 'Unknown'}):`, message);
+    return false;
+  }
+};
+
 
 // Helper to get transporter
 const getTransporter = async () => {
@@ -172,6 +228,53 @@ const detailCard = (rowsHtml) => `
  * @param {Buffer} pdfBuffer - Optional PDF receipt attachment
  */
 export const sendBookingConfirmation = async (email, appointment, doctorRoom = "TBA", pdfBuffer = null) => {
+  const apiKey = process.env.HTTPSMS_API_KEY;
+  const from = process.env.HTTPSMS_FROM_NUMBER;
+  const hasSmsConfig = apiKey && from && apiKey !== 'your_httpsms_api_key_here' && from !== 'your_httpsms_from_number_here';
+
+  if (hasSmsConfig) {
+    try {
+      let phone = null;
+      if (appointment && appointment.patientId) {
+        if (appointment.patientId.mobileNumber) {
+          phone = appointment.patientId.mobileNumber;
+        } else {
+          const patientObj = await Patient.findById(appointment.patientId);
+          if (patientObj) {
+            phone = patientObj.mobileNumber;
+          }
+        }
+      }
+
+      if (phone) {
+        const appDate = new Date(appointment.date);
+        const dateStr = appDate.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+        const timeStr = appDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+        const refNo = appointment.queueNumber ? `${appointment.queueNumber} (ID: ${appointment._id})` : appointment._id;
+        const deadline = `${timeStr}, ${dateStr}`;
+
+        const textBody = `Reservation Ref No.: ${refNo}
+Deadline: ${deadline}
+
+Due Payment (LKR3500)
+
+This Reservation will be confirmed ONLY upon full payment prior to the deadline.
+
+Dr. ${appointment.doctorName}
+No: ${doctorRoom || "TBA"}
+Hospital: Suwasevana Hospital - Kandy
+Date: ${dateStr}
+Time: ${timeStr}
+
+Kindly limit visitors to the hospital for your own safety. Patients are advised to bring only one person accompanying them for consultations.`;
+
+        await sendSms(phone, textBody);
+      }
+    } catch (smsErr) {
+      console.error("❌ SMS booking confirmation failed, falling back to email:", smsErr);
+    }
+  }
+
   if (!email) {
     console.log("⚠️ No email address provided, skipping booking confirmation email.");
     return;
@@ -288,6 +391,50 @@ Kindly limit visitors to the hospital for your own safety. Patients are advised 
  * @param {Buffer} pdfBuffer - PDF receipt buffer
  */
 export const sendPaymentReceipt = async (email, bill, pdfBuffer) => {
+  const apiKey = process.env.HTTPSMS_API_KEY;
+  const from = process.env.HTTPSMS_FROM_NUMBER;
+  const hasSmsConfig = apiKey && from && apiKey !== 'your_httpsms_api_key_here' && from !== 'your_httpsms_from_number_here';
+
+  const dateStr = new Date(bill.date || new Date()).toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric'
+  });
+
+  const textBody = `Dear Patient,
+
+Thank you for your payment. Please find attached your payment receipt for ${bill.title}.
+
+Hospital: Suwasevana Hospital - Kandy
+Receipt Ref No: ${bill._id}
+Amount: LKR ${bill.amount.toLocaleString()}
+Status: PAID
+Date: ${dateStr}
+
+Kindly limit visitors to the hospital for your own safety. Patients are advised to bring only one person accompanying them for consultations.`;
+
+  if (hasSmsConfig) {
+    try {
+      let phone = null;
+      if (bill && bill.patientId) {
+        if (bill.patientId.mobileNumber) {
+          phone = bill.patientId.mobileNumber;
+        } else {
+          const patientObj = await Patient.findById(bill.patientId);
+          if (patientObj) {
+            phone = patientObj.mobileNumber;
+          }
+        }
+      }
+
+      if (phone) {
+        await sendSms(phone, textBody);
+      }
+    } catch (smsErr) {
+      console.error("❌ SMS payment receipt failed:", smsErr);
+    }
+  }
+
   if (!email) {
     console.log("⚠️ No email address provided, skipping payment receipt email.");
     return;
@@ -300,24 +447,6 @@ export const sendPaymentReceipt = async (email, bill, pdfBuffer) => {
 
   try {
     const transporter = await getTransporter();
-
-    const dateStr = new Date(bill.date || new Date()).toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric'
-    });
-
-    const textBody = `Dear Patient,
-
-Thank you for your payment. Please find attached your payment receipt for ${bill.title}.
-
-Hospital: Suwasevana Hospital - Kandy
-Receipt Ref No: ${bill._id}
-Amount: LKR ${bill.amount.toLocaleString()}
-Status: PAID
-Date: ${dateStr}
-
-Kindly limit visitors to the hospital for your own safety. Patients are advised to bring only one person accompanying them for consultations.`;
 
     const bodyHtml = `
       <p style="margin:0 0 16px 0;">Dear Patient,</p>
@@ -378,15 +507,11 @@ Kindly limit visitors to the hospital for your own safety. Patients are advised 
  * @param {string} password - Doctor's temporary password
  */
 export const sendDoctorWelcomeEmail = async (email, doctorName, password, slmcReg) => {
-  if (!email) {
-    console.log("⚠️ No email address provided, skipping doctor welcome email.");
-    return;
-  }
+  const apiKey = process.env.HTTPSMS_API_KEY;
+  const from = process.env.HTTPSMS_FROM_NUMBER;
+  const hasSmsConfig = apiKey && from && apiKey !== 'your_httpsms_api_key_here' && from !== 'your_httpsms_from_number_here';
 
-  try {
-    const transporter = await getTransporter();
-
-    const textBody = `Dear Dr. ${doctorName},
+  const textBody = `Dear Dr. ${doctorName},
 
 Welcome to Suwasewana Kandy Hospital!
 
@@ -412,6 +537,25 @@ Suwasewana Kandy Hospital Administration Team
 
 Email: support@suwasewana.com
 Phone: +94 81 222 3223`;
+
+  if (hasSmsConfig) {
+    try {
+      const doctorObj = await Doctor.findOne({ email });
+      if (doctorObj && doctorObj.phone) {
+        await sendSms(doctorObj.phone, textBody);
+      }
+    } catch (smsErr) {
+      console.error("❌ SMS doctor welcome email failed, falling back to email:", smsErr);
+    }
+  }
+
+  if (!email) {
+    console.log("⚠️ No email address provided, skipping doctor welcome email.");
+    return;
+  }
+
+  try {
+    const transporter = await getTransporter();
 
     const bodyHtml = `
       <p style="margin:0 0 16px 0;">Dear Dr. ${doctorName},</p>
@@ -469,15 +613,11 @@ Phone: +94 81 222 3223`;
  * @param {string} doctorName - Doctor's full name
  */
 export const sendDoctorApprovalEmail = async (email, doctorName) => {
-  if (!email) {
-    console.log("⚠️ No email address provided, skipping doctor approval email.");
-    return;
-  }
+  const apiKey = process.env.HTTPSMS_API_KEY;
+  const from = process.env.HTTPSMS_FROM_NUMBER;
+  const hasSmsConfig = apiKey && from && apiKey !== 'your_httpsms_api_key_here' && from !== 'your_httpsms_from_number_here';
 
-  try {
-    const transporter = await getTransporter();
-
-    const textBody = `Dear Dr. ${doctorName},
+  const textBody = `Dear Dr. ${doctorName},
 
 Your doctor account on the Care101 Healthcare Management System has been approved and activated by the administrator.
 
@@ -493,6 +633,25 @@ Suwasewana Kandy Hospital Administration Team
 
 Email: support@suwasewana.com
 Phone: +94 81 222 3223`;
+
+  if (hasSmsConfig) {
+    try {
+      const doctorObj = await Doctor.findOne({ email });
+      if (doctorObj && doctorObj.phone) {
+        await sendSms(doctorObj.phone, textBody);
+      }
+    } catch (smsErr) {
+      console.error("❌ SMS doctor approval email failed, falling back to email:", smsErr);
+    }
+  }
+
+  if (!email) {
+    console.log("⚠️ No email address provided, skipping doctor approval email.");
+    return;
+  }
+
+  try {
+    const transporter = await getTransporter();
 
     const bodyHtml = `
       <p style="margin:0 0 16px 0;">Dear Dr. ${doctorName},</p>
@@ -532,5 +691,197 @@ Phone: +94 81 222 3223`;
     return info;
   } catch (err) {
     console.error("❌ Error sending doctor approval email:", err);
+  }
+};
+
+/**
+ * Sends a welcome notification to a newly registered patient.
+ * @param {object} patient - Patient document
+ */
+export const sendPatientWelcomeEmail = async (patient) => {
+  const apiKey = process.env.HTTPSMS_API_KEY;
+  const from = process.env.HTTPSMS_FROM_NUMBER;
+  const hasSmsConfig = apiKey && from && apiKey !== 'your_httpsms_api_key_here' && from !== 'your_httpsms_from_number_here';
+
+  const textBody = `Hello ${patient.fullName},
+
+Welcome to Care101! Your patient account has been successfully created.
+
+Your Patient ID is: ${patient.patientId}
+
+You should use this Patient ID (along with your password) to log in to the Care101 mobile application.
+
+Best regards,
+The Care101 Team`;
+
+  if (hasSmsConfig && patient.mobileNumber) {
+    try {
+      await sendSms(patient.mobileNumber, textBody);
+    } catch (smsErr) {
+      console.error("❌ SMS patient welcome failed, falling back to email:", smsErr);
+    }
+  }
+
+  if (!patient.email) {
+    console.log("⚠️ No email address provided, skipping welcome email.");
+    return;
+  }
+
+  try {
+    const transporter = await getTransporter();
+
+    const bodyHtml = `
+      <p style="margin:0 0 16px 0;">Hello ${patient.fullName},</p>
+      <p style="margin:0 0 16px 0;">Welcome to Care101! Your patient account has been successfully created.</p>
+      
+      <h3 style="margin:0 0 8px 0; font-size:14px; color:${BRAND.text};">Account Information</h3>
+      ${detailCard(
+        infoRow('Patient ID', patient.patientId) +
+        infoRow('Full Name', patient.fullName) +
+        infoRow('Email', patient.email || 'N/A')
+      )}
+      
+      <p style="margin:0 0 16px 0;">You should use this Patient ID (along with your password) to log in to the Care101 mobile application.</p>
+    `;
+
+    const html = renderEmailShell({
+      preheader: `Welcome to Care101 - Your Patient ID Details`,
+      heading: 'Welcome to Care101',
+      subheading: 'Your patient account is ready.',
+      bodyHtml
+    });
+
+    const mailOptions = {
+      from: process.env.EMAIL_USER || '"Care101" <no-reply@care101.com>',
+      to: patient.email,
+      subject: "Welcome to Care101 - Your Patient ID Details",
+      text: textBody,
+      html
+    };
+
+    const info = await transporter.sendMail(mailOptions);
+    console.log(`✅ Patient welcome email sent: ${info.messageId}`);
+    return info;
+  } catch (err) {
+    console.error("❌ Error sending welcome email:", err);
+  }
+};
+
+/**
+ * Sends a password reset OTP code.
+ * @param {object} user - Patient or Doctor document
+ * @param {string} otp - The 6-digit OTP code
+ */
+export const sendPasswordResetOtp = async (user, otp) => {
+  const apiKey = process.env.HTTPSMS_API_KEY;
+  const from = process.env.HTTPSMS_FROM_NUMBER;
+  const hasSmsConfig = apiKey && from && apiKey !== 'your_httpsms_api_key_here' && from !== 'your_httpsms_from_number_here';
+
+  const textBody = `Your password reset code is: ${otp}\n\nThis code will expire in 10 minutes.`;
+
+  // Patients have mobileNumber, Doctors have phone
+  const phone = user.mobileNumber || user.phone;
+
+  if (hasSmsConfig && phone) {
+    try {
+      await sendSms(phone, textBody);
+    } catch (smsErr) {
+      console.error("❌ SMS password reset OTP failed:", smsErr);
+    }
+  }
+
+  if (!user.email) {
+    console.log("⚠️ No email address provided, skipping OTP reset email.");
+    return;
+  }
+
+  try {
+    const transporter = await getTransporter();
+
+    const bodyHtml = `
+      <p style="margin:0 0 16px 0;">Dear User,</p>
+      <p style="margin:0 0 16px 0;">You requested a password reset. Please use the verification code below to reset your password:</p>
+      
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#fef08a; border:1px solid #fef08a; border-radius:8px; padding:14px 16px; margin-bottom:16px;">
+        <tr>
+          <td style="font-size:18px; font-weight:700; text-align:center; color:#854d0e; letter-spacing:2px;">
+            ${otp}
+          </td>
+        </tr>
+      </table>
+      
+      <p style="margin:0 0 16px 0;">This code will expire in 10 minutes. If you did not request this, please ignore this email.</p>
+    `;
+
+    const html = renderEmailShell({
+      preheader: `Your Password Reset Code`,
+      heading: 'Password Reset Request',
+      subheading: 'Verification code details.',
+      bodyHtml
+    });
+
+    const mailOptions = {
+      from: process.env.EMAIL_USER || '"Care101" <no-reply@care101.com>',
+      to: user.email,
+      subject: "Your Password Reset Code",
+      text: textBody,
+      html
+    };
+
+    const info = await transporter.sendMail(mailOptions);
+    console.log(`✅ Password reset OTP email sent: ${info.messageId}`);
+    return info;
+  } catch (err) {
+    console.error("❌ Error sending password reset OTP email:", err);
+  }
+};
+
+/**
+ * Sends a password reset link to an administrator.
+ * @param {object} admin - Admin document
+ * @param {string} resetUrl - Reset link URL
+ */
+export const sendAdminPasswordReset = async (admin, resetUrl) => {
+  const textBody = `You requested a password reset. Please go to this link to reset your password: \n\n ${resetUrl} \n\n This link expires in 15 minutes.`;
+
+  if (!admin.email) {
+    console.log("⚠️ No email address provided, skipping admin reset link email.");
+    return;
+  }
+
+  try {
+    const transporter = await getTransporter();
+
+    const bodyHtml = `
+      <p style="margin:0 0 16px 0;">Dear Administrator,</p>
+      <p style="margin:0 0 16px 0;">You requested a password reset. Please click the button below to reset your password:</p>
+      
+      <p style="margin:20px 0; text-align:center;">
+        <a href="${resetUrl}" style="background-color:${BRAND.primary}; color:#ffffff; padding:12px 24px; text-decoration:none; border-radius:6px; font-weight:bold; display:inline-block;">Reset Password</a>
+      </p>
+      
+      <p style="margin:0 0 16px 0;">This link will expire in 15 minutes. If you did not request this, please ignore this email.</p>
+    `;
+
+    const html = renderEmailShell({
+      preheader: `Admin Password Reset Request`,
+      heading: 'Admin Password Reset Request',
+      subheading: 'Reset your administrator password.',
+      bodyHtml
+    });
+
+    const mailOptions = {
+      from: process.env.EMAIL_USER || '"Care101 IT" <no-reply@care101.com>',
+      to: admin.email,
+      subject: "Admin Password Reset Request",
+      text: textBody,
+      html
+    };
+
+    const info = await transporter.sendMail(mailOptions);
+    console.log(`✅ Admin password reset email sent: ${info.messageId}`);
+    return info;
+  } catch (err) {
+    console.error("❌ Error sending admin password reset email:", err);
   }
 };
