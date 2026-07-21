@@ -12,9 +12,8 @@ import HospitalFinance from "../models/Finance.js";
 import Notification from "../models/Notification.js";
 import ScheduleRequest from "../models/ScheduleRequest.js";
 import { protect, authorize } from "../middleware/authRole.js";
-import { sendBookingConfirmation, sendDoctorWelcomeEmail, sendDoctorApprovalEmail } from "../utils/emailService.js";
+import { sendBookingConfirmation, sendDoctorWelcomeEmail, sendDoctorApprovalEmail, sendAdminPasswordReset } from "../utils/emailService.js";
 import crypto from "crypto"; 
-import nodemailer from "nodemailer"; 
 const router = express.Router();
 
 // ==========================================
@@ -989,24 +988,8 @@ router.post("/forgot-password", async (req, res) => {
     const frontendUrl = process.env.FRONTEND_URL || "http://localhost:3000";
     const resetUrl = `${frontendUrl}/admin/reset-password/${resetToken}`;
 
-    // 4. Send the Email using Nodemailer
-    const transporter = nodemailer.createTransport({
-      host: process.env.EMAIL_HOST,
-      port: process.env.EMAIL_PORT,
-      auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASS,
-      },
-    });
-
-    const message = {
-      from: '"Care101 IT" <noreply@care101.com>',
-      to: admin.email,
-      subject: "Admin Password Reset Request",
-      text: `You requested a password reset. Please go to this link to reset your password: \n\n ${resetUrl} \n\n This link expires in 15 minutes.`,
-    };
-
-    await transporter.sendMail(message);
+    // 4. Send the Email using our service
+    await sendAdminPasswordReset(admin, resetUrl);
     res.json({ msg: "If that email exists, a reset link has been sent." });
 
   } catch (err) {

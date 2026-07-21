@@ -3,7 +3,7 @@ import Patient from "../models/Patient.js";
 import jwt from "jsonwebtoken";
 import Notification from "../models/Notification.js";
 import bcrypt from "bcryptjs";
-import nodemailer from "nodemailer";
+import { sendPatientWelcomeEmail, sendPasswordResetOtp } from "../utils/emailService.js";
 
 // 1. REGISTER SINGLE DOCTOR
 export const registerDoctor = async (req, res) => {
@@ -82,27 +82,11 @@ export const registerPatient = async (req, res) => {
       { expiresIn: "30d" }
     );
 
-    // Send Welcome Email if patient has an email address
-    if (finalPatient.email) {
-      try {
-        const transporter = nodemailer.createTransport({
-          host: process.env.EMAIL_HOST,
-          port: process.env.EMAIL_PORT,
-          auth: {
-            user: process.env.EMAIL_USER,
-            pass: process.env.EMAIL_PASS,
-          },
-        });
-
-        await transporter.sendMail({
-          from: '"Care101" <noreply@care101.com>',
-          to: finalPatient.email,
-          subject: "Welcome to Care101 - Your Patient ID Details",
-          text: `Hello ${finalPatient.fullName},\n\nWelcome to Care101! Your patient account has been successfully created.\n\nYour Patient ID is: ${finalPatient.patientId}\n\nYou should use this Patient ID (along with your password) to log in to the Care101 mobile application.\n\nBest regards,\nThe Care101 Team`
-        });
-      } catch (emailErr) {
-        console.error("Welcome email failed to send:", emailErr);
-      }
+    // Send Welcome Notification
+    try {
+      await sendPatientWelcomeEmail(finalPatient);
+    } catch (emailErr) {
+      console.error("Welcome notification failed to send:", emailErr);
     }
 
     res.status(201).json({
@@ -376,22 +360,8 @@ export const forgotPassword = async (req, res) => {
     user.resetPasswordExpire = Date.now() + 10 * 60 * 1000;
     await user.save();
 
-    // 4. Send Email using Nodemailer
-    const transporter = nodemailer.createTransport({
-      host: process.env.EMAIL_HOST,
-      port: process.env.EMAIL_PORT,
-      auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASS,
-      },
-    });
-
-    await transporter.sendMail({
-      from: '"Care101" <noreply@care101.com>',
-      to: user.email,
-      subject: "Your Password Reset Code",
-      text: `Your password reset code is: ${otp}\n\nThis code will expire in 10 minutes.`,
-    });
+    // 4. Send Password Reset Code using our service
+    await sendPasswordResetOtp(user, otp);
 
     const maskedEmail = maskEmail(user.email);
 
