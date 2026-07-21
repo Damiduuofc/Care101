@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef } from "react";
 import {
-  Search, CheckCircle, Trash2, Clock, DollarSign, Calendar, AlertCircle, XCircle, Plus, X, User, Stethoscope, CreditCard, Loader2
+  Search, CheckCircle, Trash2, Clock, DollarSign, Calendar, AlertCircle, XCircle, Plus, X, User, Stethoscope, CreditCard, Loader2, Eye, ArrowUpDown, ArrowUp, ArrowDown, Phone
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -41,6 +41,14 @@ const [generatedPatientId, setGeneratedPatientId] = useState("Loading...");
   const [paymentAppointment, setPaymentAppointment] = useState<any>(null);
   const [isPaymentMethodModalOpen, setIsPaymentMethodModalOpen] = useState(false);
   const [isStripeModalOpen, setIsStripeModalOpen] = useState(false);
+
+  // Sorting State
+  const [sortField, setSortField] = useState<"patient" | "date" | "doctor" | "status">("date");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
+
+  // Details Preview Modal State
+  const [selectedAppointment, setSelectedAppointment] = useState<any | null>(null);
+  const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
 
   const handleSearchPatient = async () => {
     if (!formData.patientId) {
@@ -383,8 +391,36 @@ const fetchNextPatientId = async () => {
     }
   };
 
-// 2. Handle Status Update
+  // Helper to format clean, elegant Patient IDs
+  const getDisplayPatientId = (patientOrAppt: any) => {
+    if (!patientOrAppt) return "N/A";
+    const patientObj = patientOrAppt.patientId && typeof patientOrAppt.patientId === "object"
+      ? patientOrAppt.patientId
+      : patientOrAppt;
+
+    if (patientObj.patientId && typeof patientObj.patientId === "string") {
+      return patientObj.patientId;
+    }
+    if (typeof patientOrAppt.patientId === "string" && patientOrAppt.patientId.startsWith("SHP")) {
+      return patientOrAppt.patientId;
+    }
+    const rawId = patientObj._id || (typeof patientOrAppt.patientId === "string" ? patientOrAppt.patientId : null);
+    if (rawId && rawId.length > 8) {
+      return `PID-${rawId.substring(rawId.length - 6).toUpperCase()}`;
+    }
+    return rawId || "N/A";
+  };
+
+  // 2. Handle Status Update
   const updateStatus = async (id: string, field: string, value: any) => {
+    if (field === "status" && String(value).toLowerCase() === "confirmed") {
+      const targetAppt = appointments.find(a => a._id === id);
+      if (targetAppt && targetAppt.paymentStatus?.toLowerCase() !== "paid") {
+        alert("Cannot confirm appointment until payment is completed (PAID). Please collect payment first ($).");
+        return;
+      }
+    }
+
     try {
       const token = getAdminToken();
       const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/admin/appointments/${id}`, {
@@ -432,20 +468,61 @@ const fetchNextPatientId = async () => {
     }
   };
 
+  const handleSort = (field: "patient" | "date" | "doctor" | "status") => {
+    if (sortField === field) {
+      setSortOrder(prev => (prev === "asc" ? "desc" : "asc"));
+    } else {
+      setSortField(field);
+      setSortOrder(field === "date" ? "desc" : "asc");
+    }
+  };
+
+  const renderSortIcon = (field: "patient" | "date" | "doctor" | "status") => {
+    if (sortField !== field) {
+      return <ArrowUpDown className="w-3.5 h-3.5 inline ml-1 opacity-40 group-hover:opacity-100 transition-opacity" />;
+    }
+    return sortOrder === "asc" ? (
+      <ArrowUp className="w-3.5 h-3.5 inline ml-1 text-cyan-600 font-bold" />
+    ) : (
+      <ArrowDown className="w-3.5 h-3.5 inline ml-1 text-cyan-600 font-bold" />
+    );
+  };
+
   const filteredAppointments = appointments
-    .filter((appt) =>
-      appt.patientId?.fullName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      appt.doctorName?.toLowerCase().includes(searchTerm.toLowerCase())
-    )
+    .filter((appt) => {
+      const query = searchTerm.toLowerCase();
+      const patientName = appt.patientId?.fullName?.toLowerCase() || "";
+      const patientId = appt.patientId?.patientId?.toLowerCase() || appt.patientId?._id?.toLowerCase() || "";
+      const doctorName = appt.doctorName?.toLowerCase() || "";
+      return patientName.includes(query) || patientId.includes(query) || doctorName.includes(query);
+    })
     .sort((a, b) => {
-      const dateA = new Date(a.date).getTime();
-      const dateB = new Date(b.date).getTime();
-      if (dateA !== dateB) {
-        return dateB - dateA;
+      let comparison = 0;
+      if (sortField === "patient") {
+        const nameA = (a.patientId?.fullName || "").toLowerCase();
+        const nameB = (b.patientId?.fullName || "").toLowerCase();
+        comparison = nameA.localeCompare(nameB);
+      } else if (sortField === "doctor") {
+        const docA = (a.doctorName || "").toLowerCase();
+        const docB = (b.doctorName || "").toLowerCase();
+        comparison = docA.localeCompare(docB);
+      } else if (sortField === "status") {
+        const statA = (a.status || "").toLowerCase();
+        const statB = (b.status || "").toLowerCase();
+        comparison = statA.localeCompare(statB);
+      } else {
+        // Default / Date & Creation sort (latest booking on top when desc)
+        const dateA = new Date(a.date).getTime();
+        const dateB = new Date(b.date).getTime();
+        if (dateA !== dateB) {
+          comparison = dateA - dateB;
+        } else {
+          const createdA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+          const createdB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+          comparison = createdA - createdB;
+        }
       }
-      const createdA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-      const createdB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-      return createdB - createdA;
+      return sortOrder === "asc" ? comparison : -comparison;
     });
 
   // Derive unique departments from fetched doctors
@@ -498,55 +575,86 @@ const fetchNextPatientId = async () => {
                 <table className="w-full text-left border-collapse">
                   <thead>
                     <tr className="border-b border-slate-100 text-slate-600 text-sm bg-slate-50/50">
-                      <th className="p-4 font-semibold">Patient</th>
-                      <th className="p-4 font-semibold">Doctor</th>
-                      <th className="p-4 font-semibold">Date</th>
-                      <th className="p-4 font-semibold">Queue No.</th>
-                      <th className="p-4 font-semibold">Status</th>
+                      <th 
+                        className="p-4 font-semibold cursor-pointer select-none group hover:text-slate-900 transition-colors"
+                        onClick={() => handleSort("patient")}
+                      >
+                        Patient {renderSortIcon("patient")}
+                      </th>
+                      <th 
+                        className="p-4 font-semibold cursor-pointer select-none group hover:text-slate-900 transition-colors"
+                        onClick={() => handleSort("date")}
+                      >
+                        Date {renderSortIcon("date")}
+                      </th>
+                      <th 
+                        className="p-4 font-semibold cursor-pointer select-none group hover:text-slate-900 transition-colors"
+                        onClick={() => handleSort("doctor")}
+                      >
+                        Doctor {renderSortIcon("doctor")}
+                      </th>
+                      <th 
+                        className="p-4 font-semibold cursor-pointer select-none group hover:text-slate-900 transition-colors"
+                        onClick={() => handleSort("status")}
+                      >
+                        Status {renderSortIcon("status")}
+                      </th>
                       <th className="p-4 font-semibold">Payment</th>
-                      <th className="p-4 font-semibold">Arrival</th>
                       <th className="p-4 font-semibold text-right">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
                     {filteredAppointments.length === 0 ? (
-                      <tr><td colSpan={8} className="p-8 text-center text-slate-400">No appointments found.</td></tr>
+                      <tr><td colSpan={6} className="p-8 text-center text-slate-400">No appointments found.</td></tr>
                     ) : (
                       filteredAppointments.map((appt) => (
                         <tr key={appt._id} className="border-b border-slate-50 hover:bg-slate-50/80 transition-colors">
 
+                          {/* Patient Column (Name & ID) */}
                           <td className="p-4 align-top">
-                            <div className="font-medium text-slate-900">{appt.patientId?.fullName || "Unknown"}</div>
-                            <div className="text-xs text-slate-500">{appt.patientId?.phone}</div>
+                            <div className="font-semibold text-slate-900">{appt.patientId?.fullName || "Walk-in Patient"}</div>
+                            <div className="text-xs text-slate-500 font-medium flex items-center gap-1 mt-1">
+                              <span className="inline-flex items-center gap-1 bg-cyan-50/90 text-cyan-800 text-[11px] font-semibold px-2 py-0.5 rounded-md border border-cyan-200/60 font-mono shadow-2xs">
+                                <span className="text-cyan-500 font-bold">#</span>{getDisplayPatientId(appt)}
+                              </span>
+                            </div>
                           </td>
 
-                          <td className="p-4 align-top">
-                            <div className="font-medium text-slate-800">{appt.doctorName || "Unknown"}</div>
-                            <span className="text-[10px] bg-cyan-50 text-cyan-700 px-2 py-0.5 rounded-full">{appt.department || "N/A"}</span>
-                          </td>
-
+                          {/* Date Column (Date & Time) */}
                           <td className="p-4 align-top text-sm text-slate-600">
-                            <div>{new Date(appt.date).toLocaleDateString()}</div>
+                            <div className="font-medium text-slate-800">{new Date(appt.date).toLocaleDateString()}</div>
                             <div className="text-xs text-slate-400">{new Date(appt.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
                           </td>
 
+                          {/* Doctor Column (Name & Department) */}
                           <td className="p-4 align-top">
-                            <span className="font-bold text-lg text-slate-800 bg-slate-100 px-3 py-1 rounded-lg">
-                              #{appt.queueNumber || 0}
-                            </span>
+                            <div className="font-semibold text-slate-800">{appt.doctorName || "Unknown"}</div>
+                            <span className="text-[10px] bg-cyan-50 text-cyan-700 px-2 py-0.5 rounded-full font-medium inline-block mt-0.5">{appt.department || "N/A"}</span>
                           </td>
 
+                          {/* Status Column */}
                           <td className="p-4 align-top">
-                            <span className={`px-2.5 py-1 rounded-full text-xs font-semibold border ${
-                              appt.status.toLowerCase() === 'confirmed' ? 'bg-green-50 text-green-700 border-green-200' :
-                              appt.status.toLowerCase() === 'cancelled' ? 'bg-red-50 text-red-700 border-red-200' :
-                              appt.status.toLowerCase() === 'completed' ? 'bg-blue-50 text-blue-700 border-blue-200' :
-                              'bg-yellow-50 text-yellow-700 border-yellow-200'
-                            }`}>
-                              {appt.status}
-                            </span>
+                            {(() => {
+                              const isPaid = appt.paymentStatus?.toLowerCase() === 'paid';
+                              const rawStatus = (appt.status || 'pending').toLowerCase();
+                              const effectiveStatus = (!isPaid && rawStatus === 'confirmed') ? 'pending' : rawStatus;
+                              
+                              return (
+                                <span className={`px-2.5 py-1 rounded-full text-xs font-semibold border inline-block ${
+                                  effectiveStatus === 'confirmed' ? 'bg-green-50 text-green-700 border-green-200' :
+                                  effectiveStatus === 'cancelled' ? 'bg-red-50 text-red-700 border-red-200' :
+                                  effectiveStatus === 'completed' ? 'bg-blue-50 text-blue-700 border-blue-200' :
+                                  'bg-yellow-50 text-yellow-700 border-yellow-200'
+                                }`}>
+                                  {effectiveStatus === 'confirmed' ? 'Confirmed' :
+                                   effectiveStatus === 'cancelled' ? 'Cancelled' :
+                                   effectiveStatus === 'completed' ? 'Completed' : 'Pending'}
+                                </span>
+                              );
+                            })()}
                           </td>
 
+                          {/* Payment Column */}
                           <td className="p-4 align-top">
                             <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold uppercase border flex items-center w-fit gap-1 ${
                               appt.paymentStatus?.toLowerCase() === 'paid' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-red-50 text-red-600 border-red-200'
@@ -559,43 +667,50 @@ const fetchNextPatientId = async () => {
                             </span>
                           </td>
 
-                          <td className="p-4 align-top">
-                            <button
-                              onClick={() => updateStatus(appt._id, 'arrived', !appt.arrived)}
-                              className={`px-2.5 py-1 rounded-full text-xs font-semibold border transition-colors ${
-                                appt.arrived 
-                                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100' 
-                                  : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
-                              }`}
-                            >
-                              {appt.arrived ? "Arrived" : "Mark Arrived"}
-                            </button>
-                          </td>
-
+                          {/* Actions Column ($ , Eye , Delete) */}
                           <td className="p-4 align-top text-right">
                             <div className="flex items-center justify-end gap-1">
-                              {appt.status.toLowerCase() !== 'confirmed' && appt.status.toLowerCase() !== 'cancelled' && (
-                                <Button size="icon" variant="ghost" className="h-8 w-8 text-green-600 hover:bg-green-100"
-                                  onClick={() => updateStatus(appt._id, 'status', 'confirmed')}
-                                  title="Confirm"
-                                >
-                                  <CheckCircle className="h-4 w-4" />
-                                </Button>
-                              )}
-
-                              {appt.paymentStatus?.toLowerCase() !== 'paid' && appt.status.toLowerCase() !== 'cancelled' && (
-                                <Button size="icon" variant="ghost" className="h-8 w-8 text-emerald-600 hover:bg-emerald-100"
-                                  onClick={() => {
+                              {/* Collect / Update Payment Action ($) */}
+                              <Button 
+                                size="icon" 
+                                variant="ghost" 
+                                className={`h-8 w-8 transition-colors ${
+                                  appt.paymentStatus?.toLowerCase() === 'paid' 
+                                    ? 'text-slate-300 hover:text-slate-400 hover:bg-slate-100' 
+                                    : 'text-emerald-600 hover:bg-emerald-50 hover:text-emerald-700'
+                                }`}
+                                onClick={() => {
+                                  if (appt.paymentStatus?.toLowerCase() !== 'paid') {
                                     setPaymentAppointment(appt);
                                     setIsPaymentMethodModalOpen(true);
-                                  }}
-                                  title="Mark Paid"
-                                >
-                                  <DollarSign className="h-4 w-4" />
-                                </Button>
-                              )}
+                                  } else {
+                                    alert("This appointment is already marked as paid.");
+                                  }
+                                }}
+                                title={appt.paymentStatus?.toLowerCase() === 'paid' ? "Already Paid" : "Collect Payment ($)"}
+                              >
+                                <DollarSign className="h-4 w-4" />
+                              </Button>
 
-                              <Button size="icon" variant="ghost" className="h-8 w-8 text-slate-400 hover:bg-red-50 hover:text-red-600"
+                              {/* Eye Action - Details Preview Card */}
+                              <Button 
+                                size="icon" 
+                                variant="ghost" 
+                                className="h-8 w-8 text-cyan-600 hover:bg-cyan-50 hover:text-cyan-700"
+                                onClick={() => {
+                                  setSelectedAppointment(appt);
+                                  setIsDetailsModalOpen(true);
+                                }}
+                                title="View Details"
+                              >
+                                <Eye className="h-4 w-4" />
+                              </Button>
+
+                              {/* Delete Action */}
+                              <Button 
+                                size="icon" 
+                                variant="ghost" 
+                                className="h-8 w-8 text-slate-400 hover:bg-red-50 hover:text-red-600"
                                 onClick={() => deleteAppointment(appt._id)}
                                 title="Delete"
                               >
@@ -1037,8 +1152,10 @@ const fetchNextPatientId = async () => {
                             <div className="font-semibold text-slate-800 group-hover:text-cyan-700 transition-colors">
                               {patient.fullName}
                             </div>
-                            <div className="text-xs text-slate-500 flex gap-3 mt-1">
-                              <span>ID: {patient.patientId}</span>
+                            <div className="text-xs text-slate-500 flex gap-3 mt-1 items-center">
+                              <span className="font-mono bg-cyan-50 text-cyan-800 px-1.5 py-0.5 rounded font-semibold text-[11px] border border-cyan-100 flex items-center gap-0.5">
+                                <span className="text-cyan-500 font-bold">#</span>{getDisplayPatientId(patient)}
+                              </span>
                               {patient.nicNumber && <span>NIC: {patient.nicNumber}</span>}
                             </div>
                           </div>
@@ -1077,6 +1194,144 @@ const fetchNextPatientId = async () => {
             </div>
           </div>
         )}
+
+        {/* EYE DETAILS MODAL DIALOG */}
+        <Dialog open={isDetailsModalOpen} onOpenChange={setIsDetailsModalOpen}>
+          <DialogContent className="sm:max-w-[500px] rounded-3xl p-6 bg-white border border-slate-100 shadow-2xl">
+            <DialogTitle className="text-xl font-bold text-slate-900">
+              Appointment Details
+            </DialogTitle>
+            <DialogDescription className="text-sm text-slate-500">
+              Queue number, patient information, and arrival status.
+            </DialogDescription>
+
+            {selectedAppointment && (
+              <div className="space-y-5 mt-4">
+                {/* QUEUE & ARRIVAL STATUS BANNER */}
+                <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 flex items-center justify-between gap-4">
+                  <div>
+                    <span className="text-xs font-bold text-slate-400 uppercase tracking-widest block">Queue Number</span>
+                    <span className="text-3xl font-black text-slate-800">
+                      #{selectedAppointment.queueNumber || 0}
+                    </span>
+                  </div>
+
+                  <div>
+                    <button
+                      onClick={async () => {
+                        const newArrived = !selectedAppointment.arrived;
+                        await updateStatus(selectedAppointment._id, 'arrived', newArrived);
+                        setSelectedAppointment((prev: any) => (prev ? { ...prev, arrived: newArrived } : null));
+                      }}
+                      className={`px-4 py-2 rounded-xl text-sm font-bold border transition-all shadow-sm flex items-center gap-2 ${
+                        selectedAppointment.arrived
+                          ? 'bg-emerald-500 text-white border-emerald-600 hover:bg-emerald-600'
+                          : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
+                      }`}
+                    >
+                      <CheckCircle className={`w-4 h-4 ${selectedAppointment.arrived ? 'text-white' : 'text-slate-400'}`} />
+                      {selectedAppointment.arrived ? "Arrived" : "Mark Arrived"}
+                    </button>
+                  </div>
+                </div>
+
+                {/* PATIENT DETAILS CARD */}
+                <div className="p-4 rounded-2xl border border-slate-100 bg-white space-y-3 shadow-xs">
+                  <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                    <span className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                      <User className="w-3.5 h-3.5 text-[#06b6d4]" /> Patient Details
+                    </span>
+                    <span className="text-xs font-mono font-bold bg-cyan-50 text-cyan-800 px-2 py-0.5 rounded border border-cyan-200/60 flex items-center gap-1">
+                      <span className="text-cyan-500 font-bold">#</span>{getDisplayPatientId(selectedAppointment)}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3 text-sm">
+                    <div>
+                      <span className="text-xs text-slate-400 block font-medium">Full Name</span>
+                      <span className="font-semibold text-slate-800">{selectedAppointment.patientId?.fullName || selectedAppointment.patientName || "Unknown"}</span>
+                    </div>
+
+                    <div>
+                      <span className="text-xs text-slate-400 block font-medium">Phone Number</span>
+                      <span className="font-semibold text-slate-800 flex items-center gap-1">
+                        <Phone className="w-3 h-3 text-cyan-600" />
+                        {selectedAppointment.patientId?.mobileNumber || selectedAppointment.patientId?.phone || selectedAppointment.phone || "N/A"}
+                      </span>
+                    </div>
+
+                    {selectedAppointment.patientId?.nicNumber && (
+                      <div>
+                        <span className="text-xs text-slate-400 block font-medium">NIC Number</span>
+                        <span className="font-medium text-slate-700">{selectedAppointment.patientId.nicNumber}</span>
+                      </div>
+                    )}
+
+                    {selectedAppointment.patientId?.dateOfBirth && (
+                      <div>
+                        <span className="text-xs text-slate-400 block font-medium">Date of Birth</span>
+                        <span className="font-medium text-slate-700">
+                          {new Date(selectedAppointment.patientId.dateOfBirth).toLocaleDateString()}
+                        </span>
+                      </div>
+                    )}
+
+                    {selectedAppointment.patientId?.email && (
+                      <div className="col-span-2">
+                        <span className="text-xs text-slate-400 block font-medium">Email Address</span>
+                        <span className="font-medium text-slate-700">{selectedAppointment.patientId.email}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* APPOINTMENT SPECIFICS */}
+                <div className="p-4 rounded-2xl border border-slate-100 bg-slate-50/50 space-y-3">
+                  <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                    <span className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                      <Stethoscope className="w-3.5 h-3.5 text-[#06b6d4]" /> Doctor & Consultation
+                    </span>
+                    <span className="text-[11px] font-semibold bg-cyan-100/60 text-cyan-800 px-2 py-0.5 rounded-full">
+                      {selectedAppointment.department || "General"}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3 text-sm">
+                    <div>
+                      <span className="text-xs text-slate-400 block font-medium">Doctor Name</span>
+                      <span className="font-semibold text-slate-800">{selectedAppointment.doctorName || "N/A"}</span>
+                    </div>
+
+                    <div>
+                      <span className="text-xs text-slate-400 block font-medium">Visit Type</span>
+                      <span className="font-medium text-slate-700">{selectedAppointment.visitType || "Consultation"}</span>
+                    </div>
+
+                    <div className="col-span-2">
+                      <span className="text-xs text-slate-400 block font-medium">Date & Time</span>
+                      <span className="font-semibold text-slate-800">
+                        {new Date(selectedAppointment.date).toLocaleDateString()} at {new Date(selectedAppointment.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                    </div>
+
+                    {selectedAppointment.reason && (
+                      <div className="col-span-2">
+                        <span className="text-xs text-slate-400 block font-medium">Reason for Visit</span>
+                        <span className="font-medium text-slate-700 italic">"{selectedAppointment.reason}"</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex justify-end pt-2">
+                  <Button variant="outline" onClick={() => setIsDetailsModalOpen(false)} className="rounded-xl px-5">
+                    Close
+                  </Button>
+                </div>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
 
       </main>
     </div>
