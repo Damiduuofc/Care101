@@ -43,7 +43,7 @@ const [generatedPatientId, setGeneratedPatientId] = useState("Loading...");
   const [isStripeModalOpen, setIsStripeModalOpen] = useState(false);
 
   // Sorting State
-  const [sortField, setSortField] = useState<"patient" | "date" | "doctor" | "status">("date");
+  const [sortField, setSortField] = useState<"patient" | "date" | "doctor" | "arrived">("date");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
 
   // Details Preview Modal State
@@ -468,7 +468,7 @@ const fetchNextPatientId = async () => {
     }
   };
 
-  const handleSort = (field: "patient" | "date" | "doctor" | "status") => {
+  const handleSort = (field: "patient" | "date" | "doctor" | "arrived") => {
     if (sortField === field) {
       setSortOrder(prev => (prev === "asc" ? "desc" : "asc"));
     } else {
@@ -477,7 +477,7 @@ const fetchNextPatientId = async () => {
     }
   };
 
-  const renderSortIcon = (field: "patient" | "date" | "doctor" | "status") => {
+  const renderSortIcon = (field: "patient" | "date" | "doctor" | "arrived") => {
     if (sortField !== field) {
       return <ArrowUpDown className="w-3.5 h-3.5 inline ml-1 opacity-40 group-hover:opacity-100 transition-opacity" />;
     }
@@ -506,10 +506,10 @@ const fetchNextPatientId = async () => {
         const docA = (a.doctorName || "").toLowerCase();
         const docB = (b.doctorName || "").toLowerCase();
         comparison = docA.localeCompare(docB);
-      } else if (sortField === "status") {
-        const statA = (a.status || "").toLowerCase();
-        const statB = (b.status || "").toLowerCase();
-        comparison = statA.localeCompare(statB);
+      } else if (sortField === "arrived") {
+        const arrA = a.arrived ? 1 : 0;
+        const arrB = b.arrived ? 1 : 0;
+        comparison = arrA - arrB;
       } else {
         // Default / Date & Creation sort (latest booking on top when desc)
         const dateA = new Date(a.date).getTime();
@@ -593,13 +593,13 @@ const fetchNextPatientId = async () => {
                       >
                         Doctor {renderSortIcon("doctor")}
                       </th>
+                      <th className="p-4 font-semibold">Payment</th>
                       <th 
                         className="p-4 font-semibold cursor-pointer select-none group hover:text-slate-900 transition-colors"
-                        onClick={() => handleSort("status")}
+                        onClick={() => handleSort("arrived")}
                       >
-                        Status {renderSortIcon("status")}
+                        Arrival {renderSortIcon("arrived")}
                       </th>
-                      <th className="p-4 font-semibold">Payment</th>
                       <th className="p-4 font-semibold text-right">Actions</th>
                     </tr>
                   </thead>
@@ -632,28 +632,6 @@ const fetchNextPatientId = async () => {
                             <span className="text-[10px] bg-cyan-50 text-cyan-700 px-2 py-0.5 rounded-full font-medium inline-block mt-0.5">{appt.department || "N/A"}</span>
                           </td>
 
-                          {/* Status Column */}
-                          <td className="p-4 align-top">
-                            {(() => {
-                              const isPaid = appt.paymentStatus?.toLowerCase() === 'paid';
-                              const rawStatus = (appt.status || 'pending').toLowerCase();
-                              const effectiveStatus = (!isPaid && rawStatus === 'confirmed') ? 'pending' : rawStatus;
-                              
-                              return (
-                                <span className={`px-2.5 py-1 rounded-full text-xs font-semibold border inline-block ${
-                                  effectiveStatus === 'confirmed' ? 'bg-green-50 text-green-700 border-green-200' :
-                                  effectiveStatus === 'cancelled' ? 'bg-red-50 text-red-700 border-red-200' :
-                                  effectiveStatus === 'completed' ? 'bg-blue-50 text-blue-700 border-blue-200' :
-                                  'bg-yellow-50 text-yellow-700 border-yellow-200'
-                                }`}>
-                                  {effectiveStatus === 'confirmed' ? 'Confirmed' :
-                                   effectiveStatus === 'cancelled' ? 'Cancelled' :
-                                   effectiveStatus === 'completed' ? 'Completed' : 'Pending'}
-                                </span>
-                              );
-                            })()}
-                          </td>
-
                           {/* Payment Column */}
                           <td className="p-4 align-top">
                             <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold uppercase border flex items-center w-fit gap-1 ${
@@ -665,6 +643,24 @@ const fetchNextPatientId = async () => {
                                 "PENDING"
                               )}
                             </span>
+                          </td>
+
+                          {/* Arrival Column */}
+                          <td className="p-4 align-top">
+                            <button
+                              onClick={async () => {
+                                const newArrived = !appt.arrived;
+                                await updateStatus(appt._id, 'arrived', newArrived);
+                              }}
+                              className={`px-2.5 py-1 rounded-full text-xs font-semibold border flex items-center gap-1 transition-all ${
+                                appt.arrived
+                                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
+                                  : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                              }`}
+                            >
+                              <CheckCircle className={`w-3.5 h-3.5 ${appt.arrived ? 'text-emerald-500' : 'text-slate-400'}`} />
+                              {appt.arrived ? "Arrived" : "Mark Arrived"}
+                            </button>
                           </td>
 
                           {/* Actions Column ($ , Eye , Delete) */}
