@@ -7,26 +7,32 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { 
-    UserCheck, UserX, Loader2, Search, 
-    CheckCircle2, CircleOff, Users 
+    UserCheck, Loader2, Search, 
+    CircleOff, Users 
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { clearAdminSession, getAdminToken, getAdminUser } from "@/lib/adminSession";
 
-export default function DoctorArrivals() {
+export default function NurseDoctorArrivals() {
     const router = useRouter();
     const [doctors, setDoctors] = useState<any[]>([]);
+    const [user, setUser] = useState<any>(null);
     const [searchQuery, setSearchQuery] = useState("");
     const [loading, setLoading] = useState(true);
     const [updatingId, setUpdatingId] = useState<string | null>(null);
 
     useEffect(() => {
         const storedUser = getAdminUser();
-        if (!storedUser || storedUser.role !== "receptionist") {
+        if (!storedUser) {
             clearAdminSession();
+            router.push("/admin/login");
+            return;
+        }
+        if (storedUser.role !== "nurse") {
             router.push("/admin/dashboard");
             return;
         }
+        setUser(storedUser);
         fetchDoctors();
     }, [router]);
 
@@ -77,12 +83,15 @@ export default function DoctorArrivals() {
         }
     };
 
-    const filteredDoctors = doctors.filter(doc => 
-        doc.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        doc.specialization?.toLowerCase().includes(searchQuery.toLowerCase())
-    );
+    const filteredDoctors = doctors.filter(doc => {
+        const matchesNurse = doc.allocatedNurse === user?.name;
+        const matchesSearch = doc.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                              doc.specialization?.toLowerCase().includes(searchQuery.toLowerCase());
+        return matchesNurse && matchesSearch;
+    });
 
-    const arrivedCount = doctors.filter(d => d.isArrived).length;
+    const assignedDoctorsCount = doctors.filter(d => d.allocatedNurse === user?.name).length;
+    const arrivedCount = doctors.filter(d => d.allocatedNurse === user?.name && d.isArrived).length;
 
     return (
         <div className="flex bg-slate-50 min-h-screen">
@@ -91,8 +100,8 @@ export default function DoctorArrivals() {
                 {/* Header Section */}
                 <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-8">
                     <div>
-                        <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Doctor Arrivals</h1>
-                        <p className="text-slate-500 mt-1">Manage and confirm daily attendance for the medical team.</p>
+                        <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Doctor Arrivals (Nurse)</h1>
+                        <p className="text-slate-500 mt-1">Manage and confirm daily attendance for your assigned doctors.</p>
                     </div>
                     
                     <div className="flex gap-3">
@@ -100,7 +109,7 @@ export default function DoctorArrivals() {
                             <Users className="text-cyan-600 h-5 w-5" />
                             <div>
                                 <p className="text-[10px] uppercase font-bold text-slate-400 leading-none">Status</p>
-                                <p className="text-sm font-bold text-slate-700">{arrivedCount} / {doctors.length} Present</p>
+                                <p className="text-sm font-bold text-slate-700">{arrivedCount} / {assignedDoctorsCount} Present</p>
                             </div>
                         </Card>
                     </div>

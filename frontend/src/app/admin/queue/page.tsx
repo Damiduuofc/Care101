@@ -7,43 +7,63 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Badge } from "@/components/ui/badge"; // Ensure you have this UI component
 import { Loader2, Play, Square, Users, Plus, Minus, AlertCircle } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { clearAdminSession, getAdminToken, getAdminUser } from "@/lib/adminSession";
+import { io } from "socket.io-client";
 
 export default function NurseQueueDashboard() {
     const router = useRouter();
     const [user, setUser] = useState<any>(null);
     const [doctors, setDoctors] = useState<any[]>([]);
+    const [appointments, setAppointments] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState<{ [key: string]: boolean }>({});
 
     useEffect(() => {
-        const storedUser = localStorage.getItem("adminUser");
+        const storedUser = getAdminUser();
         if (storedUser) {
-            const parsed = JSON.parse(storedUser);
-            if (parsed.role !== "nurse") {
+            if (storedUser.role !== "nurse") {
                 router.push("/admin/dashboard");
                 return;
             }
-            setUser(parsed);
+            setUser(storedUser);
         } else {
+            clearAdminSession();
             router.push("/admin/login");
             return;
         }
     }, [router]);
 
-    const fetchDoctors = async () => {
+    const fetchData = async () => {
         try {
-            const token = localStorage.getItem("adminToken");
-            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/admin/doctors`, {
+            const token = getAdminToken();
+            
+            // 1. Fetch Doctors
+            const docRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/admin/doctors`, {
                 headers: {
                     "x-auth-token": token || "",
                     "ngrok-skip-browser-warning": "true"
                 }
             });
 
-            if (res.ok) {
-                const data = await res.json();
-                if (Array.isArray(data)) {
-                    setDoctors(data);
+            if (docRes.ok) {
+                const docData = await docRes.json();
+                if (Array.isArray(docData)) {
+                    setDoctors(docData);
+                }
+            }
+
+            // 2. Fetch Appointments
+            const apptRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/admin/appointments`, {
+                headers: {
+                    "x-auth-token": token || "",
+                    "ngrok-skip-browser-warning": "true"
+                }
+            });
+
+            if (apptRes.ok) {
+                const apptData = await apptRes.json();
+                if (Array.isArray(apptData)) {
+                    setAppointments(apptData);
                 }
             }
         } catch (err) {
@@ -55,14 +75,66 @@ export default function NurseQueueDashboard() {
 
     useEffect(() => {
         if (user) {
-            fetchDoctors();
+            fetchData();
         }
     }, [user]);
+
+    useEffect(() => {
+        const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5002";
+        let socketUrl = apiUrl;
+        try {
+            const urlObj = new URL(apiUrl);
+            socketUrl = urlObj.origin;
+        } catch (e) {
+            console.error("Invalid API URL for socket:", e);
+        }
+        
+        const socket = io(socketUrl);
+
+        socket.on("connect", () => {
+            console.log("🔌 Connected to Socket.IO Server");
+        });
+
+        socket.on("doctorStatusUpdated", (updatedDoc: any) => {
+            setDoctors(prev => prev.map(d => d._id === updatedDoc._id ? updatedDoc : d));
+        });
+
+        socket.on("disconnect", () => {
+            console.log("🔌 Disconnected from Socket.IO Server");
+        });
+
+        return () => {
+            socket.disconnect();
+        };
+    }, []);
+
+    const isToday = (dateStr: string) => {
+        if (!dateStr) return false;
+        const d = new Date(dateStr);
+        const today = new Date();
+        return d.getDate() === today.getDate() &&
+               d.getMonth() === today.getMonth() &&
+               d.getFullYear() === today.getFullYear();
+    };
+
+    const getMaxQueueNumber = (doctorDocId: string) => {
+        const doctorTodayAppts = appointments.filter(appt => {
+            const apptDocId = appt.doctorId?._id || appt.doctorId;
+            return apptDocId === doctorDocId && isToday(appt.date) && appt.status !== 'cancelled';
+        });
+
+        const maxQ = doctorTodayAppts.reduce((max, appt) => {
+            const qNum = appt.queueNumber || 0;
+            return qNum > max ? qNum : max;
+        }, doctorTodayAppts.length);
+
+        return maxQ;
+    };
 
     const handleUpdateDoctor = async (doc: any, updates: any) => {
         setSaving({ ...saving, [doc._id]: true });
         try {
-            const token = localStorage.getItem("adminToken");
+            const token = getAdminToken();
             const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/admin/doctors/${doc._id}/status`, {
                 method: "PUT",
                 headers: {
@@ -198,15 +270,21 @@ export default function NurseQueueDashboard() {
                                         </div>
 
                                         <Button
-                                            onClick={() => handleUpdateDoctor(doc, { currentQueueNumber: (doc.currentQueueNumber || 0) + 1 })}
+                                            onClick={() => {
+                                                const maxQ = getMaxQueueNumber(doc._id);
+                                                const nextQ = (doc.currentQueueNumber || 0) + 1;
+                                                if (nextQ <= maxQ) {
+                                                    handleUpdateDoctor(doc, { currentQueueNumber: nextQ });
+                                                }
+                                            }}
                                             className="h-14 w-14 rounded-full bg-slate-900 hover:bg-slate-800 text-white shadow-lg shadow-slate-200"
                                             size="icon"
-                                            disabled={!doc.sessionStarted || saving[doc._id]}
+                                            disabled={!doc.sessionStarted || saving[doc._id] || (doc.currentQueueNumber || 0) >= getMaxQueueNumber(doc._id)}
                                         >
                                             <Plus className="h-6 w-6" />
                                         </Button>
                                     </div>
-                                    <p className="text-xs font-semibold text-slate-400 mt-4">Update Number for Next Patient</p>
+                                    <p className="text-xs font-semibold text-slate-400 mt-4">Update Number for Next Patient (Max: {getMaxQueueNumber(doc._id)})</p>
                                 </div>
                             </CardContent>
                         </Card>

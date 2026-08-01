@@ -80,6 +80,18 @@ export const menuItems = [
     icon: Activity,
     roles: ["nurse"],
   },
+  {
+    title: "Patient Arrival",
+    href: "/admin/queue/patient-arrival",
+    icon: UserCheck,
+    roles: ["nurse"],
+  },
+  {
+    title: "Doctor Arrival",
+    href: "/admin/queue/doctor-arrival",
+    icon: Stethoscope,
+    roles: ["nurse"],
+  },
 
   // --- LAB ASSISTANT ---
   {

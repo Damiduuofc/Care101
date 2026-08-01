@@ -34,6 +34,7 @@ import {
 import PatientBottomNavBar from '../../components/PatientBottomNavBar';
 import { useAuth } from '@/context/auth';
 import AiAssistant from '@/components/ui/AiAssistant';
+import { io } from 'socket.io-client';
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL;
 
@@ -52,12 +53,70 @@ export default function PatientDashboardScreen() {
     const [notifications, setNotifications] = useState<any[]>([]); 
     const [unreadCount, setUnreadCount] = useState(0);
 
+    const upcomingAppointmentRef = React.useRef(upcomingAppointment);
+    useEffect(() => {
+        upcomingAppointmentRef.current = upcomingAppointment;
+    }, [upcomingAppointment]);
+
     // Session Check
     useEffect(() => {
         if (!authLoading && !user) {
             router.replace('/');
         }
     }, [user, authLoading]);
+
+    // --- SOCKET.IO FOR LIVE QUEUE ---
+    useEffect(() => {
+        if (!token) return;
+
+        let socketUrl = API_URL || "http://localhost:5002";
+        try {
+            const urlObj = new URL(socketUrl);
+            socketUrl = urlObj.origin;
+        } catch (e) {
+            console.error("Invalid API URL for socket:", e);
+        }
+
+        const socket = io(socketUrl);
+
+        socket.on("connect", () => {
+            console.log("🔌 Patient App Connected to Socket.IO Server");
+        });
+
+        socket.on("doctorStatusUpdated", (updatedDoc: any) => {
+            const currentAppt = upcomingAppointmentRef.current;
+            if (currentAppt) {
+                const apptDocId = currentAppt.doctorId?._id || currentAppt.doctorId;
+                if (apptDocId === updatedDoc._id) {
+                    setQueueData((prev: any) => {
+                        if (!prev) return null;
+                        const myToken = prev.queueNumber || 0;
+                        const currentToken = updatedDoc.currentQueueNumber || 0;
+                        const peopleAhead = Math.max(0, myToken - currentToken);
+                        const estimatedWait = peopleAhead * 15;
+                        return {
+                            ...prev,
+                            currentToken,
+                            peopleAhead,
+                            estimatedWait
+                        };
+                    });
+                }
+            }
+        });
+
+        socket.on("appointmentUpdated", () => {
+            fetchDashboardData();
+        });
+
+        socket.on("disconnect", () => {
+            console.log("🔌 Patient App Disconnected from Socket.IO Server");
+        });
+
+        return () => {
+            socket.disconnect();
+        };
+    }, [token]);
 
     // --- FETCH DASHBOARD DATA ---
     const fetchDashboardData = async () => {

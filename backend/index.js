@@ -3,6 +3,8 @@ import express from "express";
 import mongoose from "mongoose";
 import cors from "cors";
 import path from "path";
+import { createServer } from "http";
+import { Server } from "socket.io";
 
 // Routes
 import authRoutes from "./routes/auth.js";
@@ -24,6 +26,28 @@ import scheduleRequestRoutes from "./routes/scheduleRequests.js"; // <--- NEW: S
 import labRequestRoutes from "./routes/labRequests.js"; // <--- NEW: Lab Requests
 
 const app = express();
+const httpServer = createServer(app);
+const io = new Server(httpServer, {
+  cors: {
+    origin: "*",
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+  }
+});
+
+// Attach Socket.io instance to req
+app.use((req, res, next) => {
+  req.io = io;
+  next();
+});
+
+io.on("connection", (socket) => {
+  console.log(`🔌 Client connected: ${socket.id}`);
+  
+  socket.on("disconnect", () => {
+    console.log(`🔌 Client disconnected: ${socket.id}`);
+  });
+});
+
 const __dirname = path.resolve();
 
 /* =========================
@@ -85,7 +109,7 @@ const startServer = async () => {
     await mongoose.connect(process.env.MONGO_URI);
     console.log("✅ MongoDB Connected");
 
-    app.listen(PORT, "0.0.0.0", () => {
+    httpServer.listen(PORT, "0.0.0.0", () => {
       console.log(`🚀 Server running on port ${PORT}`);
     });
 

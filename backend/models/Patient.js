@@ -109,48 +109,4 @@ PatientSchema.pre("validate", async function() {
   }
 });
 
-export default mongoose.model("Patient", PatientSchema);  mobileNumber: { 
-    type: String, 
-    required: true 
-  },
-  dateOfBirth: { 
-    type: Date, // Better to store as Date object (frontend sends ISO string)
-    required: true 
-  },
-  gender: { 
-    type: String, 
-    enum: ["Male", "Female", "Other"],
-    required: true 
-  },
-  district: { 
-    type: String, 
-    required: true 
-  },
-
-  // --- OPTIONAL MEDICAL DATA ---
-  emergencyContact: { type: String, default: "" },
-  medicalConditions: { type: String, default: "" },
-  allergies: { type: String, default: "" },
-  insuranceProvider: { type: String, default: "" },
-  policyNumber: { type: String, default: "" },
-  profileImage: { type: String, default: "" },
-  
-  isRegistered: {
-    type: Boolean,
-    default: true
-  },
-
-  role: { 
-    type: String, 
-    default: "patient" 
-  },
-  
-  createdAt: { 
-    type: Date, 
-    default: Date.now 
-  },
-    resetPasswordOtp: { type: String },
-  resetPasswordExpire: { type: Date }
-});
-
 export default mongoose.model("Patient", PatientSchema);

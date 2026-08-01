@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   View,
   Text,
@@ -31,6 +31,7 @@ import {
 } from 'lucide-react-native';
 
 import BottomNavBar from '../../components/BottomNavBar';
+import { io } from 'socket.io-client';
 
 const API_URL = `${process.env.EXPO_PUBLIC_API_URL}/doctor`;
 const API_BASE = process.env.EXPO_PUBLIC_API_URL;
@@ -123,6 +124,49 @@ export default function DashboardScreen() {
       return () => clearInterval(intervalId);
     }, [])
   );
+
+  useEffect(() => {
+    let socket: any;
+
+    const setupSocket = async () => {
+      const token = await SecureStore.getItemAsync("token");
+      if (!token) return;
+
+      let socketUrl = API_BASE || "http://localhost:5002";
+      try {
+        const urlObj = new URL(socketUrl);
+        socketUrl = urlObj.origin;
+      } catch (e) {
+        console.error("Invalid API URL for socket:", e);
+      }
+
+      socket = io(socketUrl);
+
+      socket.on("connect", () => {
+        console.log("🔌 Doctor Dashboard Connected to Socket.IO Server");
+      });
+
+      socket.on("doctorStatusUpdated", () => {
+        fetchDashboard();
+      });
+
+      socket.on("appointmentUpdated", () => {
+        fetchDashboard();
+      });
+
+      socket.on("disconnect", () => {
+        console.log("🔌 Doctor Dashboard Disconnected from Socket.IO Server");
+      });
+    };
+
+    setupSocket();
+
+    return () => {
+      if (socket) {
+        socket.disconnect();
+      }
+    };
+  }, []);
 
   // --- ACTIONS ---
   const markAsRead = async (id: string) => {

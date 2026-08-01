@@ -133,6 +133,11 @@ router.put("/status", protect, authorize(["system_admin"]), async (req, res) => 
       status = new HospitalStatus({ generalWard, icuBeds, emergencyUnit, pharmacy });
       await status.save();
     }
+
+    if (req.io) {
+      req.io.emit("hospitalStatusUpdated", status);
+    }
+
     res.json({ msg: "Status Updated", status });
   } catch (err) {
     res.status(500).send("Server Error");
@@ -510,6 +515,11 @@ router.put("/appointments/:id", protect, async (req, res) => {
     }
 
     await appointment.save();
+
+    if (req.io) {
+      req.io.emit("appointmentUpdated", appointment);
+    }
+
     res.json(appointment);
   } catch (err) {
     res.status(500).send("Server Error");
@@ -963,6 +973,8 @@ router.put("/doctors/:id/status", protect, authorize(["system_admin", "reception
       } catch (err) { console.error("Notification trigger error:", err); }
     }
     
+    const prevQueueNumber = doctor.currentQueueNumber || 0;
+
     // Update Doctor Fields
     if (isArrived !== undefined) doctor.isArrived = isArrived;
     if (allocatedRoom !== undefined) doctor.allocatedRoom = allocatedRoom;
@@ -973,6 +985,54 @@ router.put("/doctors/:id/status", protect, authorize(["system_admin", "reception
     if (currentQueueNumber !== undefined) doctor.currentQueueNumber = currentQueueNumber;
 
     await doctor.save();
+
+    // Trigger queue notifications on queue number increment
+    if (currentQueueNumber !== undefined && currentQueueNumber > prevQueueNumber) {
+      try {
+        const startOfDay = new Date();
+        startOfDay.setHours(0, 0, 0, 0);
+        const endOfDay = new Date();
+        endOfDay.setHours(23, 59, 59, 999);
+
+        const appointments = await Appointment.find({
+          doctorId: doctor._id,
+          date: { $gte: startOfDay, $lte: endOfDay },
+          status: { $in: ["confirmed", "Confirmed", "pending", "Pending"] }
+        });
+
+        const notifyPromises = [];
+        for (const appt of appointments) {
+          const patientToken = appt.queueNumber || 0;
+          const diff = patientToken - currentQueueNumber;
+
+          if (diff === 3) {
+            notifyPromises.push(Notification.create({
+              userId: appt.patientId,
+              type: 'reminder',
+              title: "Queue Alert",
+              message: `Only 3 patients before you for Dr. ${doctor.name}. Please prepare.`,
+              metadata: { doctorId: doctor._id, appointmentId: appt._id, currentQueue: currentQueueNumber }
+            }));
+          } else if (diff === 1) {
+            notifyPromises.push(Notification.create({
+              userId: appt.patientId,
+              type: 'reminder',
+              title: "Queue Alert",
+              message: `Please proceed to the hospital/room for Dr. ${doctor.name}. You are the next patient.`,
+              metadata: { doctorId: doctor._id, appointmentId: appt._id, currentQueue: currentQueueNumber }
+            }));
+          }
+        }
+        await Promise.all(notifyPromises);
+      } catch (err) {
+        console.error("Queue notification trigger error:", err);
+      }
+    }
+
+    if (req.io) {
+      req.io.emit("doctorStatusUpdated", doctor);
+    }
+
     res.json(doctor);
   } catch (err) {
     console.error("Update Doctor Status Error:", err);

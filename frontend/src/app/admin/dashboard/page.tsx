@@ -9,6 +9,7 @@ import Sidebar from "@/components/admin/Sidebar";
 
 import { useRouter } from "next/navigation";
 import { clearAdminSession, getAdminToken, getAdminUser } from "@/lib/adminSession";
+import { io } from "socket.io-client";
 
 export default function Dashboard() {
   const router = useRouter();
@@ -28,6 +29,41 @@ export default function Dashboard() {
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
+  const fetchStats = async () => {
+    try {
+      const token = getAdminToken();
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/admin/stats`, {
+        headers: {
+          "x-auth-token": token || "",
+          "ngrok-skip-browser-warning": "true"
+        }
+      });
+
+      if (!res.ok) {
+        console.error(`Server Error: ${res.status}`);
+        return;
+      }
+
+      const contentType = res.headers.get("content-type");
+      if (!contentType || !contentType.includes("application/json")) {
+        const text = await res.text();
+        console.error("Expected JSON but got:", contentType, text);
+        return;
+      }
+
+      const data = await res.json();
+      setStats((prev: any) => ({
+        ...prev,
+        ...data,
+        status: data.status || prev.status
+      }));
+    } catch (err) {
+      console.error("Failed to load stats", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
     const parsed = getAdminUser();
     if (parsed) {
@@ -42,43 +78,40 @@ export default function Dashboard() {
       return;
     }
 
-    const fetchStats = async () => {
-      try {
-        const token = getAdminToken();
-        const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/admin/stats`, {
-          headers: {
-            "x-auth-token": token || "",
-            "ngrok-skip-browser-warning": "true" // Bypass ngrok warning page
-          }
-        });
-
-        if (!res.ok) {
-          console.error(`Server Error: ${res.status}`);
-          return;
-        }
-
-        // Check if response is JSON before parsing
-        const contentType = res.headers.get("content-type");
-        if (!contentType || !contentType.includes("application/json")) {
-          const text = await res.text();
-          console.error("Expected JSON but got:", contentType, text);
-          return;
-        }
-
-        const data = await res.json();
-        setStats((prev: any) => ({
-          ...prev,
-          ...data,
-          status: data.status || prev.status
-        }));
-      } catch (err) {
-        console.error("Failed to load stats", err);
-      } finally {
-        setLoading(false);
-      }
-    };
-
     fetchStats();
+  }, []);
+
+  useEffect(() => {
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5002";
+    let socketUrl = apiUrl;
+    try {
+      const urlObj = new URL(apiUrl);
+      socketUrl = urlObj.origin;
+    } catch (e) {
+      console.error("Invalid API URL for socket:", e);
+    }
+
+    const socket = io(socketUrl);
+
+    socket.on("connect", () => {
+      console.log("🔌 Admin Dashboard Connected to Socket.IO Server");
+    });
+
+    socket.on("doctorStatusUpdated", () => {
+      fetchStats();
+    });
+
+    socket.on("appointmentUpdated", () => {
+      fetchStats();
+    });
+
+    socket.on("hospitalStatusUpdated", () => {
+      fetchStats();
+    });
+
+    return () => {
+      socket.disconnect();
+    };
   }, []);
 
   if (loading) return <div className="p-8 text-center text-slate-500">Loading Dashboard...</div>;

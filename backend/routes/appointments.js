@@ -278,6 +278,10 @@ router.post("/book", auth, async (req, res) => {
       console.error("Failed to send booking confirmation email:", emailErr);
     }
 
+    if (req.io) {
+      req.io.emit("appointmentUpdated", savedAppointment);
+    }
+
     res.json(savedAppointment);
 
   } catch (err) {
