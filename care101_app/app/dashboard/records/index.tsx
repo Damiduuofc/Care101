@@ -50,7 +50,8 @@ export default function RecordsScreen() {
 
   const filteredRecords = records.filter((r: any) =>
     r.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    (r.nic && r.nic.includes(searchQuery))
+    (r.nic && r.nic.includes(searchQuery)) ||
+    (r.patientId && r.patientId.toLowerCase().includes(searchQuery.toLowerCase()))
   );
 
   const renderRecordItem = ({ item }: any) => (
@@ -64,6 +65,7 @@ export default function RecordsScreen() {
       </View>
 
       <View style={styles.cardContent}>
+        <Text style={styles.detailText}>Patient ID: {item.patientId || 'N/A'}</Text>
         <Text style={styles.detailText}>NIC: {item.nic || 'N/A'}</Text>
         <Text style={styles.detailText}>Hospital: {item.hospital || 'N/A'}</Text>
         <Text style={styles.dateText}>Created: {new Date(item.createdAt).toLocaleDateString()}</Text>

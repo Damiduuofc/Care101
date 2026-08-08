@@ -30,6 +30,7 @@ const DoctorSchema = new mongoose.Schema({
   // --- Nurse Dashboard Current Session Info ---
   sessionStarted: { type: Boolean, default: false },
   currentQueueNumber: { type: Number, default: 0 },
+  averageConsultationDuration: { type: Number, default: 10 },
 
   createdAt: { type: Date, default: Date.now },
   resetPasswordOtp: { type: String },

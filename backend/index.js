@@ -24,6 +24,7 @@ import instructionRoutes from "./routes/instructionRoutes.js";
 import patientsRoutes from "./routes/patients.js"; // <--- NEW: Patients management
 import scheduleRequestRoutes from "./routes/scheduleRequests.js"; // <--- NEW: Schedule Requests
 import labRequestRoutes from "./routes/labRequests.js"; // <--- NEW: Lab Requests
+import queueRoutes from "./routes/queue.js";
 
 const app = express();
 const httpServer = createServer(app);
@@ -43,6 +44,11 @@ app.use((req, res, next) => {
 io.on("connection", (socket) => {
   console.log(`🔌 Client connected: ${socket.id}`);
   
+  socket.on("joinDoctorRoom", (doctorId) => {
+    socket.join(`doctor:${doctorId}`);
+    console.log(`📡 Client joined room: doctor:${doctorId}`);
+  });
+
   socket.on("disconnect", () => {
     console.log(`🔌 Client disconnected: ${socket.id}`);
   });
@@ -97,6 +103,7 @@ app.use("/api/payments", paymentRoutes);
 app.use("/api/patients", patientsRoutes); // <--- NEW: Patients management
 app.use("/api/schedule-requests", scheduleRequestRoutes); // <--- NEW: Schedule requests
 app.use("/api/lab-requests", labRequestRoutes); // <--- NEW: Lab Requests
+app.use("/api/queue", queueRoutes);
 /* =========================
    SERVER START
 ========================= */

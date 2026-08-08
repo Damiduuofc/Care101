@@ -176,7 +176,8 @@ export const login = async (req, res) => {
         role: role,
         specialization: user.specialization || null,
         nicNumber: user.nicNumber || user.nic || null,  // Include NIC for patients/doctors
-        patientId: user.patientId || null
+        patientId: user.patientId || null,
+        hospital: user.hospital || null
       }
     });
 

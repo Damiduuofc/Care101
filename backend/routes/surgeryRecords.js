@@ -1,5 +1,6 @@
 import express from "express";
 import SurgeryRecord from "../models/SurgeryRecord.js";
+import Patient from "../models/Patient.js";
 import { auth } from "../middleware/auth.js";
 
 const router = express.Router();
@@ -18,16 +19,23 @@ router.get("/", auth, async (req, res) => {
 // 2. CREATE NEW RECORD
 router.post("/create", auth, async (req, res) => {
   try {
-    const { name, nic, hospital, surgeryCardImage } = req.body;
+    const { name, nic, patientId, hospital, surgeryCardImage } = req.body;
 
-    if (!name || !surgeryCardImage) {
-      return res.status(400).json({ msg: "Name and Surgery Card Image are required" });
+    if (!name || !patientId || !surgeryCardImage) {
+      return res.status(400).json({ msg: "Name, Patient ID, and Surgery Card Image are required" });
+    }
+
+    // Verify patient exists
+    const patient = await Patient.findOne({ patientId: patientId.trim().toUpperCase() });
+    if (!patient) {
+      return res.status(400).json({ msg: "Invalid Patient ID. Patient does not exist." });
     }
 
     const newRecord = new SurgeryRecord({
       doctorId: req.user.id,
       name,
-      nic,
+      nic: nic || patient.nicNumber || "",
+      patientId: patientId.trim().toUpperCase(),
       hospital,
       surgeryCardImage
     });
@@ -97,29 +105,34 @@ router.post("/:id/entry", auth, async (req, res) => {
   }
 });
 
-// 6. GET PATIENT'S OWN RECORDS BY NIC (For Patient App - Read Only)
+// 6. GET PATIENT'S OWN RECORDS BY PATIENT ID OR NIC (For Patient App - Read Only)
 router.get("/patient/my-records", auth, async (req, res) => {
   try {
-    const { nic } = req.query;
+    const { nic, patientId } = req.query;
 
-    if (!nic) {
-      return res.status(400).json({ msg: "NIC is required" });
+    let query = {};
+    if (patientId) {
+      query.patientId = patientId.trim().toUpperCase();
+    } else if (nic) {
+      query.nic = { $regex: new RegExp(`^${nic.trim()}$`, 'i') };
+    } else {
+      return res.status(400).json({ msg: "Patient ID or NIC is required" });
     }
 
-    // Find all surgery records matching the NIC (case-insensitive)
-    const records = await SurgeryRecord.find({
-      nic: { $regex: new RegExp(`^${nic.trim()}$`, 'i') }
-    })
-      .populate('doctorId', 'name email specialization')  // Populate doctor info
-      .select("name hospital surgeryCardImage entries createdAt doctorId")
+    // Find all surgery records matching query
+    const records = await SurgeryRecord.find(query)
+      .populate('doctorId', 'name email specialization profileImage')  // Populate doctor info including profileImage
+      .select("name hospital surgeryCardImage entries createdAt doctorId patientId nic")
       .sort({ createdAt: -1 })
       .lean();
 
-    // Transform to include doctor name
+    // Transform to include doctor name, specialization, profile image
     const recordsWithDoctor = records.map(record => ({
       ...record,
       doctorName: record.doctorId?.name || 'Unknown Doctor',
-      doctorSpecialization: record.doctorId?.specialization || null
+      doctorSpecialization: record.doctorId?.specialization || 'General Practitioner',
+      doctorProfileImage: record.doctorId?.profileImage || '',
+      doctorEmail: record.doctorId?.email || ''
     }));
 
     res.json(recordsWithDoctor);

@@ -81,8 +81,16 @@ export default function PatientDashboardScreen() {
 
         socket.on("connect", () => {
             console.log("🔌 Patient App Connected to Socket.IO Server");
+            const currentAppt = upcomingAppointmentRef.current;
+            if (currentAppt) {
+                const apptDocId = currentAppt.doctorId?._id || currentAppt.doctorId;
+                if (apptDocId) {
+                    socket.emit("joinDoctorRoom", apptDocId);
+                }
+            }
         });
 
+        // 1. Listen for dynamic doctor updates
         socket.on("doctorStatusUpdated", (updatedDoc: any) => {
             const currentAppt = upcomingAppointmentRef.current;
             if (currentAppt) {
@@ -93,12 +101,35 @@ export default function PatientDashboardScreen() {
                         const myToken = prev.queueNumber || 0;
                         const currentToken = updatedDoc.currentQueueNumber || 0;
                         const peopleAhead = Math.max(0, myToken - currentToken);
-                        const estimatedWait = peopleAhead * 15;
+                        const estimatedWait = peopleAhead * (prev.averageDuration || 10);
                         return {
                             ...prev,
                             currentToken,
+                            currentServingNumber: currentToken,
                             peopleAhead,
-                            estimatedWait
+                            estimatedWaitingMinutes: estimatedWait
+                        };
+                    });
+                }
+            }
+        });
+
+        // 2. Listen for calculated prediction live broadcasts
+        socket.on("queueUpdated", (payload: any) => {
+            const currentAppt = upcomingAppointmentRef.current;
+            if (currentAppt) {
+                const apptDocId = currentAppt.doctorId?._id || currentAppt.doctorId;
+                if (apptDocId === payload.doctorId && payload.patientQueueNumber === currentAppt.queueNumber) {
+                    setQueueData((prev: any) => {
+                        if (!prev) return null;
+                        return {
+                            ...prev,
+                            currentToken: payload.currentToken,
+                            currentServingNumber: payload.currentServingNumber,
+                            estimatedWaitingMinutes: payload.estimatedWaitingMinutes,
+                            estimatedArrivalTime: payload.estimatedArrivalTime,
+                            lastUpdated: payload.lastUpdated,
+                            peopleAhead: Math.max(0, prev.queueNumber - payload.currentToken)
                         };
                     });
                 }
@@ -236,9 +267,12 @@ export default function PatientDashboardScreen() {
     };
 
     // --- FETCH LIVE QUEUE DATA ---
-    const fetchQueueStatus = async (appointmentId: string) => {
+    const fetchQueueStatus = async () => {
         try {
-            const response = await fetch(`${API_URL}/appointments/queue-status/${appointmentId}`, {
+            const patientId = user?._id || user?.id;
+            if (!patientId) return;
+
+            const response = await fetch(`${API_URL}/queue/patient/${patientId}`, {
                 method: 'GET',
                 headers: { 'Authorization': `Bearer ${token}` }
             });
@@ -342,7 +376,7 @@ export default function PatientDashboardScreen() {
                     {upcomingAppointment ? (
                         <TouchableOpacity
                             style={styles.appointmentCard}
-                            onPress={() => fetchQueueStatus(upcomingAppointment._id || upcomingAppointment.id)}
+                            onPress={() => fetchQueueStatus()}
                             activeOpacity={0.9}
                         >
                             <View style={styles.appointLeft}>
@@ -404,11 +438,29 @@ export default function PatientDashboardScreen() {
                         </View>
                         {queueData ? (
                             <View style={styles.queueContainer}>
-                                <View style={styles.tokenBox}><Text style={styles.tokenLabel}>Your Token</Text><Text style={styles.tokenNumber}>{queueData.queueNumber || "--"}</Text></View>
-                                <View style={[styles.tokenBox, styles.activeTokenBox]}>
-                                    <Text style={styles.activeTokenLabel}>Ongoing</Text><Text style={styles.activeTokenNumber}>{queueData.currentToken || "--"}</Text>
-                                    <View style={styles.liveIndicator}><View style={styles.liveDot} /><Text style={styles.liveText}>Live</Text></View>
+                                <View style={styles.tokenRow}>
+                                    <View style={styles.tokenBox}><Text style={styles.tokenLabel}>Your Token</Text><Text style={styles.tokenNumber}>{queueData.queueNumber || "--"}</Text></View>
+                                    <View style={[styles.tokenBox, styles.activeTokenBox]}>
+                                        <Text style={styles.activeTokenLabel}>Ongoing</Text><Text style={styles.activeTokenNumber}>{queueData.currentToken || "--"}</Text>
+                                        <View style={styles.liveIndicator}><View style={styles.liveDot} /><Text style={styles.liveText}>Live</Text></View>
+                                    </View>
                                 </View>
+
+                                <View style={styles.predictionsBlock}>
+                                    <View style={styles.predictionItem}>
+                                        <Text style={styles.predictionLabel}>Est. Waiting Time</Text>
+                                        <Text style={styles.predictionValue}>
+                                            {queueData.estimatedWaitingMinutes !== undefined ? `${queueData.estimatedWaitingMinutes} mins` : "--"}
+                                        </Text>
+                                    </View>
+                                    <View style={styles.predictionItem}>
+                                        <Text style={styles.predictionLabel}>Recommended Arrival</Text>
+                                        <Text style={styles.predictionValue}>
+                                            {queueData.estimatedArrivalTime || "TBA"}
+                                        </Text>
+                                    </View>
+                                </View>
+
                             </View>
                         ) : <ActivityIndicator color="#06b6d4" />}
                         <TouchableOpacity style={styles.closeButton} onPress={() => setQueueVisible(false)}><Text style={styles.closeButtonText}>Close</Text></TouchableOpacity>
@@ -543,7 +595,8 @@ const styles = StyleSheet.create({
     modalContent: { backgroundColor: '#fff', width: '90%', borderRadius: 20, padding: 20 },
     modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
     modalTitle: { fontSize: 20, fontWeight: '800' },
-    queueContainer: { flexDirection: 'row', gap: 15 },
+    queueContainer: { flexDirection: 'column', gap: 15 },
+    tokenRow: { flexDirection: 'row', gap: 15 },
     tokenBox: { flex: 1, backgroundColor: '#f1f5f9', borderRadius: 16, padding: 15, alignItems: 'center' },
     activeTokenBox: { backgroundColor: '#ecfeff', borderColor: '#06b6d4', borderWidth: 2 },
     tokenLabel: { fontSize: 12, color: '#64748b' },
@@ -551,6 +604,11 @@ const styles = StyleSheet.create({
     activeTokenLabel: { fontSize: 12, color: '#0891b2' },
     activeTokenNumber: { fontSize: 36, fontWeight: '800', color: '#06b6d4' },
     liveIndicator: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#06b6d4', paddingHorizontal: 8, borderRadius: 10 },
+    predictionsBlock: { backgroundColor: '#f8fafc', borderRadius: 16, padding: 15, borderWidth: 1, borderColor: '#e2e8f0' },
+    predictionItem: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#f1f5f9' },
+    predictionLabel: { fontSize: 13, fontWeight: '600', color: '#64748b' },
+    predictionValue: { fontSize: 14, fontWeight: '700', color: '#0f172a' },
+    confidenceText: { fontSize: 10, color: '#94a3b8', fontStyle: 'italic', textAlign: 'center', marginTop: 4 },
     liveDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#fff', marginRight: 4 },
     liveText: { color: '#fff', fontSize: 10, fontWeight: '700' },
     closeButton: { marginTop: 15, backgroundColor: '#0f172a', paddingVertical: 14, borderRadius: 12, alignItems: 'center' },

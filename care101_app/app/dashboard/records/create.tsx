@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, StatusBar,
   KeyboardAvoidingView, Platform, Image, Alert, ActivityIndicator
@@ -8,15 +8,90 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { ArrowLeft, Camera } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as SecureStore from 'expo-secure-store';
+import { useAuth } from '@/context/auth';
 
 const API_URL = `${process.env.EXPO_PUBLIC_API_URL}/surgery-records/create`;
 export default function CreateRecordScreen() {
   const router = useRouter();
+  const { user } = useAuth();
   const [name, setName] = useState('');
+  const [patientId, setPatientId] = useState('');
   const [nic, setNic] = useState('');
   const [hospital, setHospital] = useState('');
   const [image, setImage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [verifying, setVerifying] = useState(false);
+  const [isVerified, setIsVerified] = useState(false);
+
+  useEffect(() => {
+    if (user?.hospital) {
+      setHospital(user.hospital);
+    } else {
+      fetchDoctorProfile();
+    }
+  }, [user]);
+
+  const fetchDoctorProfile = async () => {
+    try {
+      const token = await SecureStore.getItemAsync('token');
+      const baseApi = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.1.100:5000/api';
+      const res = await fetch(`${baseApi}/doctor/profile`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.hospital) {
+          setHospital(data.hospital);
+        } else {
+          setHospital("SUWASEWANA HOSPITAL");
+        }
+      } else {
+        setHospital("SUWASEWANA HOSPITAL");
+      }
+    } catch (err) {
+      console.error("Fetch doctor profile hospital error:", err);
+      setHospital("SUWASEWANA HOSPITAL");
+    }
+  };
+
+  const checkPatientId = async (idToVerify: string) => {
+    if (!idToVerify || idToVerify.trim().length < 3) return;
+    
+    setVerifying(true);
+    try {
+      const token = await SecureStore.getItemAsync('token');
+      const baseApi = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.1.100:5000/api';
+      const url = `${baseApi}/patients/search-by-patientid/${idToVerify.trim().toUpperCase()}`;
+      
+      console.log('Verifying patient ID at URL:', url);
+      const res = await fetch(url, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+          'ngrok-skip-browser-warning': 'true'
+        }
+      });
+      const data = await res.json();
+      if (res.ok && data.found) {
+        setName(data.patient.fullName);
+        if (data.patient.nicNumber) {
+          setNic(data.patient.nicNumber);
+        }
+        setIsVerified(true);
+      } else {
+        setIsVerified(false);
+        setName('');
+        setNic('');
+        Alert.alert("Wrong ID", "Wrong Patient ID. Patient does not exist.");
+      }
+    } catch (error) {
+      console.error("Verify Patient ID Error:", error);
+      setIsVerified(false);
+      Alert.alert("Error", "Failed to verify Patient ID. Check server connection.");
+    } finally {
+      setVerifying(false);
+    }
+  };
 
   const pickImage = async () => {
     try {
@@ -37,6 +112,10 @@ export default function CreateRecordScreen() {
   };
 
   const handleCreate = async () => {
+    if (!patientId.trim()) {
+      Alert.alert("Required", "Please enter the Patient ID.");
+      return;
+    }
     if (!name.trim() || !image) {
       Alert.alert("Required", "Please provide a Patient Name and a Surgery Card Image.");
       return;
@@ -52,7 +131,7 @@ export default function CreateRecordScreen() {
           Authorization: `Bearer ${token}`
         },
         body: JSON.stringify({
-          name, nic, hospital, surgeryCardImage: image
+          name, patientId: patientId.trim(), nic, hospital, surgeryCardImage: image
         })
       });
 
@@ -84,6 +163,39 @@ export default function CreateRecordScreen() {
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
         <ScrollView contentContainerStyle={styles.content}>
           <View style={styles.section}>
+            <Text style={styles.label}>Patient ID *</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16 }}>
+              <TextInput 
+                style={[styles.input, { flex: 1, marginBottom: 0 }]} 
+                placeholder="e.g. SHP001" 
+                value={patientId} 
+                onChangeText={(val) => {
+                  setPatientId(val);
+                  setIsVerified(false);
+                  if (val.trim().length === 0) {
+                    setName('');
+                    setNic('');
+                  } else if (val.trim().length === 6) {
+                    checkPatientId(val);
+                  }
+                }} 
+                onBlur={() => {
+                  if (patientId.trim().length > 0 && !isVerified && !verifying) {
+                    checkPatientId(patientId);
+                  }
+                }}
+                autoCapitalize="characters" 
+              />
+              {verifying && (
+                <ActivityIndicator size="small" color="#06B6D4" style={{ marginLeft: 8 }} />
+              )}
+            </View>
+            {isVerified && (
+              <Text style={{ color: '#10b981', fontSize: 14, fontWeight: '600', marginBottom: 16, marginTop: -8 }}>
+                ✓ Patient verified: {name}
+              </Text>
+            )}
+
             <Text style={styles.label}>Patient Name *</Text>
             <TextInput style={styles.input} placeholder="Enter Name" value={name} onChangeText={setName} />
             

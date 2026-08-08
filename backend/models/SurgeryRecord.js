@@ -12,6 +12,7 @@ const SurgeryRecordSchema = new mongoose.Schema({
   doctorId: { type: mongoose.Schema.Types.ObjectId, ref: 'Doctor', required: true },
   name: { type: String, required: true },
   nic: { type: String },
+  patientId: { type: String, required: true },
   hospital: { type: String },
   
   // The main surgery card

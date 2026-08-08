@@ -131,22 +131,45 @@ export default function NurseQueueDashboard() {
         return maxQ;
     };
 
-    const handleUpdateDoctor = async (doc: any, updates: any) => {
+    const getActiveAppointmentId = (doctorDocId: string, currentQueueNumber: number) => {
+        const matched = appointments.find(appt => {
+            const apptDocId = appt.doctorId?._id || appt.doctorId;
+            return apptDocId === doctorDocId && 
+                   appt.queueNumber === currentQueueNumber && 
+                   isToday(appt.date) && 
+                   appt.status !== 'cancelled';
+        });
+        return matched ? matched._id : undefined;
+    };
+
+    const handleUpdateDoctor = async (doc: any, updates: any, action?: string, appointmentId?: string) => {
         setSaving({ ...saving, [doc._id]: true });
         try {
             const token = getAdminToken();
-            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/admin/doctors/${doc._id}/status`, {
-                method: "PUT",
+            
+            const payload = {
+                doctorId: doc._id,
+                currentServingNumber: updates.currentQueueNumber !== undefined ? updates.currentQueueNumber : doc.currentQueueNumber,
+                action: action || (updates.sessionStarted === false ? "end" : updates.sessionStarted === true ? "start" : undefined),
+                appointmentId
+            };
+
+            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/queue/update`, {
+                method: "POST",
                 headers: {
                     "Content-Type": "application/json",
                     "x-auth-token": token || "",
                 },
-                body: JSON.stringify(updates)
+                body: JSON.stringify(payload)
             });
 
             if (res.ok) {
                 const updatedDoc = await res.json();
-                setDoctors(prev => prev.map(d => d._id === updatedDoc._id ? updatedDoc : d));
+                setDoctors(prev => prev.map(d => d._id === updatedDoc._id ? {
+                    ...d,
+                    sessionStarted: updatedDoc.sessionStarted,
+                    currentQueueNumber: updatedDoc.currentQueueNumber
+                } : d));
             }
         } catch (err) {
             console.error("Failed to update doctor", err);
@@ -225,7 +248,7 @@ export default function NurseQueueDashboard() {
 
                                     {doc.sessionStarted ? (
                                         <Button
-                                            onClick={() => handleUpdateDoctor(doc, { sessionStarted: false, currentQueueNumber: 0 })}
+                                            onClick={() => handleUpdateDoctor(doc, { sessionStarted: false, currentQueueNumber: 0 }, "end")}
                                             disabled={saving[doc._id]}
                                             variant="destructive"
                                             className="w-full md:w-auto font-bold h-12 px-6"
@@ -235,7 +258,7 @@ export default function NurseQueueDashboard() {
                                     ) : (
                                         <div className="space-y-2">
                                             <Button
-                                                onClick={() => handleUpdateDoctor(doc, { sessionStarted: true, currentQueueNumber: 1 })}
+                                                onClick={() => handleUpdateDoctor(doc, { sessionStarted: true, currentQueueNumber: 1 }, "start")}
                                                 disabled={saving[doc._id] || !doc.isArrived}
                                                 className={`w-full md:w-auto font-bold h-12 px-8 shadow-md ${!doc.isArrived ? 'bg-slate-300' : 'bg-blue-600 hover:bg-blue-700'}`}
                                             >
@@ -254,7 +277,7 @@ export default function NurseQueueDashboard() {
 
                                     <div className={`inline-flex items-center gap-6 p-4 rounded-3xl ${doc.sessionStarted ? 'bg-slate-50 border border-slate-200' : 'opacity-40 pointer-events-none'}`}>
                                         <Button
-                                            onClick={() => handleUpdateDoctor(doc, { currentQueueNumber: Math.max(0, (doc.currentQueueNumber || 0) - 1) })}
+                                            onClick={() => handleUpdateDoctor(doc, { currentQueueNumber: Math.max(0, (doc.currentQueueNumber || 0) - 1) }, "decrement")}
                                             variant="outline"
                                             size="icon"
                                             className="h-14 w-14 rounded-full border-2 border-slate-200 hover:bg-slate-100"
@@ -274,7 +297,8 @@ export default function NurseQueueDashboard() {
                                                 const maxQ = getMaxQueueNumber(doc._id);
                                                 const nextQ = (doc.currentQueueNumber || 0) + 1;
                                                 if (nextQ <= maxQ) {
-                                                    handleUpdateDoctor(doc, { currentQueueNumber: nextQ });
+                                                    const currentApptId = getActiveAppointmentId(doc._id, doc.currentQueueNumber);
+                                                    handleUpdateDoctor(doc, { currentQueueNumber: nextQ }, "complete", currentApptId);
                                                 }
                                             }}
                                             className="h-14 w-14 rounded-full bg-slate-900 hover:bg-slate-800 text-white shadow-lg shadow-slate-200"

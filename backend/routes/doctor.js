@@ -120,6 +120,7 @@ router.get("/profile", auth, async (req, res) => {
       email: doctor.email,
       specialization: doctor.specialization || "General Physician",
       profileImage: doctor.profileImage || null,
+      hospital: doctor.hospital || "SUWASEWANA HOSPITAL",
       subscription: doctor.subscription || { plan: 'free', status: 'active' },
       totalEarnings: totalEarnings
     });

@@ -79,10 +79,13 @@ export default function PatientRecordDetailsScreen() {
                     </View>
                     <View style={[styles.rowContainer, { marginTop: 12 }]}>
                         <View style={{ flex: 1 }}>
+                            <Text style={styles.label}>Patient ID</Text>
+                            <Text style={styles.value}>{record.patientId || "N/A"}</Text>
+                        </View>
+                        <View style={{ flex: 1 }}>
                             <Text style={styles.label}>NIC</Text>
                             <Text style={styles.value}>{record.nic || "N/A"}</Text>
                         </View>
-                        <View style={{ flex: 1 }} />
                     </View>
                 </View>
 

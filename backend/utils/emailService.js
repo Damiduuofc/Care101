@@ -1,5 +1,5 @@
 import nodemailer from 'nodemailer';
-import HttpSms from 'httpsms';
+import Client from 'android-sms-gateway';
 import Patient from '../models/Patient.js';
 import Doctor from '../models/Doctor.js';
 
@@ -16,41 +16,41 @@ const formatPhoneNumber = (phone) => {
   return cleaned;
 };
 
-// Helper to send SMS via httpSMS
+// Helper to send SMS via Android SMS Gateway
 const sendSms = async (to, content) => {
-  const apiKey = process.env.HTTPSMS_API_KEY;
-  const from = process.env.HTTPSMS_FROM_NUMBER;
+  const login = process.env.SMS_GATEWAY_LOGIN || '';
+  const password = process.env.SMS_GATEWAY_PASSWORD;
+  let baseUrl = process.env.SMS_GATEWAY_BASE_URL;
+  if (baseUrl && !baseUrl.startsWith('http://') && !baseUrl.startsWith('https://')) {
+    baseUrl = 'http://' + baseUrl;
+  }
 
-  if (!apiKey || !from || apiKey === 'your_httpsms_api_key_here' || from === 'your_httpsms_from_number_here') {
-    console.log("⚠️ httpSMS configuration missing or placeholder detected, skipping SMS send.");
+  if (!password || password === 'your_password_here') {
+    console.log("⚠️ Android SMS Gateway configuration missing or placeholder detected, skipping SMS send.");
     return false;
   }
 
   const formattedTo = formatPhoneNumber(to);
-  const formattedFrom = formatPhoneNumber(from);
   if (!formattedTo) {
     console.log("⚠️ Recipient phone number is invalid, skipping SMS send.");
     return false;
   }
-  if (!formattedFrom) {
-    console.log("⚠️ Sender phone number is invalid, skipping SMS send.");
-    return false;
-  }
+
+  const simNumberRaw = process.env.SMS_GATEWAY_SIM_NUMBER;
+  const simNumber = simNumberRaw ? parseInt(simNumberRaw, 10) : undefined;
 
   try {
-    const client = new HttpSms(apiKey);
+    const client = new Client(login, password, undefined, baseUrl || undefined);
     console.log(`✉️ Sending SMS to ${formattedTo}...`);
-    const message = await client.messages.postSend({
-      content,
-      from: formattedFrom,
-      to: formattedTo
+    const messageState = await client.send({
+      message: content,
+      phoneNumbers: [formattedTo],
+      ...(simNumber !== undefined ? { simNumber } : {})
     });
-    console.log(`✅ SMS sent successfully: ${message.id}`);
+    console.log(`✅ SMS sent successfully: ${messageState.id}`);
     return true;
   } catch (err) {
-    const status = err.response?.status;
-    const message = err.response?.data?.message || err.message;
-    console.error(`❌ Error sending SMS via httpSMS (Status: ${status || 'Unknown'}):`, message);
+    console.error(`❌ Error sending SMS via Android SMS Gateway:`, err.message || err);
     return false;
   }
 };
@@ -58,8 +58,8 @@ const sendSms = async (to, content) => {
 
 // Helper to get transporter
 const getTransporter = async () => {
-  const host = process.env.EMAIL_HOST || 'smtp.gmail.com';
-  const port = parseInt(process.env.EMAIL_PORT || '587');
+  const host = process.env.EMAIL_HOST;
+  const port = parseInt(process.env.EMAIL_PORT);
   const user = process.env.EMAIL_USER;
   const pass = process.env.EMAIL_PASS;
 
@@ -228,9 +228,7 @@ const detailCard = (rowsHtml) => `
  * @param {Buffer} pdfBuffer - Optional PDF receipt attachment
  */
 export const sendBookingConfirmation = async (email, appointment, doctorRoom = "TBA", pdfBuffer = null) => {
-  const apiKey = process.env.HTTPSMS_API_KEY;
-  const from = process.env.HTTPSMS_FROM_NUMBER;
-  const hasSmsConfig = apiKey && from && apiKey !== 'your_httpsms_api_key_here' && from !== 'your_httpsms_from_number_here';
+  const hasSmsConfig = process.env.SMS_GATEWAY_PASSWORD && process.env.SMS_GATEWAY_PASSWORD !== 'your_password_here';
 
   const isPaid = (appointment?.paymentStatus || '').toLowerCase() === 'paid';
   const amountFormatted = appointment?.amount ? Number(appointment.amount).toLocaleString() : '3,500';
@@ -457,9 +455,7 @@ Kindly limit visitors to the hospital for your own safety. Patients are advised 
  * @param {Buffer} pdfBuffer - PDF receipt buffer
  */
 export const sendPaymentReceipt = async (email, bill, pdfBuffer) => {
-  const apiKey = process.env.HTTPSMS_API_KEY;
-  const from = process.env.HTTPSMS_FROM_NUMBER;
-  const hasSmsConfig = apiKey && from && apiKey !== 'your_httpsms_api_key_here' && from !== 'your_httpsms_from_number_here';
+  const hasSmsConfig = process.env.SMS_GATEWAY_PASSWORD && process.env.SMS_GATEWAY_PASSWORD !== 'your_password_here';
 
   const dateStr = new Date(bill.date || new Date()).toLocaleDateString('en-US', {
     year: 'numeric',
@@ -573,9 +569,7 @@ Kindly limit visitors to the hospital for your own safety. Patients are advised 
  * @param {string} password - Doctor's temporary password
  */
 export const sendDoctorWelcomeEmail = async (email, doctorName, password, slmcReg) => {
-  const apiKey = process.env.HTTPSMS_API_KEY;
-  const from = process.env.HTTPSMS_FROM_NUMBER;
-  const hasSmsConfig = apiKey && from && apiKey !== 'your_httpsms_api_key_here' && from !== 'your_httpsms_from_number_here';
+  const hasSmsConfig = process.env.SMS_GATEWAY_PASSWORD && process.env.SMS_GATEWAY_PASSWORD !== 'your_password_here';
 
   const textBody = `Dear Dr. ${doctorName},
 
@@ -679,9 +673,7 @@ Phone: +94 81 222 3223`;
  * @param {string} doctorName - Doctor's full name
  */
 export const sendDoctorApprovalEmail = async (email, doctorName) => {
-  const apiKey = process.env.HTTPSMS_API_KEY;
-  const from = process.env.HTTPSMS_FROM_NUMBER;
-  const hasSmsConfig = apiKey && from && apiKey !== 'your_httpsms_api_key_here' && from !== 'your_httpsms_from_number_here';
+  const hasSmsConfig = process.env.SMS_GATEWAY_PASSWORD && process.env.SMS_GATEWAY_PASSWORD !== 'your_password_here';
 
   const textBody = `Dear Dr. ${doctorName},
 
@@ -765,9 +757,7 @@ Phone: +94 81 222 3223`;
  * @param {object} patient - Patient document
  */
 export const sendPatientWelcomeEmail = async (patient) => {
-  const apiKey = process.env.HTTPSMS_API_KEY;
-  const from = process.env.HTTPSMS_FROM_NUMBER;
-  const hasSmsConfig = apiKey && from && apiKey !== 'your_httpsms_api_key_here' && from !== 'your_httpsms_from_number_here';
+  const hasSmsConfig = process.env.SMS_GATEWAY_PASSWORD && process.env.SMS_GATEWAY_PASSWORD !== 'your_password_here';
 
   const textBody = `Hello ${patient.fullName},
 
@@ -839,9 +829,7 @@ The Care101 Team`;
  * @param {string} otp - The 6-digit OTP code
  */
 export const sendPasswordResetOtp = async (user, otp) => {
-  const apiKey = process.env.HTTPSMS_API_KEY;
-  const from = process.env.HTTPSMS_FROM_NUMBER;
-  const hasSmsConfig = apiKey && from && apiKey !== 'your_httpsms_api_key_here' && from !== 'your_httpsms_from_number_here';
+  const hasSmsConfig = process.env.SMS_GATEWAY_PASSWORD && process.env.SMS_GATEWAY_PASSWORD !== 'your_password_here';
 
   const textBody = `Your password reset code is: ${otp}\n\nThis code will expire in 10 minutes.`;
 
