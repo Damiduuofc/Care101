@@ -60,7 +60,8 @@
           "merchantIdentifier": "merchant.com.care101.app",
           "enableGooglePay": true
         }
-      ]
+      ],
+      "expo-sharing"
     ],
     "experiments": {
       "typedRoutes": true,

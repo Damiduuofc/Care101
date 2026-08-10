@@ -8,6 +8,7 @@ const LabRequestSchema = new mongoose.Schema({
   description: { type: String },
   status: { type: String, enum: ['pending', 'completed'], default: 'pending' },
   recordId: { type: mongoose.Schema.Types.ObjectId, ref: "MedicalRecord" },
+  billId: { type: mongoose.Schema.Types.ObjectId, ref: "Bill" },
   createdAt: { type: Date, default: Date.now }
 });
 

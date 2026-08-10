@@ -27,6 +27,10 @@ export default function LabAssistantDashboard() {
   const [activeTab, setActiveTab] = useState<"directory" | "requests">("requests");
   const [selectedRequest, setSelectedRequest] = useState<any | null>(null);
 
+  // Price Setup State
+  const [priceInput, setPriceInput] = useState("");
+  const [priceLoading, setPriceLoading] = useState(false);
+
   // Upload Form State
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [uploadLoading, setUploadLoading] = useState(false);
@@ -65,12 +69,20 @@ export default function LabAssistantDashboard() {
       const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/lab-requests/all`, {
         headers: {
           "Authorization": `Bearer ${token}`,
+          "x-auth-token": token || "",
           "ngrok-skip-browser-warning": "true"
         }
       });
       if (res.ok) {
         const data = await res.json();
         setRequests(data);
+        
+        // UX Bugfix: Sync active selectedRequest with fresh database status
+        setSelectedRequest((current: any) => {
+          if (!current) return null;
+          const updated = data.find((r: any) => r._id === current._id);
+          return updated || current;
+        });
       }
     } catch (err) {
       console.error("Failed to fetch requests", err);
@@ -134,6 +146,7 @@ export default function LabAssistantDashboard() {
       type: "lab_tests",
       description: req.description || ""
     }));
+    setPriceInput(req.billId?.amount ? req.billId.amount.toString() : "");
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -363,25 +376,111 @@ export default function LabAssistantDashboard() {
                         <span>Phone: {selectedPatient.mobileNumber || "N/A"}</span>
                       </div>
                       {selectedRequest && (
-                        <div className="mt-3 p-3 bg-orange-50 border border-orange-200 rounded-lg max-w-md">
-                          <p className="text-sm font-semibold text-orange-800 flex items-center gap-2">
-                            <Activity className="h-4 w-4" /> Pending Request: {selectedRequest.title}
+                        <div className="mt-3 p-3 bg-cyan-50 border border-cyan-200 rounded-lg max-w-md space-y-2">
+                          <p className="text-sm font-semibold text-cyan-800 flex items-center gap-2">
+                            <Activity className="h-4 w-4 text-cyan-600" /> Pending Request: {selectedRequest.title}
                           </p>
-                          <p className="text-xs text-orange-600 mt-1">Requested by: {selectedRequest.doctorName}</p>
+                          <p className="text-xs text-cyan-600">Requested by: {selectedRequest.doctorName}</p>
                           {selectedRequest.description && (
-                            <p className="text-xs text-orange-700 mt-1 italic">"{selectedRequest.description}"</p>
+                            <p className="text-xs text-cyan-700 italic">"{selectedRequest.description}"</p>
                           )}
+                          
+                          {/* Price & Billing Section */}
+                          <div className="mt-2 pt-2 border-t border-cyan-200 space-y-2">
+                            <div className="flex justify-between items-center text-xs">
+                              <span className="font-semibold text-cyan-800">Payment Status:</span>
+                              <span className={`font-bold px-2 py-0.5 rounded ${selectedRequest.billId?.status === 'Paid' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                                {selectedRequest.billId?.status || 'Pending'}
+                              </span>
+                            </div>
+
+                            <div className="flex justify-between items-center text-xs">
+                              <span className="font-semibold text-cyan-800">Current Price:</span>
+                              <span className="font-bold text-slate-800">
+                                {selectedRequest.billId?.amount > 0 ? `LKR ${selectedRequest.billId.amount}` : 'Not Set (LKR 0)'}
+                              </span>
+                            </div>
+
+                            {selectedRequest.billId?.status !== "Paid" && !(selectedRequest.billId?.amount > 0) && (
+                              <div className="flex items-center gap-2 mt-2">
+                                <Input 
+                                  type="number" 
+                                  placeholder="Enter Price (LKR)" 
+                                  className="h-8 text-xs bg-white w-32"
+                                  value={priceInput}
+                                  onChange={(e) => setPriceInput(e.target.value)}
+                                />
+                                <Button 
+                                  size="sm" 
+                                  className="h-8 text-xs bg-cyan-600 hover:bg-cyan-700 text-white"
+                                  onClick={async () => {
+                                    if (!priceInput || isNaN(Number(priceInput)) || Number(priceInput) <= 0) {
+                                      alert("Please enter a valid price!");
+                                      return;
+                                    }
+                                    setPriceLoading(true);
+                                    try {
+                                      const token = getAdminToken();
+                                      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/lab-requests/update-price/${selectedRequest._id}`, {
+                                        method: "PUT",
+                                        headers: {
+                                          "Content-Type": "application/json",
+                                          "Authorization": `Bearer ${token}`
+                                        },
+                                        body: JSON.stringify({ amount: Number(priceInput) })
+                                      });
+                                      if (res.ok) {
+                                        alert("Price updated successfully!");
+                                        fetchRequests(); // Refresh requests list
+                                        setSelectedRequest(prev => {
+                                          if (!prev) return null;
+                                          return {
+                                            ...prev,
+                                            billId: {
+                                              ...prev.billId,
+                                              amount: Number(priceInput)
+                                            }
+                                          };
+                                        });
+                                      } else {
+                                        const errData = await res.json();
+                                        alert(`Error: ${errData.msg}`);
+                                      }
+                                    } catch (err) {
+                                      console.error("Failed to update price", err);
+                                      alert("Failed to update price");
+                                    } finally {
+                                      setPriceLoading(false);
+                                    }
+                                  }}
+                                  disabled={priceLoading}
+                                >
+                                  {priceLoading ? "Saving..." : "Set Price"}
+                                </Button>
+                              </div>
+                            )}
+                          </div>
                         </div>
                       )}
                     </div>
 
-                    <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
-                      <DialogTrigger asChild>
-                        <Button className="bg-cyan-600 hover:bg-cyan-700">
-                          <Upload className="mr-2 h-4 w-4" /> Upload Document
+                    {selectedRequest && selectedRequest.billId?.status !== "Paid" ? (
+                      <div className="flex flex-col items-end gap-1">
+                        <Button className="bg-slate-200 text-slate-400 border border-slate-300 cursor-not-allowed hover:bg-slate-200" disabled>
+                          <Upload className="mr-2 h-4 w-4" /> Upload Blocked
                         </Button>
-                      </DialogTrigger>
-                      <DialogContent>
+                        <span className="text-[10px] font-semibold text-red-500">
+                          {selectedRequest.billId?.amount > 0 ? "⚠️ Awaiting Patient Payment" : "⚠️ Price Not Set"}
+                        </span>
+                      </div>
+                    ) : (
+                      <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
+                        <DialogTrigger asChild>
+                          <Button className="bg-cyan-600 hover:bg-cyan-700">
+                            <Upload className="mr-2 h-4 w-4" /> Upload Document
+                          </Button>
+                        </DialogTrigger>
+                        <DialogContent>
                         <DialogHeader>
                           <DialogTitle>Upload Record for {selectedPatient.fullName}</DialogTitle>
                         </DialogHeader>
@@ -418,6 +517,7 @@ export default function LabAssistantDashboard() {
                         </div>
                       </DialogContent>
                     </Dialog>
+                    )}
                   </CardContent>
                 </Card>
 

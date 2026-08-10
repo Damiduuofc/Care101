@@ -135,55 +135,68 @@ export default function BillingScreen() {
         }
     };
 
-    const renderBillItem = ({ item }: { item: any }) => (
-        <View style={styles.billCard}>
-            <View style={styles.billHeader}>
-                <View style={[styles.typeBadge, { 
-                    backgroundColor: item.type === 'Appointment' ? '#ecfeff' : 
-                                    item.type === 'Pharmacy' ? '#f0fdf4' : '#fef2f2' 
-                }]}>
-                    <Text style={[styles.typeText, { 
-                        color: item.type === 'Appointment' ? '#0891b2' : 
-                               item.type === 'Pharmacy' ? '#16a34a' : '#dc2626' 
-                    }]}>{item.type}</Text>
-                </View>
-                <Text style={styles.billDate}>
-                    {new Date(item.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
-                </Text>
-            </View>
+    const renderBillItem = ({ item }: { item: any }) => {
+        const isPricePending = item.amount === 0 && item.status !== 'Paid';
 
-            <Text style={styles.billTitle}>{item.title}</Text>
-            
-            <View style={styles.billFooter}>
-                <View>
-                    <Text style={styles.amountLabel}>Total Amount</Text>
-                    <Text style={styles.amountValue}>LKR {item.amount.toLocaleString()}</Text>
-                </View>
-
-                {item.status === 'Paid' ? (
-                    <View style={styles.paidBadge}>
-                        <CheckCircle size={14} color="#059669" />
-                        <Text style={styles.paidText}>PAID</Text>
+        return (
+            <View style={styles.billCard}>
+                <View style={styles.billHeader}>
+                    <View style={[styles.typeBadge, { 
+                        backgroundColor: item.type === 'Appointment' ? '#ecfeff' : 
+                                        item.type === 'Pharmacy' ? '#f0fdf4' : 
+                                        item.type === 'Lab' ? '#faf5ff' : '#fef2f2' 
+                    }]}>
+                        <Text style={[styles.typeText, { 
+                            color: item.type === 'Appointment' ? '#0891b2' : 
+                                   item.type === 'Pharmacy' ? '#16a34a' : 
+                                   item.type === 'Lab' ? '#7c3aed' : '#dc2626' 
+                        }]}>{item.type}</Text>
                     </View>
-                ) : (
-                    <TouchableOpacity 
-                        style={styles.payButton} 
-                        onPress={() => handlePayBill(item)}
-                        disabled={paying === item._id}
-                    >
-                        {paying === item._id ? (
-                            <ActivityIndicator size="small" color="#fff" />
-                        ) : (
-                            <>
-                                <CreditCard size={14} color="#fff" />
-                                <Text style={styles.payButtonText}>Pay Now</Text>
-                            </>
-                        )}
-                    </TouchableOpacity>
-                )}
+                    <Text style={styles.billDate}>
+                        {new Date(item.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
+                    </Text>
+                </View>
+
+                <Text style={styles.billTitle}>{item.title}</Text>
+                
+                <View style={styles.billFooter}>
+                    <View>
+                        <Text style={styles.amountLabel}>Total Amount</Text>
+                        <Text style={styles.amountValue}>
+                            {isPricePending ? 'Price Pending' : `LKR ${item.amount.toLocaleString()}`}
+                        </Text>
+                    </View>
+
+                    {item.status === 'Paid' ? (
+                        <View style={styles.paidBadge}>
+                            <CheckCircle size={14} color="#059669" />
+                            <Text style={styles.paidText}>PAID</Text>
+                        </View>
+                    ) : isPricePending ? (
+                        <View style={[styles.paidBadge, { backgroundColor: '#fff7ed' }]}>
+                            <Clock size={14} color="#d97706" />
+                            <Text style={[styles.paidText, { color: '#d97706' }]}>AWAITING PRICE</Text>
+                        </View>
+                    ) : (
+                        <TouchableOpacity 
+                            style={styles.payButton} 
+                            onPress={() => handlePayBill(item)}
+                            disabled={paying === item._id}
+                        >
+                            {paying === item._id ? (
+                                <ActivityIndicator size="small" color="#fff" />
+                            ) : (
+                                <>
+                                    <CreditCard size={14} color="#fff" />
+                                    <Text style={styles.payButtonText}>Pay Now</Text>
+                                </>
+                            )}
+                        </TouchableOpacity>
+                    )}
+                </View>
             </View>
-        </View>
-    );
+        );
+    };
 
     return (
         <View style={styles.container}>

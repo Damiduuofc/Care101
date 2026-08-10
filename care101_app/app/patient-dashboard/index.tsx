@@ -330,7 +330,7 @@ export default function PatientDashboardScreen() {
 
     const quickActions = [
         { id: 1, title: 'Book Appointment', subtitle: 'Schedule a visit', icon: Calendar, link: '/patient-dashboard/appointments', color: '#06b6d4', bg: '#cffafe' },
-        { id: 2, title: 'Medical Records', subtitle: 'View history', icon: FileText, link: '/patient-dashboard/surgery-records', color: '#8b5cf6', bg: '#f5f3ff' },
+        { id: 2, title: 'Medical Records', subtitle: 'View history', icon: FileText, link: '/patient-dashboard/records', color: '#8b5cf6', bg: '#f5f3ff' },
         { id: 4, title: 'Payment', subtitle: 'Manage billing', icon: CreditCard, link: '/patient-dashboard/billing', color: '#ec4899', bg: '#fdf2f8' },
         { id: 5, title: 'Update Profile', subtitle: 'Manage info', icon: User, link: '/patient-dashboard/profile', color: '#f59e0b', bg: '#fffbeb' },
     ];

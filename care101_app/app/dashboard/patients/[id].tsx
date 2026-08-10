@@ -7,11 +7,16 @@ import {
     TouchableOpacity,
     ActivityIndicator,
     Alert,
+    Modal,
+    TextInput,
+    Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { ArrowLeft, User, Phone, Mail, Calendar, MapPin, AlertCircle, FileText } from 'lucide-react-native';
+import { ArrowLeft, User, Phone, Mail, Calendar, MapPin, AlertCircle, FileText, Plus, X } from 'lucide-react-native';
 import * as SecureStore from 'expo-secure-store';
+import * as FileSystem from 'expo-file-system';
+import * as Sharing from 'expo-sharing';
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.1.100:5000/api';
 
@@ -21,9 +26,119 @@ export default function PatientDetailScreen() {
     const [loading, setLoading] = useState(true);
     const [patientData, setPatientData] = useState<any>(null);
 
+    // Lab Request Modal & Form States
+    const [showLabRequestModal, setShowLabRequestModal] = useState(false);
+    const [labTitle, setLabTitle] = useState("");
+    const [labDescription, setLabDescription] = useState("");
+    const [submittingLab, setSubmittingLab] = useState(false);
+
+    // View Record Modal States
+    const [showViewRecordModal, setShowViewRecordModal] = useState(false);
+    const [selectedRecordData, setSelectedRecordData] = useState<any>(null);
+    const [fetchingRecord, setFetchingRecord] = useState(false);
+
+    const handleDownloadFile = async (fileData: string, fileName: string, fileType: string) => {
+        try {
+            let base64Code = fileData;
+            if (fileData.includes(';base64,')) {
+                base64Code = fileData.split(';base64,')[1];
+            }
+
+            let extension = '.jpg';
+            if (fileType === 'application/pdf') {
+                extension = '.pdf';
+            } else if (fileType === 'image/png') {
+                extension = '.png';
+            }
+
+            const safeFileName = fileName.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+            const fileUri = `${FileSystem.documentDirectory}${safeFileName}${extension}`;
+
+            await FileSystem.writeAsStringAsync(fileUri, base64Code, {
+                encoding: FileSystem.EncodingType.Base64,
+            });
+
+            if (await Sharing.isAvailableAsync()) {
+                await Sharing.shareAsync(fileUri);
+            } else {
+                Alert.alert('Success', `File saved to: ${fileUri}`);
+            }
+        } catch (error) {
+            console.error('Download error:', error);
+            Alert.alert('Error', 'Failed to download file.');
+        }
+    };
+
     useEffect(() => {
         fetchPatientDetails();
     }, [id]);
+
+    const handleSubmitLabRequest = async () => {
+        if (!labTitle.trim()) {
+            Alert.alert("Required", "Please enter a title for the lab request.");
+            return;
+        }
+
+        setSubmittingLab(true);
+        try {
+            const token = await SecureStore.getItemAsync('token');
+            const response = await fetch(`${API_URL}/lab-requests/create`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    patientId: id,
+                    title: labTitle.trim(),
+                    description: labDescription.trim(),
+                })
+            });
+
+            if (response.ok) {
+                Alert.alert("Success", "Lab request created successfully!");
+                setLabTitle("");
+                setLabDescription("");
+                setShowLabRequestModal(false);
+                fetchPatientDetails(); // Refresh
+            } else {
+                const data = await response.json();
+                Alert.alert("Error", data.msg || "Failed to create lab request");
+            }
+        } catch (error) {
+            console.error("Create Lab Request Error:", error);
+            Alert.alert("Error", "Connection failed");
+        } finally {
+            setSubmittingLab(false);
+        }
+    };
+
+    const handleViewRecord = async (recordId: string) => {
+        setFetchingRecord(true);
+        try {
+            const token = await SecureStore.getItemAsync('token');
+            const response = await fetch(`${API_URL}/medical-records/download/${recordId}`, {
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json',
+                    'ngrok-skip-browser-warning': 'true'
+                }
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                setSelectedRecordData(data);
+                setShowViewRecordModal(true);
+            } else {
+                Alert.alert("Error", "Failed to load medical record details.");
+            }
+        } catch (error) {
+            console.error("View Record Error:", error);
+            Alert.alert("Error", "Connection failed");
+        } finally {
+            setFetchingRecord(false);
+        }
+    };
 
     const fetchPatientDetails = async () => {
         try {
@@ -235,26 +350,200 @@ export default function PatientDetailScreen() {
                         </View>
                     )}
 
-                    {/* Recent Records */}
-                    {medicalRecords.length > 0 && (
+                    {/* Pending Lab Requests */}
+                    {patientData.labRequests && patientData.labRequests.filter((r: any) => r.status === 'pending').length > 0 && (
                         <View style={styles.section}>
-                            <Text style={styles.sectionTitle}>Recent Medical Records</Text>
-                            {medicalRecords.slice(0, 5).map((record: any) => (
-                                <View key={record._id} style={styles.listItem}>
-                                    <View style={styles.listItemIcon}>
-                                        <FileText size={16} color="#8b5cf6" />
+                            <Text style={styles.sectionTitle}>Pending Lab Requests</Text>
+                            {patientData.labRequests.filter((r: any) => r.status === 'pending').map((req: any) => (
+                                <View key={req._id} style={styles.listItem}>
+                                    <View style={[styles.listItemIcon, { backgroundColor: '#fff7ed' }]}>
+                                        <FileText size={16} color="#ea580c" />
                                     </View>
                                     <View style={styles.listItemContent}>
-                                        <Text style={styles.listItemTitle}>{record.title}</Text>
+                                        <Text style={styles.listItemTitle}>{req.title}</Text>
                                         <Text style={styles.listItemSubtitle}>
-                                            {record.type} • {formatDate(record.date)}
+                                            Requested: {formatDate(req.createdAt)} • Status: {req.billId?.status === 'Paid' ? 'Paid (Processing)' : `Unpaid (LKR ${req.billId?.amount || 0})`}
                                         </Text>
                                     </View>
                                 </View>
                             ))}
                         </View>
                     )}
+
+                    {/* Medical Records Section */}
+                    <View style={styles.section}>
+                        <View style={styles.sectionHeaderRow}>
+                            <Text style={styles.sectionTitle}>Medical Records</Text>
+                            <TouchableOpacity 
+                                style={styles.addButton}
+                                onPress={() => setShowLabRequestModal(true)}
+                            >
+                                <Plus size={16} color="#06b6d4" />
+                                <Text style={styles.addButtonText}>Request Lab</Text>
+                            </TouchableOpacity>
+                        </View>
+                        {medicalRecords.length > 0 ? (
+                            medicalRecords.slice(0, 5).map((record: any) => (
+                                <TouchableOpacity 
+                                    key={record._id} 
+                                    style={styles.listItem}
+                                    onPress={() => handleViewRecord(record._id)}
+                                >
+                                    <View style={styles.listItemIcon}>
+                                        <FileText size={16} color="#8b5cf6" />
+                                    </View>
+                                    <View style={styles.listItemContent}>
+                                        <Text style={styles.listItemTitle}>{record.title}</Text>
+                                        <Text style={styles.listItemSubtitle}>
+                                            {record.type.replace('_', ' ').toUpperCase()} • {formatDate(record.date)}
+                                        </Text>
+                                    </View>
+                                </TouchableOpacity>
+                            ))
+                        ) : (
+                            <View style={styles.emptyCard}>
+                                <Text style={styles.emptyText}>No medical records found.</Text>
+                            </View>
+                        )}
+                    </View>
                 </ScrollView>
+
+                {/* View Record Modal */}
+                <Modal
+                    visible={showViewRecordModal}
+                    transparent={true}
+                    animationType="fade"
+                    onRequestClose={() => setShowViewRecordModal(false)}
+                >
+                    <View style={styles.modalOverlay}>
+                        <View style={styles.modalContentCard}>
+                            <View style={styles.modalHeaderRow}>
+                                <Text style={styles.modalTitle} numberOfLines={1}>{selectedRecordData?.fileName || 'Record Details'}</Text>
+                                <TouchableOpacity onPress={() => setShowViewRecordModal(false)}>
+                                    <X size={24} color="#64748b" />
+                                </TouchableOpacity>
+                            </View>
+                            
+                            <ScrollView showsVerticalScrollIndicator={false}>
+                                <View style={styles.recordDetailContainer}>
+                                    <View style={styles.recordMetaRow}>
+                                        <Text style={styles.recordMetaText}>Type: {selectedRecordData?.fileType || 'N/A'}</Text>
+                                    </View>
+                                    
+                                    <Text style={styles.modalLabel}>Description</Text>
+                                    <Text style={styles.recordDescriptionText}>
+                                        {selectedRecordData?.description || 'No description provided.'}
+                                    </Text>
+
+                                    <Text style={styles.modalLabel}>Attachment</Text>
+                                    {selectedRecordData?.fileData ? (
+                                        selectedRecordData.fileType?.startsWith('image/') || selectedRecordData.fileData?.startsWith('data:image/') ? (
+                                            <View style={{ width: '100%', height: 300, borderRadius: 12, overflow: 'hidden', backgroundColor: '#000' }}>
+                                                <Image 
+                                                    source={{ uri: selectedRecordData.fileData }} 
+                                                    style={{ width: '100%', height: '100%', resizeMode: 'contain' }} 
+                                                />
+                                            </View>
+                                        ) : (
+                                            <View style={[styles.reportImage, { justifyContent: 'center', alignItems: 'center' }]}>
+                                                <FileText size={48} color="#fff" />
+                                                <Text style={{ color: '#fff', marginTop: 8 }}>PDF Document</Text>
+                                            </View>
+                                        )
+                                    ) : (
+                                        <Text style={styles.noImageText}>No file attachment available.</Text>
+                                    )}
+                                </View>
+                            </ScrollView>
+                            
+                            <View style={styles.modalButtonRow}>
+                                {selectedRecordData?.fileData && (
+                                    <TouchableOpacity 
+                                        style={[styles.modalButton, { backgroundColor: '#06b6d4' }]}
+                                        onPress={() => handleDownloadFile(selectedRecordData.fileData, selectedRecordData.fileName || 'Report', selectedRecordData.fileType)}
+                                    >
+                                        <Text style={{ color: '#fff', fontSize: 14, fontWeight: '600' }}>Download File</Text>
+                                    </TouchableOpacity>
+                                )}
+                                <TouchableOpacity 
+                                    style={[styles.modalButton, styles.modalButtonCancel]}
+                                    onPress={() => setShowViewRecordModal(false)}
+                                >
+                                    <Text style={styles.modalButtonCancelText}>Close</Text>
+                                </TouchableOpacity>
+                            </View>
+                        </View>
+                    </View>
+                </Modal>
+
+                {/* Request Lab Modal */}
+                <Modal
+                    visible={showLabRequestModal}
+                    transparent={true}
+                    animationType="slide"
+                    onRequestClose={() => setShowLabRequestModal(false)}
+                >
+                    <View style={styles.modalOverlay}>
+                        <View style={styles.modalContentCard}>
+                            <View style={styles.modalHeaderRow}>
+                                <Text style={styles.modalTitle}>Request Lab Report</Text>
+                                <TouchableOpacity onPress={() => setShowLabRequestModal(false)}>
+                                    <X size={24} color="#64748b" />
+                                </TouchableOpacity>
+                            </View>
+
+                            <Text style={styles.modalLabel}>Lab Test Title *</Text>
+                            <TextInput 
+                                style={styles.modalInput}
+                                placeholder="e.g. Full Blood Count, Lipid Profile"
+                                value={labTitle}
+                                onChangeText={setLabTitle}
+                            />
+
+                            <Text style={styles.modalLabel}>Instructions / Notes (Optional)</Text>
+                            <TextInput 
+                                style={[styles.modalInput, styles.modalTextarea]}
+                                placeholder="Add details or special requirements here..."
+                                multiline={true}
+                                numberOfLines={3}
+                                value={labDescription}
+                                onChangeText={setLabDescription}
+                            />
+
+                            <View style={styles.modalButtonRow}>
+                                <TouchableOpacity 
+                                    style={[styles.modalButton, styles.modalButtonCancel]}
+                                    onPress={() => {
+                                        setShowLabRequestModal(false);
+                                        setLabTitle("");
+                                        setLabDescription("");
+                                    }}
+                                    disabled={submittingLab}
+                                >
+                                    <Text style={styles.modalButtonCancelText}>Cancel</Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity 
+                                    style={[styles.modalButton, styles.modalButtonSubmit]}
+                                    onPress={handleSubmitLabRequest}
+                                    disabled={submittingLab}
+                                >
+                                    {submittingLab ? (
+                                        <ActivityIndicator size="small" color="#fff" />
+                                    ) : (
+                                        <Text style={styles.modalButtonSubmitText}>Submit Request</Text>
+                                    )}
+                                </TouchableOpacity>
+                            </View>
+                        </View>
+                    </View>
+                </Modal>
+
+                {/* Overlay fetching record indicator */}
+                {fetchingRecord && (
+                    <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.3)', justifyContent: 'center', alignItems: 'center', zIndex: 9999 }]}>
+                        <ActivityIndicator size="large" color="#06b6d4" />
+                    </View>
+                )}
             </SafeAreaView>
         </View>
     );
@@ -464,5 +753,154 @@ const styles = StyleSheet.create({
     errorText: {
         fontSize: 16,
         color: '#64748b',
+    },
+    sectionHeaderRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 12,
+    },
+    addButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#ecfeff',
+        paddingHorizontal: 12,
+        paddingVertical: 6,
+        borderRadius: 8,
+        gap: 4,
+    },
+    addButtonText: {
+        fontSize: 12,
+        color: '#06b6d4',
+        fontWeight: '600',
+    },
+    emptyCard: {
+        backgroundColor: '#fff',
+        borderRadius: 12,
+        padding: 16,
+        alignItems: 'center',
+        justifyContent: 'center',
+        borderWidth: 1,
+        borderColor: '#f1f5f9',
+    },
+    emptyText: {
+        fontSize: 14,
+        color: '#94a3b8',
+    },
+    modalOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0, 0, 0, 0.5)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        padding: 20,
+    },
+    modalContentCard: {
+        backgroundColor: '#fff',
+        borderRadius: 16,
+        padding: 20,
+        width: '100%',
+        maxHeight: '85%',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.1,
+        shadowRadius: 12,
+        elevation: 5,
+    },
+    modalHeaderRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 16,
+        borderBottomWidth: 1,
+        borderBottomColor: '#f1f5f9',
+        paddingBottom: 10,
+    },
+    modalTitle: {
+        fontSize: 18,
+        fontWeight: '700',
+        color: '#0f172a',
+    },
+    modalLabel: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: '#334155',
+        marginBottom: 6,
+        marginTop: 12,
+    },
+    modalInput: {
+        borderWidth: 1,
+        borderColor: '#cbd5e1',
+        borderRadius: 8,
+        paddingHorizontal: 12,
+        paddingVertical: 10,
+        fontSize: 15,
+        backgroundColor: '#f8fafc',
+    },
+    modalTextarea: {
+        height: 80,
+        textAlignVertical: 'top',
+        marginBottom: 10,
+    },
+    modalButtonRow: {
+        flexDirection: 'row',
+        gap: 12,
+        marginTop: 20,
+    },
+    modalButton: {
+        flex: 1,
+        paddingVertical: 12,
+        borderRadius: 8,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    modalButtonSubmit: {
+        backgroundColor: '#06b6d4',
+    },
+    modalButtonCancel: {
+        backgroundColor: '#f1f5f9',
+    },
+    modalButtonSubmitText: {
+        color: '#fff',
+        fontSize: 14,
+        fontWeight: '600',
+    },
+    modalButtonCancelText: {
+        color: '#475569',
+        fontSize: 14,
+        fontWeight: '600',
+    },
+    recordDetailContainer: {
+        marginVertical: 8,
+    },
+    recordMetaRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        marginBottom: 12,
+        backgroundColor: '#f8fafc',
+        padding: 10,
+        borderRadius: 8,
+    },
+    recordMetaText: {
+        fontSize: 12,
+        color: '#64748b',
+    },
+    recordDescriptionText: {
+        fontSize: 14,
+        color: '#334155',
+        lineHeight: 20,
+        marginBottom: 16,
+    },
+    reportImage: {
+        width: '100%',
+        height: 300,
+        borderRadius: 12,
+        resizeMode: 'contain',
+        backgroundColor: '#000',
+    },
+    noImageText: {
+        textAlign: 'center',
+        color: '#94a3b8',
+        fontStyle: 'italic',
+        padding: 20,
     },
 });

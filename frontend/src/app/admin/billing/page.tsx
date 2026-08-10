@@ -200,6 +200,36 @@ export default function BillingPage() {
         setShowPrintDialog(true);
     };
 
+    const handlePayWithCash = async (bill: any) => {
+        if (!confirm(`Are you sure you want to mark "${bill.title}" as PAID with Cash?`)) {
+            return;
+        }
+        
+        try {
+            const token = getAdminToken();
+            const headers = { 
+                "Authorization": `Bearer ${token}`, 
+                "x-auth-token": token || "", 
+                "Content-Type": "application/json" 
+            };
+            const res = await fetch(`${API_URL}/admin/bills/pay/${bill._id}`, {
+                method: "PUT",
+                headers
+            });
+            if (res.ok) {
+                const data = await res.json();
+                toast({ title: "Success", description: "Payment recorded successfully" });
+                setHistory(prev => prev.map(b => b._id === bill._id ? data.bill : b));
+            } else {
+                const errData = await res.json();
+                toast({ title: "Failed", description: errData.msg || "Failed to record payment", variant: "destructive" });
+            }
+        } catch (error) {
+            console.error("Cash payment error:", error);
+            toast({ title: "Error", description: "An error occurred", variant: "destructive" });
+        }
+    };
+
     const triggerPrint = () => {
         const printContent = invoiceRef.current;
         if (!printContent) return;
@@ -712,17 +742,28 @@ fetch(`${API_URL}/admin/doctors`, { headers })
                                             <TableCell className="text-right">
                                                 <div className="flex justify-end gap-2">
                                                     {inv.status !== "Paid" && (
-                                                        <Button
-                                                            variant="outline"
-                                                            size="sm"
-                                                            className="h-8 border-cyan-200 text-[#06b6d4] hover:bg-cyan-50 font-bold text-xs rounded-lg px-3"
-                                                            onClick={() => {
-                                                                setPendingBill(inv);
-                                                                setStripeModalOpen(true);
-                                                            }}
-                                                        >
-                                                            <CreditCard size={14} className="mr-1" /> Pay Card
-                                                        </Button>
+                                                        <>
+                                                            <Button
+                                                                variant="outline"
+                                                                size="sm"
+                                                                className="h-8 border-green-200 text-green-600 hover:bg-green-50 font-bold text-xs rounded-lg px-3"
+                                                                onClick={() => handlePayWithCash(inv)}
+                                                            >
+                                                                <Wallet size={14} className="mr-1" /> Pay Cash
+                                                            </Button>
+
+                                                            <Button
+                                                                variant="outline"
+                                                                size="sm"
+                                                                className="h-8 border-cyan-200 text-[#06b6d4] hover:bg-cyan-50 font-bold text-xs rounded-lg px-3"
+                                                                onClick={() => {
+                                                                    setPendingBill(inv);
+                                                                    setStripeModalOpen(true);
+                                                                }}
+                                                            >
+                                                                <CreditCard size={14} className="mr-1" /> Pay Card
+                                                            </Button>
+                                                        </>
                                                     )}
                                                     <Button
                                                         variant="ghost"

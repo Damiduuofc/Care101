@@ -40,7 +40,7 @@ router.post("/upload", auth, async (req, res) => {
       }
 
       await Notification.create({
-        userId: req.user.id,
+        userId: actualPatientId,
         type: notificationType,
         message: notificationMessage,
         metadata: { recordId: newRecord._id, recordType: type }

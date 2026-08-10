@@ -46,39 +46,40 @@ export default function RecordsScreen() {
     }
   };
 
-
-
   const filteredRecords = records.filter((r: any) =>
     r.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
     (r.nic && r.nic.includes(searchQuery)) ||
     (r.patientId && r.patientId.toLowerCase().includes(searchQuery.toLowerCase()))
   );
 
-  const renderRecordItem = ({ item }: any) => (
-    <TouchableOpacity
-      style={styles.card}
-      onPress={() => router.push(`/dashboard/records/${item._id}` as any)}
-    >
-      <View style={styles.cardHeader}>
-        <Text style={styles.patientName}>{item.name}</Text>
-        <ChevronRight size={20} color="#cbd5e1" />
-      </View>
-
-      <View style={styles.cardContent}>
-        <Text style={styles.detailText}>Patient ID: {item.patientId || 'N/A'}</Text>
-        <Text style={styles.detailText}>NIC: {item.nic || 'N/A'}</Text>
-        <Text style={styles.detailText}>Hospital: {item.hospital || 'N/A'}</Text>
-        <Text style={styles.dateText}>Created: {new Date(item.createdAt).toLocaleDateString()}</Text>
-      </View>
-
-      <View style={styles.cardFooter}>
-        <View style={styles.badge}>
-          <ImageIcon size={14} color="#3b82f6" style={styles.badgeIcon} />
-          <Text style={styles.badgeText}>Surgery Card</Text>
+  const renderRecordItem = ({ item }: any) => {
+    return (
+      <TouchableOpacity
+        style={styles.doctorCard}
+        onPress={() => router.push(`/dashboard/records/${item._id}` as any)}
+      >
+        <View style={styles.doctorCardMain}>
+          <View style={styles.doctorAvatarContainer}>
+            <Text style={styles.avatarText}>👤</Text>
+          </View>
+          <View style={styles.doctorInfo}>
+            <Text style={styles.doctorNameText}>{item.name}</Text>
+            <Text style={styles.specializationText}>SURGERY RECORD</Text>
+            <Text style={styles.hospitalText}>Patient ID: {item.patientId || 'N/A'} • NIC: {item.nic || 'N/A'}</Text>
+            <Text style={styles.hospitalText}>Hospital: {item.hospital || 'N/A'}</Text>
+            <Text style={styles.dateText}>Created: {new Date(item.createdAt).toLocaleDateString()}</Text>
+          </View>
+          <ChevronRight size={20} color="#94a3b8" />
         </View>
-      </View>
-    </TouchableOpacity>
-  );
+        <View style={styles.doctorCardFooter}>
+          <View style={styles.badge}>
+            <ImageIcon size={14} color="#0d9488" style={styles.badgeIcon} />
+            <Text style={styles.badgeText}>Surgery Card</Text>
+          </View>
+        </View>
+      </TouchableOpacity>
+    );
+  };
 
   return (
     <SafeAreaView edges={['top']} style={styles.container}>
@@ -138,16 +139,90 @@ const styles = StyleSheet.create({
   searchBar: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 12, paddingHorizontal: 12, height: 48 },
   searchInput: { flex: 1, marginLeft: 10, fontSize: 16, color: '#0f172a' },
   listContent: { padding: 20 },
-  card: { backgroundColor: '#fff', borderRadius: 12, padding: 16, marginBottom: 16, borderWidth: 1, borderColor: '#e2e8f0', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 2 },
-  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
-  patientName: { fontSize: 18, fontWeight: '700', color: '#0f172a' },
-  cardContent: { marginBottom: 12 },
-  detailText: { fontSize: 14, color: '#64748b', marginBottom: 2 },
-  dateText: { fontSize: 12, color: '#94a3b8', marginTop: 4 },
-  cardFooter: { flexDirection: 'row', justifyContent: 'flex-end', gap: 12, borderTopWidth: 1, borderTopColor: '#f1f5f9', paddingTop: 12 },
-  badge: { flexDirection: 'row', alignItems: 'center' },
-  badgeIcon: { marginRight: 4 },
-  badgeText: { fontSize: 12, color: '#64748b', fontWeight: '500' },
+
+  doctorCard: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    shadowColor: '#0f172a',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    elevation: 2,
+  },
+  doctorCardMain: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  doctorAvatarContainer: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: '#e0f2fe',
+    overflow: 'hidden',
+    marginRight: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  avatarText: {
+    fontSize: 24,
+    fontWeight: '700',
+  },
+  doctorInfo: {
+    flex: 1,
+  },
+  doctorNameText: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#0f172a',
+    marginBottom: 2,
+  },
+  specializationText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#0d9488',
+    marginBottom: 4,
+  },
+  hospitalText: {
+    fontSize: 13,
+    color: '#64748b',
+    marginBottom: 2,
+  },
+  dateText: {
+    fontSize: 12,
+    color: '#94a3b8',
+  },
+  doctorCardFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    borderTopWidth: 1,
+    borderTopColor: '#f1f5f9',
+    paddingTop: 12,
+    marginTop: 12,
+  },
+  badge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f0fdfa',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  badgeIcon: {
+    marginRight: 4,
+  },
+  badgeText: {
+    fontSize: 12,
+    color: '#0d9488',
+    fontWeight: '600',
+  },
+
   emptyState: { alignItems: 'center', justifyContent: 'center', marginTop: 60, paddingHorizontal: 40 },
   emptyText: { fontSize: 18, fontWeight: '600', color: '#94a3b8' },
 

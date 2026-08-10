@@ -247,13 +247,28 @@ router.get("/:id/medical-history", auth, async (req, res) => {
       .limit(10)
       .lean();
 
- 
+    // Get surgery records
+    const SurgeryRecord = (await import("../models/SurgeryRecord.js")).default;
+    const surgeryRecords = await SurgeryRecord.find({
+      $or: [
+        { patientId: patient.patientId },
+        { nic: patient.nicNumber }
+      ]
+    }).lean();
+
+    // Get lab requests
+    const LabRequest = (await import("../models/LabRequest.js")).default;
+    const labRequests = await LabRequest.find({ patientId })
+      .populate("billId")
+      .sort({ createdAt: -1 })
+      .lean();
 
     res.json({
       patient,
       appointments,
       medicalRecords,
       surgeryRecords,
+      labRequests,
       summary: {
         totalAppointments: appointments.length,
         totalRecords: medicalRecords.length,

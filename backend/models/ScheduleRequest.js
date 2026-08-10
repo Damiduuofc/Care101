@@ -16,7 +16,8 @@ const ScheduleRequestSchema = new mongoose.Schema({
     enum: ['pending', 'approved', 'rejected'],
     default: 'pending'
   },
-  
+  allocatedRoom: { type: String, default: "" },
+  allocatedNurse: { type: String, default: "" },
   createdAt: { type: Date, default: Date.now },
   
 

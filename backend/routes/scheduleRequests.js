@@ -36,7 +36,20 @@ router.post('/request', auth, async (req, res) => {
 // 3. RECEPTIONIST: Get pending requests
 router.get('/pending', auth, async (req, res) => {
   try {
-    const pendingRequests = await ScheduleRequest.find({ status: 'pending' }).sort({ date: 1 });
+    let query = { status: 'pending' };
+
+    if (req.query.date) {
+      const startOfDay = new Date(req.query.date);
+      startOfDay.setHours(0, 0, 0, 0);
+      const endOfDay = new Date(req.query.date);
+      endOfDay.setHours(23, 59, 59, 999);
+      query.date = { $gte: startOfDay, $lte: endOfDay };
+    }
+
+    const pendingRequests = await ScheduleRequest.find(query)
+      .populate('doctorId', 'name specialization profileImage')
+      .sort({ date: 1 });
+
     res.json(pendingRequests);
   } catch (err) {
     res.status(500).json({ msg: 'Server error' });
@@ -172,19 +185,89 @@ router.get('/doctor/:doctorId/approved', auth, async (req, res) => {
 });
 
 
-// 7. RECEPTIONIST: Today's Approved
+// 7. RECEPTIONIST: Today's Approved or by specified Date
 router.get('/approved/today', auth, async (req, res) => {
   try {
-    const startOfDay = new Date();
-    startOfDay.setHours(0, 0, 0, 0);
-    const endOfDay = new Date();
-    endOfDay.setHours(23, 59, 59, 999);
-    const schedules = await ScheduleRequest.find({
-      status: 'approved',
-      date: { $gte: startOfDay, $lte: endOfDay }
-    }).sort({ startTime: 1 });
+    let query = { status: 'approved' };
+
+    if (req.query.all !== 'true') {
+      let startOfDay = new Date();
+      let endOfDay = new Date();
+
+      if (req.query.date) {
+        startOfDay = new Date(req.query.date);
+        endOfDay = new Date(req.query.date);
+      }
+
+      startOfDay.setHours(0, 0, 0, 0);
+      endOfDay.setHours(23, 59, 59, 999);
+
+      query.date = { $gte: startOfDay, $lte: endOfDay };
+    }
+
+    const schedules = await ScheduleRequest.find(query)
+      .populate('doctorId', 'name specialization profileImage')
+      .sort({ startTime: 1 });
     res.json(schedules);
   } catch (err) {
+    res.status(500).json({ msg: 'Server error' });
+  }
+});
+
+// 7.1 RECEPTIONIST: Allocate room and nurse to an approved schedule
+router.put('/:id/allocate', auth, async (req, res) => {
+  try {
+    const { allocatedRoom, allocatedNurse } = req.body;
+
+    // Check authorization (Only receptionist or system_admin)
+    if (!['receptionist', 'system_admin'].includes(req.user?.role)) {
+      return res.status(403).json({ msg: 'Not authorized. Only receptionists and system admins can allocate rooms.' });
+    }
+
+    const request = await ScheduleRequest.findById(req.params.id);
+    if (!request) return res.status(404).json({ msg: 'Request not found' });
+
+    // Enforce overlapping conflicts
+    if (allocatedRoom || allocatedNurse) {
+      const conflict = await ScheduleRequest.findOne({
+        _id: { $ne: request._id },
+        status: 'approved',
+        date: request.date,
+        $or: [
+          { allocatedRoom: allocatedRoom || "NEVER_MATCH" },
+          { allocatedNurse: allocatedNurse || "NEVER_MATCH" }
+        ],
+        startTime: { $lt: request.endTime },
+        endTime: { $gt: request.startTime }
+      });
+
+      if (conflict) {
+        const type = conflict.allocatedRoom === allocatedRoom ? 'Room' : 'Nurse';
+        return res.status(409).json({ 
+          msg: `Conflict: ${type} is already booked by ${conflict.doctorName} at this time.`
+        });
+      }
+    }
+
+    request.allocatedRoom = allocatedRoom || "";
+    request.allocatedNurse = allocatedNurse || "";
+    await request.save();
+
+    // Sync to Doctor model if the schedule is today
+    const now = new Date();
+    const isToday = new Date(request.date).toDateString() === now.toDateString();
+    if (isToday) {
+      await Doctor.findByIdAndUpdate(request.doctorId, {
+        $set: {
+          allocatedRoom: allocatedRoom || "",
+          allocatedNurse: allocatedNurse || ""
+        }
+      });
+    }
+
+    res.json({ msg: 'Allocation successful', request });
+  } catch (err) {
+    console.error('Allocation Error:', err.message);
     res.status(500).json({ msg: 'Server error' });
   }
 });

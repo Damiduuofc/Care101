@@ -49,8 +49,8 @@ export default function PatientBottomNavBar() {
             <NavItem
                 icon={FileText}
                 label="Records"
-                active={isActive('/patient-dashboard/surgery-records')}
-                onPress={() => handlePress('/patient-dashboard/surgery-records')}
+                active={isActive('/patient-dashboard/records')}
+                onPress={() => handlePress('/patient-dashboard/records')}
             />
             <NavItem
                 icon={User}

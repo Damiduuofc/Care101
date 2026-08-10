@@ -1,13 +1,13 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import Sidebar from "@/components/admin/Sidebar";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { 
-    Loader2, Clock, CalendarDays, Check, User, ChevronDown, Search 
+    Loader2, Clock, CalendarDays, Check, User, ChevronDown, Search, X, AlertTriangle 
 } from "lucide-react";
 import { getAdminToken } from "@/lib/adminSession";
 import { 
@@ -20,6 +20,84 @@ import {
 } from "@/components/ui/dialog";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL;
+
+// ─── Constants & Configurations ──────────────────────────────────────────────
+const ROOM_DEPARTMENTS: Record<string, string> = {
+  "Room 1": "Cardiology",
+  "Room 2": "Cardiology",
+  "Room 3": "Cardiology",
+  "Room 4": "Pediatrics",
+  "Room 5": "Pediatrics",
+  "Room 6": "Pediatrics",
+  "Room 7": "Dermatology",
+  "Room 8": "Dermatology",
+  "Room 9": "Dermatology",
+  "Room 10": "Orthopedics",
+  "Room 11": "Orthopedics",
+  "Room 12": "Orthopedics",
+  "Room 13": "General Medicine",
+  "Room 14": "General Medicine",
+  "Room 15": "General Medicine",
+  "Room 16": "General Medicine",
+  "Room 17": "General Medicine",
+  "Room 18": "General Medicine",
+  "Room 19": "General Medicine",
+  "Room 20": "General Medicine"
+};
+
+const getDoctorDept = (specialization: string) => {
+  const spec = (specialization || "").toLowerCase();
+  if (spec.includes("cardio")) return "Cardiology";
+  if (spec.includes("pedia") || spec.includes("child")) return "Pediatrics";
+  if (spec.includes("derma") || spec.includes("skin")) return "Dermatology";
+  if (spec.includes("ortho") || spec.includes("bone")) return "Orthopedics";
+  return "General Medicine";
+};
+
+const getRoomsForDoctor = (specialization: string) => {
+  const dept = getDoctorDept(specialization);
+  return Object.entries(ROOM_DEPARTMENTS)
+    .filter(([_, rDept]) => rDept === dept)
+    .map(([room]) => room);
+};
+
+const checkTimeOverlap = (startA: string, endA: string, startB: string, endB: string) => {
+  const tStartA = new Date(startA).getTime();
+  const tEndA = new Date(endA).getTime();
+  const tStartB = new Date(startB).getTime();
+  const tEndB = new Date(endB).getTime();
+  return tStartA < tEndB && tEndA > tStartB;
+};
+
+const isRoomBookedForTime = (roomName: string, req: any, allRequests: any[]) => {
+  if (!roomName) return false;
+  return allRequests.some(other => {
+    if (other._id === req._id) return false;
+    if (other.status !== 'approved') return false;
+    if (other.allocatedRoom !== roomName) return false;
+    
+    const dateA = new Date(req.date).toDateString();
+    const dateB = new Date(other.date).toDateString();
+    if (dateA !== dateB) return false;
+
+    return checkTimeOverlap(req.startTime, req.endTime, other.startTime, other.endTime);
+  });
+};
+
+const isNurseBookedForTime = (nurseName: string, req: any, allRequests: any[]) => {
+  if (!nurseName) return false;
+  return allRequests.some(other => {
+    if (other._id === req._id) return false;
+    if (other.status !== 'approved') return false;
+    if (other.allocatedNurse !== nurseName) return false;
+
+    const dateA = new Date(req.date).toDateString();
+    const dateB = new Date(other.date).toDateString();
+    if (dateA !== dateB) return false;
+
+    return checkTimeOverlap(req.startTime, req.endTime, other.startTime, other.endTime);
+  });
+};
 
 export default function ChannelingRequestPage() {
     const [requests, setRequests] = useState<any[]>([]);
@@ -38,6 +116,13 @@ export default function ChannelingRequestPage() {
     const [formSubmitting, setFormSubmitting] = useState(false);
     const [isDialogOpen, setIsDialogOpen] = useState(false);
 
+    // Approval Dialog States
+    const [approvalDialogReq, setApprovalDialogReq] = useState<any | null>(null);
+    const [approvalRoom, setApprovalRoom] = useState("");
+    const [approvalNurse, setApprovalNurse] = useState("");
+    const [approvalSubmitting, setApprovalSubmitting] = useState(false);
+    const [nursesList, setNursesList] = useState<any[]>([]);
+
     // Searchable dropdown states and refs
     const [searchQuery, setSearchQuery] = useState("");
     const [isOpen, setIsOpen] = useState(false);
@@ -46,6 +131,7 @@ export default function ChannelingRequestPage() {
     useEffect(() => {
         fetchRequests();
         fetchDoctors();
+        fetchStaff();
     }, []);
 
     useEffect(() => {
@@ -69,10 +155,11 @@ export default function ChannelingRequestPage() {
 
     const fetchDoctors = async () => {
         try {
-            const token = getAdminToken();
+            const token = getAdminToken() || "";
             const response = await fetch(`${API_URL}/admin/doctors`, {
                 headers: { 
-                    "x-auth-token": token || "",
+                    "Authorization": `Bearer ${token}`,
+                    "x-auth-token": token,
                     "ngrok-skip-browser-warning": "true" 
                 }
             });
@@ -84,6 +171,25 @@ export default function ChannelingRequestPage() {
             console.error("Fetch Doctors Error:", error);
         } finally {
             setFetchingDoctors(false);
+        }
+    };
+
+    const fetchStaff = async () => {
+        try {
+            const token = getAdminToken() || "";
+            const response = await fetch(`${API_URL}/admin/staff`, {
+                headers: { 
+                    "Authorization": `Bearer ${token}`,
+                    "x-auth-token": token,
+                    "ngrok-skip-browser-warning": "true" 
+                }
+            });
+            if (response.ok) {
+                const data = await response.json();
+                setNursesList(Array.isArray(data) ? data.filter((s: any) => s.role === "nurse") : []);
+            }
+        } catch (error) {
+            console.error("Fetch Staff Error:", error);
         }
     };
 
@@ -158,10 +264,11 @@ export default function ChannelingRequestPage() {
 
     const fetchRequests = async () => {
         try {
-            const token = getAdminToken();
+            const token = getAdminToken() || "";
             const response = await fetch(`${API_URL}/schedule-requests/all`, {
                 headers: { 
-                    "x-auth-token": token || "",
+                    "Authorization": `Bearer ${token}`,
+                    "x-auth-token": token,
                     "ngrok-skip-browser-warning": "true" 
                 }
             });
@@ -179,12 +286,13 @@ export default function ChannelingRequestPage() {
     const handleAction = async (id: string, newStatus: "approved" | "rejected") => {
         setLoadingAction(id);
         try {
-            const token = getAdminToken();
+            const token = getAdminToken() || "";
             const response = await fetch(`${API_URL}/schedule-requests/${id}/status`, {
                 method: "PUT",
                 headers: { 
                     "Content-Type": "application/json",
-                    "x-auth-token": token || ""
+                    "Authorization": `Bearer ${token}`,
+                    "x-auth-token": token
                 },
                 body: JSON.stringify({ status: newStatus }) 
             });
@@ -195,8 +303,6 @@ export default function ChannelingRequestPage() {
                 );
             } else {
                 const errData = await response.json();
-                // If this alert still triggers "Room/Nurse required", 
-                // you MUST remove that validation from your Backend Express route.
                 alert(errData.msg || "Failed to update status");
             }
         } catch (error) {
@@ -206,6 +312,67 @@ export default function ChannelingRequestPage() {
             setLoadingAction(null);
         }
     };
+
+    const handleConfirmApproval = async (id: string) => {
+        if (!approvalRoom || !approvalNurse) {
+            alert("Please select both a Room and a Nurse.");
+            return;
+        }
+        
+        setApprovalSubmitting(true);
+        try {
+            const token = getAdminToken() || "";
+            const response = await fetch(`${API_URL}/schedule-requests/${id}/status`, {
+                method: "PUT",
+                headers: { 
+                    "Content-Type": "application/json",
+                    "Authorization": `Bearer ${token}`,
+                    "x-auth-token": token
+                },
+                body: JSON.stringify({ 
+                    status: "approved",
+                    allocatedRoom: approvalRoom,
+                    allocatedNurse: approvalNurse
+                }) 
+            });
+            
+            if (response.ok) {
+                setRequests(prev => 
+                    prev.map(req => req._id === id ? { 
+                        ...req, 
+                        status: "approved",
+                        allocatedRoom: approvalRoom,
+                        allocatedNurse: approvalNurse 
+                    } : req)
+                );
+                setApprovalDialogReq(null);
+            } else {
+                const errData = await response.json();
+                alert(errData.msg || "Failed to approve schedule");
+            }
+        } catch (error) {
+            console.error("Approval Error:", error);
+            alert("An error occurred. Please try again.");
+        } finally {
+            setApprovalSubmitting(false);
+        }
+    };
+
+    const modalApprovalConflictMessage = useMemo(() => {
+        if (!approvalDialogReq || !approvalRoom || !approvalNurse) return null;
+        
+        const isRBooked = isRoomBookedForTime(approvalRoom, approvalDialogReq, requests);
+        if (isRBooked) {
+            return `⚠️ Conflict: Room ${approvalRoom} is already booked at this time by another approved doctor session.`;
+        }
+
+        const isNBooked = isNurseBookedForTime(approvalNurse, approvalDialogReq, requests);
+        if (isNBooked) {
+            return `⚠️ Conflict: Nurse ${approvalNurse} is already assigned at this time to another approved doctor session.`;
+        }
+
+        return null;
+    }, [approvalDialogReq, approvalRoom, approvalNurse, requests]);
 
     const pendingRequests = requests.filter(r => r.status === "pending");
     const historyRequests = requests.filter(r => r.status !== "pending");
@@ -469,6 +636,11 @@ export default function ChannelingRequestPage() {
                                         key={req._id} 
                                         req={req} 
                                         onAction={handleAction} 
+                                        onApproveClick={(selectedReq: any) => {
+                                            setApprovalDialogReq(selectedReq);
+                                            setApprovalRoom("");
+                                            setApprovalNurse("");
+                                        }}
                                         loadingId={loadingAction} 
                                         formatDate={formatDate}
                                         formatTime={formatTime}
@@ -496,6 +668,114 @@ export default function ChannelingRequestPage() {
                         </TabsContent>
                     </Tabs>
                 )}
+                {/* --- APPROVAL RESOURCE PAIR ALLOCATION DIALOG --- */}
+                {approvalDialogReq && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+                        <Card className="w-full max-w-md bg-white border border-slate-200 shadow-2xl animate-in zoom-in-95 duration-150">
+                            <CardHeader className="bg-slate-50 border-b border-slate-100 flex flex-row justify-between items-center py-4 px-6">
+                                <div>
+                                    <h3 className="text-base text-slate-800 font-bold">Approve & Allocate Resources</h3>
+                                    <p className="text-xs text-slate-500 mt-0.5">Assign Room and Nurse for Dr. {approvalDialogReq.doctorName}</p>
+                                </div>
+                                <button 
+                                    onClick={() => setApprovalDialogReq(null)}
+                                    className="text-slate-400 hover:text-slate-600"
+                                >
+                                    <X size={20} />
+                                </button>
+                            </CardHeader>
+
+                            <CardContent className="p-6 space-y-4">
+                                <div className="bg-slate-50 p-3 rounded-lg border border-slate-100 text-xs space-y-1">
+                                    <p className="text-slate-600"><strong>Specialization:</strong> {approvalDialogReq.specialization || "General Medicine"}</p>
+                                    <p className="text-slate-600"><strong>Date:</strong> {formatDate(approvalDialogReq.date)}</p>
+                                    <p className="text-slate-600"><strong>Time:</strong> {formatTime(approvalDialogReq.startTime)} – {formatTime(approvalDialogReq.endTime)}</p>
+                                </div>
+
+                                {/* Room select */}
+                                <div className="space-y-1.5">
+                                    <label className="text-xs font-semibold text-slate-500 uppercase flex items-center justify-between">
+                                        <span>Select Room *</span>
+                                        <span className="text-[10px] text-cyan-600 font-bold lowercase">
+                                            ({getDoctorDept(approvalDialogReq.specialization)} rooms)
+                                        </span>
+                                    </label>
+                                    <select 
+                                        value={approvalRoom}
+                                        onChange={(e) => setApprovalRoom(e.target.value)}
+                                        className="w-full h-10 px-3 py-2 rounded-md border text-xs focus:outline-none focus:ring-2 focus:ring-cyan-500 bg-white border-slate-200"
+                                    >
+                                        <option value="">Choose Room...</option>
+                                        {getRoomsForDoctor(approvalDialogReq.specialization).map(room => {
+                                            const isBooked = isRoomBookedForTime(room, approvalDialogReq, requests);
+                                            return (
+                                                <option 
+                                                    key={room} 
+                                                    value={room} 
+                                                    disabled={isBooked}
+                                                    className={isBooked ? "text-slate-300" : ""}
+                                                >
+                                                    {room} {isBooked ? "(Booked)" : ""}
+                                                </option>
+                                            );
+                                        })}
+                                    </select>
+                                </div>
+
+                                {/* Nurse select */}
+                                <div className="space-y-1.5">
+                                    <label className="text-xs font-semibold text-slate-500 uppercase">Assigned Nurse *</label>
+                                    <select 
+                                        value={approvalNurse}
+                                        onChange={(e) => setApprovalNurse(e.target.value)}
+                                        className="w-full h-10 px-3 py-2 rounded-md border text-xs focus:outline-none focus:ring-2 focus:ring-cyan-500 bg-white border-slate-200"
+                                    >
+                                        <option value="">Choose Nurse...</option>
+                                        {nursesList.map(n => {
+                                            const isBooked = isNurseBookedForTime(n.name, approvalDialogReq, requests);
+                                            return (
+                                                <option 
+                                                    key={n._id} 
+                                                    value={n.name}
+                                                    disabled={isBooked}
+                                                    className={isBooked ? "text-slate-300" : ""}
+                                                >
+                                                    {n.name} {isBooked ? "(Booked)" : ""}
+                                                </option>
+                                            );
+                                        })}
+                                    </select>
+                                </div>
+
+                                {/* Conflict Check Info */}
+                                {modalApprovalConflictMessage && (
+                                    <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700 flex items-start gap-2">
+                                        <AlertTriangle className="h-4 w-4 mt-0.5 flex-shrink-0" />
+                                        <span className="font-semibold leading-relaxed">{modalApprovalConflictMessage}</span>
+                                    </div>
+                                )}
+
+                                {/* Actions */}
+                                <div className="flex gap-3 pt-2">
+                                    <Button
+                                        onClick={() => setApprovalDialogReq(null)}
+                                        variant="outline"
+                                        className="flex-1 text-xs"
+                                    >
+                                        Cancel
+                                    </Button>
+                                    <Button
+                                        onClick={() => handleConfirmApproval(approvalDialogReq._id)}
+                                        disabled={approvalSubmitting || !!modalApprovalConflictMessage || !approvalRoom || !approvalNurse}
+                                        className="flex-1 text-xs bg-cyan-600 hover:bg-cyan-700 text-white"
+                                    >
+                                        {approvalSubmitting ? <Loader2 className="animate-spin h-4 w-4" /> : "Approve Request"}
+                                    </Button>
+                                </div>
+                            </CardContent>
+                        </Card>
+                    </div>
+                )}
             </main>
         </div>
     );
@@ -503,7 +783,7 @@ export default function ChannelingRequestPage() {
 
 // --- SUB COMPONENTS ---
 
-function RequestCard({ req, onAction, loadingId, isHistory, formatDate, formatTime }: any) {
+function RequestCard({ req, onAction, onApproveClick, loadingId, isHistory, formatDate, formatTime }: any) {
     const isLoading = loadingId === req._id;
 
     return (
@@ -569,7 +849,7 @@ function RequestCard({ req, onAction, loadingId, isHistory, formatDate, formatTi
                                 </Button>
                                 <Button 
                                     size="sm"
-                                    onClick={() => onAction(req._id, "approved")}
+                                    onClick={() => onApproveClick(req)}
                                     className="bg-cyan-600 hover:bg-cyan-700 text-white min-w-[90px]"
                                     disabled={isLoading}
                                 >
