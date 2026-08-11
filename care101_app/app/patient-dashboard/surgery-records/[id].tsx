@@ -5,9 +5,9 @@ import {
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { ArrowLeft, Activity, Heart, FileText, CheckCircle2, X } from 'lucide-react-native';
+import { ArrowLeft, FileText, X, Calendar } from 'lucide-react-native';
 import * as SecureStore from 'expo-secure-store';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 
 const API_URL = `${process.env.EXPO_PUBLIC_API_URL}/surgery-records`;
@@ -65,7 +65,12 @@ export default function PatientRecordDetailsScreen() {
                             });
                             if (recordsRes.ok) {
                                 const recordsData = await recordsRes.json();
-                                const labTests = recordsData.filter((r: any) => r.type === 'lab_tests');
+                                const labTests = recordsData.filter((r: any) => {
+                                    if (r.type !== 'lab_tests') return false;
+                                    const rDoc = r.doctorName ? r.doctorName.toLowerCase().replace('dr.', '').replace(/\s+/g, '').trim() : '';
+                                    const sDoc = data.doctorName ? data.doctorName.toLowerCase().replace('dr.', '').replace(/\s+/g, '').trim() : '';
+                                    return rDoc === sDoc && rDoc !== '';
+                                });
                                 setLabReports(labTests);
                             }
                         }
@@ -145,41 +150,6 @@ export default function PatientRecordDetailsScreen() {
         }
     };
 
-    const getEntryTitleAndNote = (notes: string) => {
-        if (!notes) return { title: 'Progress Update', subtitle: '' };
-        if (notes.includes(':')) {
-            const parts = notes.split(':');
-            return {
-                title: parts[0].trim(),
-                subtitle: parts.slice(1).join(':').trim()
-            };
-        }
-        return {
-            title: 'Recovery Progress',
-            subtitle: notes
-        };
-    };
-
-    const getProgressValueOrIcon = (notes: string) => {
-        if (!notes) return { type: 'check', value: null };
-        const percentMatch = notes.match(/\d+%/g);
-        if (percentMatch) {
-            return { type: 'percent', value: percentMatch[0] };
-        }
-        return { type: 'check', value: null };
-    };
-
-    const getEntryIcon = (title: string) => {
-        const lowerTitle = title.toLowerCase();
-        if (lowerTitle.includes('mobility') || lowerTitle.includes('walk') || lowerTitle.includes('exercise') || lowerTitle.includes('motion')) {
-            return <Activity size={24} color="#00aeef" />;
-        }
-        if (lowerTitle.includes('pain') || lowerTitle.includes('medication') || lowerTitle.includes('pill') || lowerTitle.includes('drug') || lowerTitle.includes('management')) {
-            return <Heart size={24} color="#00aeef" />;
-        }
-        return <FileText size={24} color="#00aeef" />;
-    };
-
     if (loading) return <ActivityIndicator style={{ marginTop: 50 }} size="large" color="#00aeef" />;
     if (!record) return null;
 
@@ -192,7 +162,7 @@ export default function PatientRecordDetailsScreen() {
                 <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
                     <ArrowLeft size={24} color="#0f172a" />
                 </TouchableOpacity>
-                <Text style={styles.headerTitle}>{record.doctorName || 'Dr. Damidu Abeysinghe'}</Text>
+                <Text style={styles.headerTitle}>{record.name || 'Surgery Record'}</Text>
             </View>
 
             <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
@@ -202,8 +172,9 @@ export default function PatientRecordDetailsScreen() {
                     <Text style={styles.cardTitle}>Doctor Details</Text>
                     <View style={styles.divider} />
                     <View style={styles.detailRow}>
-                        <Text style={styles.detailText}>Doctor Name: {record.doctorName || 'N/A'}</Text>
-                        <Text style={styles.detailText}>Hospital: {record.hospital || 'N/A'}</Text>
+                        <Text style={styles.detailText}>Doctor Name: {record.doctorName || record.doctorId?.name || 'N/A'}</Text>
+                        <Text style={styles.detailText}>SLMC Number: {record.doctorId?.slmcReg || 'N/A'}</Text>
+                        <Text style={styles.detailText}>Hospital: {record.doctorId?.hospital || record.hospital || 'N/A'}</Text>
                     </View>
                 </View>
 
@@ -224,6 +195,14 @@ export default function PatientRecordDetailsScreen() {
                         <Text style={styles.captionTitle}>Surgery Reference</Text>
                         <Text style={styles.captionText}>Details of the surgical procedure and initial assessment records.</Text>
                     </View>
+                    {record.surgeryCardImage ? (
+                        <TouchableOpacity
+                            style={styles.downloadCardBtn}
+                            onPress={() => handleDownloadFile(record.surgeryCardImage, 'Surgery_Card', 'image/png')}
+                        >
+                            <Text style={styles.downloadCardBtnText}>Download Surgery Card</Text>
+                        </TouchableOpacity>
+                    ) : null}
                 </View>
 
                 {/* Card 3: Lab Reports */}
@@ -256,34 +235,27 @@ export default function PatientRecordDetailsScreen() {
                 </View>
 
                 {/* SECTION: PROGRESS ENTRIES (Timeline) */}
-                <Text style={styles.sectionHeader}>Recovery Progress</Text>
+                <View style={styles.timelineHeader}>
+                    <Text style={styles.sectionHeader}>Recovery Progress</Text>
+                </View>
 
                 {record.entries && record.entries.length > 0 ? (
-                    record.entries.map((entry: any, index: number) => {
-                        const parsed = getEntryTitleAndNote(entry.notes);
-                        const progress = getProgressValueOrIcon(entry.notes);
-
-                        return (
-                            <View key={index} style={styles.entryCard}>
-                                <View style={styles.iconContainer}>
-                                    {getEntryIcon(parsed.title)}
-                                </View>
-                                <View style={styles.entryInfo}>
-                                    <Text style={styles.entryTitle}>{parsed.title}</Text>
-                                    <Text style={styles.entrySubtitle}>
-                                        {parsed.subtitle || `Last updated: ${new Date(entry.date).toLocaleDateString()}`}
-                                    </Text>
-                                </View>
-                                <View style={styles.statusContainer}>
-                                    {progress.type === 'percent' ? (
-                                        <Text style={styles.percentText}>{progress.value}</Text>
-                                    ) : (
-                                        <CheckCircle2 size={24} color="#00aeef" />
-                                    )}
-                                </View>
+                    record.entries.map((entry: any, index: number) => (
+                        <View key={index} style={styles.entryCardProgress}>
+                            <View style={styles.entryHeader}>
+                                <Calendar size={14} color="#64748b" />
+                                <Text style={styles.entryDate}>{new Date(entry.date).toLocaleString()}</Text>
                             </View>
-                        );
-                    })
+
+                            {entry.images && entry.images.length > 0 && (
+                                <Image source={{ uri: entry.images[0] }} style={styles.entryImage} />
+                            )}
+
+                            {entry.notes ? (
+                                <Text style={styles.entryNotes}>{entry.notes}</Text>
+                            ) : null}
+                        </View>
+                    ))
                 ) : (
                     <View style={styles.emptyState}>
                         <Text style={styles.emptyText}>No progress updates yet.</Text>
@@ -335,7 +307,7 @@ export default function PatientRecordDetailsScreen() {
                                         </View>
                                     )
                                 ) : (
-                                    <Text style={styles.noImageText}>No file attachment available.</Text>
+                                    <Text style={styles.noImageTextModal}>No file attachment available.</Text>
                                 )}
                             </View>
                         </ScrollView>
@@ -377,12 +349,12 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         paddingHorizontal: 20,
         paddingVertical: 14,
-        backgroundColor: '#f8fafc',
+        backgroundColor: '#fff',
         borderBottomWidth: 1,
-        borderBottomColor: '#f1f5f9',
+        borderBottomColor: '#e2e8f0'
     },
     backBtn: { marginRight: 16 },
-    headerTitle: { fontSize: 20, fontWeight: '700', color: '#0f172a' },
+    headerTitle: { fontSize: 18, fontWeight: '700', color: '#0f172a' },
     content: { padding: 20, paddingBottom: 60 },
 
     // Cards
@@ -392,23 +364,18 @@ const styles = StyleSheet.create({
         padding: 20,
         marginBottom: 20,
         borderWidth: 1,
-        borderColor: '#f1f5f9',
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.03,
-        shadowRadius: 8,
-        elevation: 2,
+        borderColor: '#e2e8f0',
     },
-    cardTitle: { fontSize: 18, fontWeight: '700', color: '#0f172a' },
+    cardTitle: { fontSize: 16, fontWeight: '700', color: '#0f172a' },
     divider: { height: 1, backgroundColor: '#f1f5f9', marginVertical: 12 },
     detailRow: { gap: 8 },
     detailText: { fontSize: 15, color: '#475569', fontWeight: '500' },
 
     imageWrapper: {
         width: '100%',
-        height: 280,
-        backgroundColor: '#fff',
-        borderRadius: 8,
+        height: 220,
+        backgroundColor: '#f1f5f9',
+        borderRadius: 12,
         overflow: 'hidden',
         justifyContent: 'center',
         alignItems: 'center',
@@ -416,52 +383,46 @@ const styles = StyleSheet.create({
     cardImage: { width: '100%', height: '100%' },
     noImageContainer: {
         width: '100%',
-        height: 150,
-        borderRadius: 8,
-        backgroundColor: '#f8fafc',
+        height: 220,
+        borderRadius: 12,
+        backgroundColor: '#f1f5f9',
         alignItems: 'center',
-        justifyContent: 'center',
-        borderWidth: 1,
-        borderColor: '#e2e8f0',
-        borderStyle: 'dashed',
+        justifyContent: 'center'
     },
-    noImageText: { color: '#94a3b8', fontSize: 14, fontStyle: 'italic' },
+    noImageText: { color: '#94a3b8', fontSize: 14 },
 
     captionContainer: { marginTop: 12 },
     captionTitle: { fontSize: 16, fontWeight: '700', color: '#334155', marginBottom: 4 },
     captionText: { fontSize: 14, color: '#64748b', lineHeight: 20 },
 
-    sectionHeader: { fontSize: 18, fontWeight: '700', color: '#0f172a', marginBottom: 16, marginTop: 8 },
+    downloadCardBtn: {
+        backgroundColor: '#00aeef',
+        paddingVertical: 12,
+        borderRadius: 8,
+        alignItems: 'center',
+        marginTop: 15,
+    },
+    downloadCardBtnText: {
+        color: '#fff',
+        fontSize: 14,
+        fontWeight: '600',
+    },
 
-    entryCard: {
-        flexDirection: 'row',
-        alignItems: 'center',
+    timelineHeader: { marginBottom: 12, marginTop: 10 },
+    sectionHeader: { fontSize: 18, fontWeight: '700', color: '#0f172a' },
+
+    entryCardProgress: {
         backgroundColor: '#fff',
-        borderRadius: 16,
-        padding: 16,
-        marginBottom: 12,
+        borderRadius: 12,
+        padding: 12,
+        marginBottom: 16,
         borderWidth: 1,
-        borderColor: '#f1f5f9',
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.02,
-        shadowRadius: 6,
-        elevation: 2,
+        borderColor: '#e2e8f0',
     },
-    iconContainer: {
-        width: 48,
-        height: 48,
-        borderRadius: 24,
-        backgroundColor: '#e0f7fa',
-        justifyContent: 'center',
-        alignItems: 'center',
-        marginRight: 16,
-    },
-    entryInfo: { flex: 1 },
-    entryTitle: { fontSize: 16, fontWeight: '700', color: '#0f172a', marginBottom: 4 },
-    entrySubtitle: { fontSize: 13, color: '#64748b' },
-    statusContainer: { marginLeft: 12, justifyContent: 'center', alignItems: 'center' },
-    percentText: { fontSize: 18, fontWeight: '700', color: '#00aeef' },
+    entryHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
+    entryDate: { fontSize: 12, color: '#64748b', marginLeft: 6, fontWeight: '500' },
+    entryImage: { width: '100%', height: 150, borderRadius: 8, marginBottom: 8, backgroundColor: '#f1f5f9' },
+    entryNotes: { fontSize: 14, color: '#334155', lineHeight: 20 },
 
     emptyState: { padding: 20, alignItems: 'center' },
     emptyText: { color: '#94a3b8', fontStyle: 'italic' },
@@ -599,7 +560,7 @@ const styles = StyleSheet.create({
         resizeMode: 'contain',
         backgroundColor: '#000',
     },
-    noImageText: {
+    noImageTextModal: {
         textAlign: 'center',
         color: '#94a3b8',
         fontStyle: 'italic',

@@ -63,6 +63,32 @@ router.get("/list", auth, async (req, res) => {
 });
 
 // ==========================================
+// 2.5. SEARCH DOCTOR BY NAME (Authenticated)
+// ==========================================
+router.get("/search/by-name", auth, async (req, res) => {
+  try {
+    const { name } = req.query;
+    if (!name) return res.status(400).json({ msg: "Name query parameter is required" });
+
+    const nameRegex = new RegExp(name, "i");
+    const doctor = await Doctor.findOne({
+      $or: [
+        { name: nameRegex },
+        { fullName: nameRegex },
+        { nameWithInitials: nameRegex }
+      ]
+    }).select("-password");
+
+    if (!doctor) return res.status(404).json({ msg: "Doctor not found" });
+
+    res.json(doctor);
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).send("Server Error");
+  }
+});
+
+// ==========================================
 // 3. GET SINGLE DOCTOR (Public)
 // ==========================================
 router.get("/:id", async (req, res) => {

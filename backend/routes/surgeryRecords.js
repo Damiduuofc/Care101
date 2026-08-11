@@ -53,7 +53,7 @@ router.post("/create", auth, async (req, res) => {
 router.get("/:id", auth, async (req, res) => {
   try {
     const record = await SurgeryRecord.findById(req.params.id)
-      .populate('doctorId', 'name email specialization');
+      .populate('doctorId', 'name email specialization slmcReg hospital profileImage');
 
     if (!record) return res.status(404).json({ msg: "Record not found" });
 
