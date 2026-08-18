@@ -3,6 +3,7 @@ import express from "express";
 import mongoose from "mongoose";
 import cors from "cors";
 import path from "path";
+import fs from "fs";
 import { createServer } from "http";
 import { Server } from "socket.io";
 
@@ -57,6 +58,12 @@ io.on("connection", (socket) => {
 });
 
 const __dirname = path.resolve();
+
+// Ensure uploads directory exists
+const uploadsDir = path.join(__dirname, "uploads");
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+}
 
 /* =========================
    MIDDLEWARE

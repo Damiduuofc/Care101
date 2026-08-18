@@ -19,6 +19,10 @@ export default function InstructionDetailScreen() {
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [qrVisible, setQrVisible] = useState(false);
+  const [shareToken, setShareToken] = useState<string | null>(null);
+  const [expiresAtDate, setExpiresAtDate] = useState<string | null>(null);
+  const [showExpireSelect, setShowExpireSelect] = useState(false);
+  const [generatingShare, setGeneratingShare] = useState(false);
 
   useEffect(() => { fetchData(); }, [id]);
 
@@ -44,7 +48,7 @@ export default function InstructionDetailScreen() {
       { text: "Cancel", style: "cancel" },
       { text: "Delete", style: "destructive", onPress: async () => {
           const token = await SecureStore.getItemAsync('token');
-          await fetch(`${API_URL}/api/instructions/${id}`, {
+          await fetch(`${API_URL}/instructions/${id}`, {
             method: 'DELETE', headers: { Authorization: `Bearer ${token}` }
           });
           router.back();
@@ -59,7 +63,7 @@ export default function InstructionDetailScreen() {
         { text: "Remove", style: "destructive", onPress: async () => {
             try {
                 const token = await SecureStore.getItemAsync('token');
-                const res = await fetch(`${API_URL}/api/instructions/${id}/${section}/${type}`, {
+                const res = await fetch(`${API_URL}/instructions/${id}/${section}/${type}`, {
                     method: 'DELETE',
                     headers: { Authorization: `Bearer ${token}` }
                 });
@@ -92,9 +96,9 @@ export default function InstructionDetailScreen() {
           uri: file.uri, name: file.name, type: file.mimeType || 'application/octet-stream',
         } as any);
 
-        const res = await fetch(`${API_URL}/api/instructions/${id}/${section}/${type}`, {
+        const res = await fetch(`${API_URL}/instructions/${id}/${section}/${type}`, {
           method: 'PUT',
-          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'multipart/form-data' },
+          headers: { Authorization: `Bearer ${token}` },
           body: formData
         });
 
@@ -111,7 +115,57 @@ export default function InstructionDetailScreen() {
   if (loading) return <ActivityIndicator style={{marginTop:50}} size="large" color="#0891b2" />;
   if (!data) return <Text>Not Found</Text>;
 
-  const patientViewUrl = `https://carelink.health/patient/instructions/${id}`;
+  const getFrontendUrl = () => {
+    if (process.env.EXPO_PUBLIC_FRONTEND_URL) {
+      return process.env.EXPO_PUBLIC_FRONTEND_URL;
+    }
+    if (API_URL) {
+      let url = API_URL.replace(/\/api\/?$/, '');
+      if (url.includes(':5002')) {
+        url = url.replace(':5002', ':9002');
+      }
+      return url;
+    }
+    return 'http://localhost:9002';
+  };
+
+  const patientViewUrl = shareToken 
+    ? `${getFrontendUrl()}/patient/instructions/${shareToken}`
+    : '';
+
+  const handleQrPress = () => {
+    setShowExpireSelect(true);
+  };
+
+  const handleSelectExpiry = async (days: number) => {
+    setShowExpireSelect(false);
+    setGeneratingShare(true);
+    try {
+      const token = await SecureStore.getItemAsync('token');
+      const res = await fetch(`${API_URL}/instructions/${id}/share`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({ expireDays: days })
+      });
+      if (res.ok) {
+        const shareData = await res.json();
+        setShareToken(shareData.token);
+        const dateObj = new Date(shareData.expiresAt);
+        setExpiresAtDate(dateObj.toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' }));
+        setQrVisible(true);
+      } else {
+        Alert.alert("Error", "Failed to generate share link");
+      }
+    } catch (error) {
+      console.error(error);
+      Alert.alert("Error", "Network error. Please try again.");
+    } finally {
+      setGeneratingShare(false);
+    }
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -137,7 +191,7 @@ export default function InstructionDetailScreen() {
         {/* PRE-OP */}
         <InstructionSection 
             title="Pre-Operative" color="#3b82f6"
-            onQrPress={() => setQrVisible(true)}
+            onQrPress={handleQrPress}
             files={data.preOp}
             onUpload={(type: any) => handleUpload('preOp', type)}
             onRemove={(type: any) => handleRemoveFile('preOp', type)}
@@ -147,7 +201,7 @@ export default function InstructionDetailScreen() {
         {/* POST-OP */}
         <InstructionSection 
             title="Post-Operative" color="#10b981"
-            onQrPress={() => setQrVisible(true)}
+            onQrPress={handleQrPress}
             files={data.postOp}
             onUpload={(type: any) => handleUpload('postOp', type)}
             onRemove={(type: any) => handleRemoveFile('postOp', type)}
@@ -156,10 +210,10 @@ export default function InstructionDetailScreen() {
 
       </ScrollView>
 
-      {uploading && (
+      {(uploading || generatingShare) && (
         <View style={styles.loadingOverlay}>
             <ActivityIndicator size="large" color="#fff" />
-            <Text style={{color:'#fff', marginTop:10}}>Uploading file...</Text>
+            <Text style={{color:'#fff', marginTop:10}}>{uploading ? "Uploading file..." : "Generating share code..."}</Text>
         </View>
       )}
 
@@ -173,7 +227,31 @@ export default function InstructionDetailScreen() {
                 <Text style={styles.qrTitle}>Patient Access Code</Text>
                 <Text style={styles.qrSub}>Scan to view instructions</Text>
                 <View style={styles.qrWrapper}>
-                    <QRCode value={patientViewUrl} size={200} />
+                    {patientViewUrl ? <QRCode value={patientViewUrl} size={200} /> : null}
+                </View>
+                {expiresAtDate && (
+                  <Text style={styles.expiryText}>Expires on: {expiresAtDate}</Text>
+                )}
+            </View>
+        </View>
+      </Modal>
+
+      {/* Expiration Selection Modal */}
+      <Modal visible={showExpireSelect} transparent animationType="slide" onRequestClose={() => setShowExpireSelect(false)}>
+        <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+                <TouchableOpacity style={styles.closeModal} onPress={() => setShowExpireSelect(false)}>
+                    <X size={24} color="#64748b" />
+                </TouchableOpacity>
+                <Text style={styles.modalTitle}>Share Instructions</Text>
+                <Text style={styles.modalSub}>Select access expiration time frame for the QR code:</Text>
+                
+                <View style={styles.optionsWrapper}>
+                  {[30, 60, 90].map((days) => (
+                    <TouchableOpacity key={days} style={styles.optionBtn} onPress={() => handleSelectExpiry(days)}>
+                      <Text style={styles.optionText}>{days} Days</Text>
+                    </TouchableOpacity>
+                  ))}
                 </View>
             </View>
         </View>
@@ -268,4 +346,10 @@ const styles = StyleSheet.create({
   qrTitle: { fontSize: 20, fontWeight: '700', color: '#0f172a', marginBottom: 4 },
   qrSub: { fontSize: 14, color: '#64748b', marginBottom: 30 },
   qrWrapper: { padding: 10, backgroundColor: '#fff', borderRadius: 12 },
+  modalTitle: { fontSize: 20, fontWeight: '700', color: '#0f172a', marginBottom: 8, textAlign: 'center' },
+  modalSub: { fontSize: 14, color: '#64748b', marginBottom: 24, textAlign: 'center', paddingHorizontal: 10 },
+  optionsWrapper: { width: '100%', gap: 12, marginBottom: 10 },
+  optionBtn: { width: '100%', paddingVertical: 14, backgroundColor: '#0891b2', borderRadius: 12, alignItems: 'center' },
+  optionText: { color: '#fff', fontSize: 16, fontWeight: '600' },
+  expiryText: { fontSize: 13, color: '#ef4444', marginTop: 16, fontWeight: '600', textAlign: 'center' },
 });
