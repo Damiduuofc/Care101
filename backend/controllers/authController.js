@@ -82,12 +82,10 @@ export const registerPatient = async (req, res) => {
       { expiresIn: "30d" }
     );
 
-    // Send Welcome Notification
-    try {
-      await sendPatientWelcomeEmail(finalPatient);
-    } catch (emailErr) {
+    // Send Welcome Notification (Run asynchronously in the background)
+    sendPatientWelcomeEmail(finalPatient).catch(emailErr => {
       console.error("Welcome notification failed to send:", emailErr);
-    }
+    });
 
     res.status(201).json({
       token,

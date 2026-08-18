@@ -95,10 +95,19 @@ export default function PatientRecordsListScreen() {
         return doctorName.includes(query) || hospital.includes(query);
     });
 
+    const getInitials = (name: string) => {
+        if (!name) return 'DR';
+        let cleanName = name.replace(/^(dr|dr\.)\s+/i, '').trim();
+        const parts = cleanName.split(/\s+/).filter(p => p !== '');
+        if (parts.length === 0) return 'DR';
+        if (parts.length === 1) return parts[0].substring(0, 2).toUpperCase();
+        return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+    };
+
     const renderRecordItem = ({ item }: any) => {
         const doctorName = item.doctorName || item.doctorId?.name || 'Dr. Unknown';
-        const slmcReg = item.doctorId?.slmcReg || 'N/A';
-        const hospitalName = item.hospital || item.doctorId?.hospital || 'N/A';
+        const slmcReg = item.doctorSlmc || item.doctorId?.slmcReg || 'N/A';
+        const hospitalName = item.doctorHospital || item.hospital || item.doctorId?.hospital || 'N/A';
         const lastUpdate = formatDate(item.updatedAt || item.date || item.createdAt);
 
         return (
@@ -109,7 +118,7 @@ export default function PatientRecordsListScreen() {
             >
                 <View style={styles.doctorCardMain}>
                     <View style={styles.doctorAvatarContainer}>
-                        <Text style={styles.avatarText}>👨‍⚕️</Text>
+                        <Text style={styles.avatarText}>{getInitials(doctorName)}</Text>
                     </View>
                     <View style={styles.doctorInfo}>
                         <Text style={styles.doctorNameText}>{doctorName}</Text>
@@ -256,7 +265,9 @@ const styles = StyleSheet.create({
         borderColor: '#e2e8f0',
     },
     avatarText: {
-        fontSize: 24,
+        fontSize: 18,
+        fontWeight: 'bold',
+        color: '#06b6d4',
     },
     doctorInfo: {
         flex: 1,

@@ -229,6 +229,9 @@ router.put("/arrival-status", auth, async (req, res) => {
 
     const previousArrived = doctor.isArrived;
     doctor.isArrived = isArrived;
+    if (isArrived === true) {
+      doctor.lastArrivalDate = new Date();
+    }
     await doctor.save();
 
     if (isArrived === true && !previousArrived) {

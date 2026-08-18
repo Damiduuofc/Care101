@@ -54,7 +54,7 @@ export default function PatientRecordDetailsScreen() {
                 const data = await res.json();
                 setRecord(data);
 
-                // Fetch patient lab reports
+                // Fetch patient lab reports & requests
                 try {
                     const baseApi = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.1.100:5000/api';
                     const searchRes = await fetch(`${baseApi}/patients/search-by-patientid/${data.patientId}`, {
@@ -69,8 +69,17 @@ export default function PatientRecordDetailsScreen() {
                         if (searchData.found && searchData.patient?._id) {
                             const patId = searchData.patient._id;
                             
-                            // Fetch completed medical records
-                            const recordsRes = await fetch(`${baseApi}/medical-records/patient/${patId}`, {
+                            const cleanDoctorName = (name: string) => {
+                                if (!name) return '';
+                                return name
+                                    .toLowerCase()
+                                    .replace(/^(dr|dr\.)\s+/i, '')
+                                    .replace(/[^a-z0-9]/g, '')
+                                    .trim();
+                            };
+
+                            // Fetch completed medical records (patient's own endpoint)
+                            const recordsRes = await fetch(`${baseApi}/medical-records/my-records`, {
                                 headers: {
                                     Authorization: `Bearer ${token}`,
                                     'Content-Type': 'application/json',
@@ -81,8 +90,8 @@ export default function PatientRecordDetailsScreen() {
                                 const recordsData = await recordsRes.json();
                                 const labTests = recordsData.filter((r: any) => {
                                     if (r.type !== 'lab_tests') return false;
-                                    const rDoc = r.doctorName ? r.doctorName.toLowerCase().replace('dr.', '').replace(/\s+/g, '').trim() : '';
-                                    const sDoc = data.doctorName ? data.doctorName.toLowerCase().replace('dr.', '').replace(/\s+/g, '').trim() : '';
+                                    const rDoc = cleanDoctorName(r.doctorName);
+                                    const sDoc = cleanDoctorName(data.doctorName);
                                     return rDoc === sDoc && rDoc !== '';
                                 });
                                 setLabReports(labTests);
@@ -99,8 +108,8 @@ export default function PatientRecordDetailsScreen() {
                             if (reqsRes.ok) {
                                 const reqsData = await reqsRes.json();
                                 const docReqs = reqsData.filter((req: any) => {
-                                    const reqDoc = req.doctorName ? req.doctorName.toLowerCase().replace('dr.', '').replace(/\s+/g, '').trim() : '';
-                                    const sDoc = data.doctorName ? data.doctorName.toLowerCase().replace('dr.', '').replace(/\s+/g, '').trim() : '';
+                                    const reqDoc = cleanDoctorName(req.doctorName);
+                                    const sDoc = cleanDoctorName(data.doctorName);
                                     return reqDoc === sDoc && reqDoc !== '';
                                 });
                                 setLabRequests(docReqs);

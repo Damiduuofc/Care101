@@ -180,6 +180,11 @@ export default function NursePatientArrivals() {
                 const docA = (a.doctorName || "").toLowerCase();
                 const docB = (b.doctorName || "").toLowerCase();
                 comparison = docA.localeCompare(docB);
+                if (comparison === 0) {
+                    const qA = a.queueNumber || 0;
+                    const qB = b.queueNumber || 0;
+                    comparison = qA - qB;
+                }
             } else if (sortField === "arrived") {
                 const arrA = a.arrived ? 1 : 0;
                 const arrB = b.arrived ? 1 : 0;

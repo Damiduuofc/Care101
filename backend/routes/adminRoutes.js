@@ -420,25 +420,27 @@ router.post("/appointments/walkin", protect, async (req, res) => {
       console.error("Notification Error:", notifError);
     }
 
-    // --- 9. SEND EMAIL CONFIRMATION ---
-    try {
-      const doctorInfo = await Doctor.findById(doctorId);
-      const doctorRoom = doctorInfo ? doctorInfo.allocatedRoom : "TBA";
-      
-      let pdfBuffer = null;
-      if (paymentStatus === 'paid' && createdBill) {
-        try {
-          const { generateReceiptPdf } = await import("../utils/pdfService.js");
-          pdfBuffer = await generateReceiptPdf(createdBill, savedAppointment, doctorInfo, patient);
-        } catch (pdfErr) {
-          console.error("Failed to generate PDF receipt:", pdfErr);
+    // --- 9. SEND EMAIL CONFIRMATION --- (Run asynchronously in the background)
+    (async () => {
+      try {
+        const doctorInfo = await Doctor.findById(doctorId);
+        const doctorRoom = doctorInfo ? doctorInfo.allocatedRoom : "TBA";
+        
+        let pdfBuffer = null;
+        if (paymentStatus === 'paid' && createdBill) {
+          try {
+            const { generateReceiptPdf } = await import("../utils/pdfService.js");
+            pdfBuffer = await generateReceiptPdf(createdBill, savedAppointment, doctorInfo, patient);
+          } catch (pdfErr) {
+            console.error("Failed to generate PDF receipt:", pdfErr);
+          }
         }
+        
+        await sendBookingConfirmation(patient.email, savedAppointment, doctorRoom, pdfBuffer);
+      } catch (emailErr) {
+        console.error("Failed to send booking confirmation email:", emailErr);
       }
-      
-      await sendBookingConfirmation(patient.email, savedAppointment, doctorRoom, pdfBuffer);
-    } catch (emailErr) {
-      console.error("Failed to send booking confirmation email:", emailErr);
-    }
+    })();
 
     res.status(201).json(savedAppointment);
 
@@ -478,19 +480,21 @@ router.put("/appointments/:id", protect, async (req, res) => {
         appointment.status = "confirmed";
         const updatedBill = await Bill.findOneAndUpdate({ appointmentId: appointment._id }, { status: "Paid" }, { new: true });
 
-        // Generate and email PDF Receipt
-        try {
-          const patient = await Patient.findById(appointment.patientId);
-          if (patient && patient.email) {
-            const doctorInfo = await Doctor.findById(appointment.doctorId);
-            const { generateReceiptPdf } = await import("../utils/pdfService.js");
-            const { sendPaymentReceipt } = await import("../utils/emailService.js");
-            const pdfBuffer = await generateReceiptPdf(updatedBill || {}, appointment, doctorInfo, patient);
-            await sendPaymentReceipt(patient.email, updatedBill || { _id: appointment._id, amount: appointment.amount || 3500, title: `Consultation - ${appointment.doctorName}` }, pdfBuffer);
+        // Generate and email PDF Receipt (Run asynchronously in the background)
+        (async () => {
+          try {
+            const patient = await Patient.findById(appointment.patientId);
+            if (patient && patient.email) {
+              const doctorInfo = await Doctor.findById(appointment.doctorId);
+              const { generateReceiptPdf } = await import("../utils/pdfService.js");
+              const { sendPaymentReceipt } = await import("../utils/emailService.js");
+              const pdfBuffer = await generateReceiptPdf(updatedBill || {}, appointment, doctorInfo, patient);
+              await sendPaymentReceipt(patient.email, updatedBill || { _id: appointment._id, amount: appointment.amount || 3500, title: `Consultation - ${appointment.doctorName}` }, pdfBuffer);
+            }
+          } catch (pdfEmailErr) {
+            console.error("Failed to generate/send PDF receipt on admin update:", pdfEmailErr);
           }
-        } catch (pdfEmailErr) {
-          console.error("Failed to generate/send PDF receipt on admin update:", pdfEmailErr);
-        }
+        })();
 
         try {
           const hospitalName = "Suwasevana";
@@ -646,23 +650,25 @@ router.post("/bills/create", protect, authorize(["system_admin", "receptionist"]
       }
     }
 
-    // Generate and email PDF Receipt if manual bill is paid immediately
+    // Generate and email PDF Receipt if manual bill is paid immediately (Run asynchronously in the background)
     if (status === "Paid") {
-      try {
-        const patient = await Patient.findById(newBill.patientId);
-        if (patient && patient.email) {
-          let doctor = null;
-          if (doctorId) {
-            doctor = await Doctor.findById(doctorId);
+      (async () => {
+        try {
+          const patient = await Patient.findById(newBill.patientId);
+          if (patient && patient.email) {
+            let doctor = null;
+            if (doctorId) {
+              doctor = await Doctor.findById(doctorId);
+            }
+            const { generateReceiptPdf } = await import("../utils/pdfService.js");
+            const { sendPaymentReceipt } = await import("../utils/emailService.js");
+            const pdfBuffer = await generateReceiptPdf(newBill, null, doctor, patient);
+            await sendPaymentReceipt(patient.email, newBill, pdfBuffer);
           }
-          const { generateReceiptPdf } = await import("../utils/pdfService.js");
-          const { sendPaymentReceipt } = await import("../utils/emailService.js");
-          const pdfBuffer = await generateReceiptPdf(newBill, null, doctor, patient);
-          await sendPaymentReceipt(patient.email, newBill, pdfBuffer);
+        } catch (pdfEmailErr) {
+          console.error("Failed to generate/send PDF receipt for manual bill:", pdfEmailErr);
         }
-      } catch (pdfEmailErr) {
-        console.error("Failed to generate/send PDF receipt for manual bill:", pdfEmailErr);
-      }
+      })();
     }
 
     await Notification.create({
@@ -737,22 +743,24 @@ router.put("/bills/pay/:billId", protect, authorize(["system_admin", "receptioni
       console.error("Finance Error:", finErr);
     }
 
-    // 4. Generate and email PDF Receipt
-    try {
-      const patient = await Patient.findById(bill.patientId);
-      if (patient && patient.email) {
-        let doctor = null;
-        if (bill.doctorId) {
-          doctor = await Doctor.findById(bill.doctorId);
+    // 4. Generate and email PDF Receipt (Run asynchronously in the background)
+    (async () => {
+      try {
+        const patient = await Patient.findById(bill.patientId);
+        if (patient && patient.email) {
+          let doctor = null;
+          if (bill.doctorId) {
+            doctor = await Doctor.findById(bill.doctorId);
+          }
+          const { generateReceiptPdf } = await import("../utils/pdfService.js");
+          const { sendPaymentReceipt } = await import("../utils/emailService.js");
+          const pdfBuffer = await generateReceiptPdf(bill, null, doctor, patient);
+          await sendPaymentReceipt(patient.email, bill, pdfBuffer);
         }
-        const { generateReceiptPdf } = await import("../utils/pdfService.js");
-        const { sendPaymentReceipt } = await import("../utils/emailService.js");
-        const pdfBuffer = await generateReceiptPdf(bill, null, doctor, patient);
-        await sendPaymentReceipt(patient.email, bill, pdfBuffer);
+      } catch (pdfEmailErr) {
+        console.error("Failed to generate/send PDF receipt for manual bill:", pdfEmailErr);
       }
-    } catch (pdfEmailErr) {
-      console.error("Failed to generate/send PDF receipt for manual bill:", pdfEmailErr);
-    }
+    })();
 
     // 5. Create Notification
     await Notification.create({
@@ -923,8 +931,94 @@ router.put("/all-doctors/:id/approve", protect, authorize(["system_admin"]), asy
   }
 });
 
+const syncTodaySchedulesToDoctors = async () => {
+  try {
+    const now = new Date();
+    
+    // Define start and end of today in local/configured server time
+    const startOfDay = new Date(now);
+    startOfDay.setHours(0, 0, 0, 0);
+    const endOfDay = new Date(now);
+    endOfDay.setHours(23, 59, 59, 999);
+
+    // Fetch approved schedule requests for today
+    const todaySchedules = await ScheduleRequest.find({
+      status: "approved",
+      date: { $gte: startOfDay, $lte: endOfDay }
+    }).sort({ startTime: 1 });
+
+    // Group schedules by doctorId
+    const doctorSchedules = {};
+    todaySchedules.forEach(sched => {
+      if (!sched.doctorId) return;
+      const docIdStr = sched.doctorId.toString();
+      if (!doctorSchedules[docIdStr]) {
+        doctorSchedules[docIdStr] = [];
+      }
+      doctorSchedules[docIdStr].push(sched);
+    });
+
+    const doctors = await Doctor.find();
+
+    for (const doc of doctors) {
+      const docIdStr = doc._id.toString();
+      const schedules = doctorSchedules[docIdStr] || [];
+
+      // Check if arrival status is from a previous day and reset if needed
+      if (doc.isArrived) {
+        const arrivalDate = doc.lastArrivalDate ? new Date(doc.lastArrivalDate) : null;
+        if (!arrivalDate || arrivalDate.toDateString() !== now.toDateString()) {
+          doc.isArrived = false;
+          doc.sessionStarted = false;
+          doc.currentQueueNumber = 0;
+          await doc.save();
+        }
+      }
+
+      let selectedSchedule = null;
+
+      if (schedules.length > 0) {
+        // 1. Find currently active schedule: startTime <= now && endTime > now
+        selectedSchedule = schedules.find(s => s.startTime <= now && s.endTime > now);
+
+        // 2. If no active schedule, find first upcoming schedule: startTime > now
+        if (!selectedSchedule) {
+          selectedSchedule = schedules.find(s => s.startTime > now);
+        }
+
+        // 3. If no active or upcoming schedule, check if there's any ended schedule today
+        // but keep the allocation only if the doctor's session has started and not ended yet
+        if (!selectedSchedule && doc.sessionStarted) {
+          selectedSchedule = schedules[schedules.length - 1]; // last ended schedule today
+        }
+      }
+
+      if (selectedSchedule) {
+        const targetRoom = selectedSchedule.allocatedRoom || "";
+        const targetNurse = selectedSchedule.allocatedNurse || "";
+
+        if (doc.allocatedRoom !== targetRoom || doc.allocatedNurse !== targetNurse) {
+          doc.allocatedRoom = targetRoom;
+          doc.allocatedNurse = targetNurse;
+          await doc.save();
+        }
+      } else {
+        // No valid active/upcoming/active-ended schedule for today, clear room and nurse if not active
+        if (!doc.sessionStarted && (doc.allocatedRoom !== "" || doc.allocatedNurse !== "")) {
+          doc.allocatedRoom = "";
+          doc.allocatedNurse = "";
+          await doc.save();
+        }
+      }
+    }
+  } catch (err) {
+    console.error("Error in syncTodaySchedulesToDoctors:", err);
+  }
+};
+
 router.get("/doctors", protect, authorize(["system_admin", "receptionist", "nurse"]), async (req, res) => {
   try {
+    await syncTodaySchedulesToDoctors();
     const doctors = await Doctor.find().select("name specialization isArrived allocatedRoom allocatedNurse channelingTime channelingStatus phone profileImage sessionStarted currentQueueNumber");
     res.json(doctors);
   } catch (err) {
@@ -976,7 +1070,12 @@ router.put("/doctors/:id/status", protect, authorize(["system_admin", "reception
     const prevQueueNumber = doctor.currentQueueNumber || 0;
 
     // Update Doctor Fields
-    if (isArrived !== undefined) doctor.isArrived = isArrived;
+    if (isArrived !== undefined) {
+      doctor.isArrived = isArrived;
+      if (isArrived === true) {
+        doctor.lastArrivalDate = new Date();
+      }
+    }
     if (allocatedRoom !== undefined) doctor.allocatedRoom = allocatedRoom;
     if (allocatedNurse !== undefined) doctor.allocatedNurse = allocatedNurse;
     if (channelingTime !== undefined) doctor.channelingTime = channelingTime;

@@ -3,18 +3,19 @@ import LabRequest from "../models/LabRequest.js";
 import MedicalRecord from "../models/MedicalRecord.js";
 import Patient from "../models/Patient.js";
 import Bill from "../models/Bill.js";
+import Doctor from "../models/Doctor.js";
 import { auth } from "../middleware/auth.js";
 
 const router = express.Router();
 
-// 1. Doctor creates a Lab Request
+// 1. Doctor or Nurse creates a Lab Request
 router.post("/create", auth, async (req, res) => {
   try {
-    const { patientId, title, description } = req.body;
+    const { patientId, title, description, doctorId, doctorName } = req.body;
     
-    // Check if user is a doctor
-    if (req.user.role !== "doctor") {
-      return res.status(403).json({ msg: "Only doctors can create lab requests" });
+    // Check if user is a doctor or a nurse
+    if (req.user.role !== "doctor" && req.user.role !== "nurse") {
+      return res.status(403).json({ msg: "Only doctors and nurses can create lab requests" });
     }
 
     // Create associated Bill
@@ -27,10 +28,18 @@ router.post("/create", auth, async (req, res) => {
     });
     await newBill.save();
 
+    let finalDoctorId = req.user.role === "doctor" ? req.user.id : (doctorId || null);
+    let finalDoctorName = req.user.role === "doctor" ? "Doctor" : (doctorName || "Nurse Requested");
+
+    if (req.user.role === "doctor") {
+      const doc = await Doctor.findById(req.user.id);
+      finalDoctorName = doc ? doc.name : "Doctor";
+    }
+
     const newRequest = new LabRequest({
       patientId,
-      doctorId: req.user.id,
-      doctorName: req.user.name || "Doctor",
+      doctorId: finalDoctorId,
+      doctorName: finalDoctorName,
       title,
       description,
       status: "pending",

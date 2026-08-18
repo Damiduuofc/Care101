@@ -19,8 +19,8 @@ const ScheduleRequestSchema = new mongoose.Schema({
   allocatedRoom: { type: String, default: "" },
   allocatedNurse: { type: String, default: "" },
   createdAt: { type: Date, default: Date.now },
-  
-
 });
+
+ScheduleRequestSchema.index({ doctorId: 1, status: 1, date: 1 });
 
 export default mongoose.model('ScheduleRequest', ScheduleRequestSchema);

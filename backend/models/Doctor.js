@@ -22,6 +22,7 @@ const DoctorSchema = new mongoose.Schema({
 
   // --- Receptionist Dashboard Daily Status ---
   isArrived: { type: Boolean, default: false },
+  lastArrivalDate: { type: Date },
   allocatedRoom: { type: String, default: "" },
   allocatedNurse: { type: String, default: "" },
   channelingTime: { type: String, default: "" },

@@ -1,5 +1,6 @@
 import express from "express";
 import MedicalRecord from "../models/MedicalRecord.js";
+import Doctor from "../models/Doctor.js";
 import { auth } from "../middleware/auth.js";
 
 const router = express.Router();
@@ -7,17 +8,31 @@ const router = express.Router();
 // 1. UPLOAD A RECORD
 router.post("/upload", auth, async (req, res) => {
   try {
-    const { patientId, type, title, doctorName, date, description, fileData, fileType } = req.body;
+    const { patientId, type, title, doctorName, date, description, diagnosis, medications, fileData, fileType } = req.body;
 
     const actualPatientId = patientId || req.user.id;
+
+    let finalDoctorName = doctorName;
+    if (!finalDoctorName || finalDoctorName === "Doctor" || finalDoctorName === "Self Uploaded") {
+      if (req.user.role === "doctor") {
+        const doc = await Doctor.findById(req.user.id);
+        if (doc) {
+          finalDoctorName = doc.name;
+        }
+      } else if (req.user.role === "patient") {
+        finalDoctorName = "Self Uploaded";
+      }
+    }
 
     const newRecord = new MedicalRecord({
       patientId: actualPatientId,
       type,
       title,
-      doctorName,
+      doctorName: finalDoctorName,
       date,
       description,
+      diagnosis,
+      medications,
       fileData, // Base64 string
       fileType
     });
@@ -73,7 +88,7 @@ router.get("/my-records", auth, async (req, res) => {
 router.get("/patient/:patientId", auth, async (req, res) => {
   try {
     const { role } = req.user;
-    if (role !== "doctor" && role !== "lab_assistant" && role !== "system_admin") {
+    if (role !== "doctor" && role !== "lab_assistant" && role !== "system_admin" && role !== "nurse") {
       return res.status(403).json({ msg: "Not authorized to view other patient records" });
     }
     const records = await MedicalRecord.find({ patientId: req.params.patientId })
@@ -94,7 +109,7 @@ router.get("/download/:id", auth, async (req, res) => {
 
     // Security check
     const isOwner = record.patientId.toString() === req.user.id;
-    const isAuthorized = ["doctor", "lab_assistant", "system_admin"].includes(req.user.role);
+    const isAuthorized = ["doctor", "lab_assistant", "system_admin", "nurse"].includes(req.user.role);
 
     if (!isOwner && !isAuthorized) {
       return res.status(403).json({ msg: "Not authorized" });

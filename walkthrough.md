@@ -54,7 +54,12 @@ I have successfully updated the Room Allocation system (`http://localhost:9002/a
   - Doctors can click the **Lab Test / Report** record to open the detailed medical records viewer.
   - It fetches the base64 photo via `/medical-records/download/:id` and renders the lab report photo cleanly on screen.
 
-### 4. Mobile App Bugfixes
+### 4. SMS Gateway Multi-SIM Configuration
+- **`backend/.env`**:
+  - Changed `SMS_GATEWAY_SIM_NUMBER` from `1` to `2` to route all outgoing confirmation SMS messages through SIM 2 (`0713258923`) instead of SIM 1 (`0763801234`), as per the Android SMS Gateway multi-SIM documentation.
+  - Restarted the backend server to load the new SIM configuration.
+
+### 5. Mobile App Bugfixes
 - **Stripe Environment Variable Typo Fix**:
   - Corrected the typo in `care101_app/.env` where `EXPO_PUBLIC_STR123IPE_PUBLISHABLE_KEY` was defined instead of `EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY`. This resolves the payment sheet initialization failures, allowing patients to complete Stripe card payments from their app.
 - **Shortcut Link Redirection Bug**:

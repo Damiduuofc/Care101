@@ -57,26 +57,30 @@ const sendSms = async (to, content) => {
 
 
 // Helper to get transporter
+let cachedTransporter = null;
 const getTransporter = async () => {
+  if (cachedTransporter) return cachedTransporter;
+
   const host = process.env.EMAIL_HOST;
   const port = parseInt(process.env.EMAIL_PORT);
   const user = process.env.EMAIL_USER;
   const pass = process.env.EMAIL_PASS;
 
   if (user && pass) {
-    return nodemailer.createTransport({
+    cachedTransporter = nodemailer.createTransport({
       host,
       port,
       secure: port === 465, // true for 465, false for other ports
       auth: { user, pass }
     });
+    return cachedTransporter;
   }
 
   // Fallback: If no SMTP credentials provided in env, use a mock/ethereal account or local transporter
   console.log("⚠️ No SMTP credentials configured. Generating Ethereal test account...");
   try {
     const testAccount = await nodemailer.createTestAccount();
-    return nodemailer.createTransport({
+    cachedTransporter = nodemailer.createTransport({
       host: testAccount.smtp.host,
       port: testAccount.smtp.port,
       secure: testAccount.smtp.secure,
@@ -85,9 +89,10 @@ const getTransporter = async () => {
         pass: testAccount.pass
       }
     });
+    return cachedTransporter;
   } catch (err) {
     console.error("❌ Failed to create Ethereal account, falling back to console logger transporter", err);
-    return {
+    cachedTransporter = {
       sendMail: async (mailOptions) => {
         console.log("✉️ MOCK EMAIL SENT:");
         console.log(`To: ${mailOptions.to}`);
@@ -96,6 +101,7 @@ const getTransporter = async () => {
         return { messageId: 'mock-message-id', mock: true };
       }
     };
+    return cachedTransporter;
   }
 };
 

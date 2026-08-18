@@ -20,6 +20,9 @@ router.post("/update", auth, async (req, res) => {
     const prevServing = doctor.currentQueueNumber || 0;
 
     if (action === "start") {
+      if (!doctor.isArrived) {
+        return res.status(400).json({ msg: "Cannot start session until the doctor has been marked as arrived." });
+      }
       doctor.sessionStarted = true;
       doctor.currentQueueNumber = 1;
     } else if (action === "end") {

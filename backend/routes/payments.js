@@ -81,24 +81,26 @@ router.put("/pay-bill/:billId", auth, async (req, res) => {
       message: `Payment Successful! LKR ${bill.amount} paid for ${bill.title}.`
     });
 
-    // Generate PDF and Email Receipt
-    try {
-      const patient = await Patient.findById(req.user.id);
-      if (patient && patient.email) {
-        let appointment = null;
-        let doctor = null;
-        if (bill.appointmentId) {
-          appointment = await Appointment.findById(bill.appointmentId);
-          if (appointment) {
-            doctor = await Doctor.findById(appointment.doctorId);
+    // Generate PDF and Email Receipt (Run asynchronously in the background)
+    (async () => {
+      try {
+        const patient = await Patient.findById(req.user.id);
+        if (patient && patient.email) {
+          let appointment = null;
+          let doctor = null;
+          if (bill.appointmentId) {
+            appointment = await Appointment.findById(bill.appointmentId);
+            if (appointment) {
+              doctor = await Doctor.findById(appointment.doctorId);
+            }
           }
+          const pdfBuffer = await generateReceiptPdf(bill, appointment, doctor, patient);
+          await sendPaymentReceipt(patient.email, bill, pdfBuffer);
         }
-        const pdfBuffer = await generateReceiptPdf(bill, appointment, doctor, patient);
-        await sendPaymentReceipt(patient.email, bill, pdfBuffer);
+      } catch (pdfEmailErr) {
+        console.error("Failed to generate/send PDF receipt:", pdfEmailErr);
       }
-    } catch (pdfEmailErr) {
-      console.error("Failed to generate/send PDF receipt:", pdfEmailErr);
-    }
+    })();
 
     res.json({ msg: "Bill marked as Paid", bill });
   } catch (err) {

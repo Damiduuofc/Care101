@@ -21,4 +21,6 @@ const HospitalSchema = new mongoose.Schema({
   createdAt: { type: Date, default: Date.now }
 });
 
+HospitalSchema.index({ doctorId: 1, name: 1 });
+
 export default mongoose.model("HospitalFinance", HospitalSchema);

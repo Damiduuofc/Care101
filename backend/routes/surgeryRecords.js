@@ -121,7 +121,7 @@ router.get("/patient/my-records", auth, async (req, res) => {
 
     // Find all surgery records matching query
     const records = await SurgeryRecord.find(query)
-      .populate('doctorId', 'name email specialization profileImage')  // Populate doctor info including profileImage
+      .populate('doctorId', 'name email specialization profileImage slmcReg hospital')
       .select("name hospital surgeryCardImage entries createdAt doctorId patientId nic")
       .sort({ createdAt: -1 })
       .lean();
@@ -132,7 +132,9 @@ router.get("/patient/my-records", auth, async (req, res) => {
       doctorName: record.doctorId?.name || 'Unknown Doctor',
       doctorSpecialization: record.doctorId?.specialization || 'General Practitioner',
       doctorProfileImage: record.doctorId?.profileImage || '',
-      doctorEmail: record.doctorId?.email || ''
+      doctorEmail: record.doctorId?.email || '',
+      doctorSlmc: record.doctorId?.slmcReg || 'N/A',
+      doctorHospital: record.doctorId?.hospital || record.hospital || 'N/A'
     }));
 
     res.json(recordsWithDoctor);
