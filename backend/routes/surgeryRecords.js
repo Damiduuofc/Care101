@@ -8,7 +8,19 @@ const router = express.Router();
 // 1. GET ALL RECORDS
 router.get("/", auth, async (req, res) => {
   try {
-    const records = await SurgeryRecord.find({ doctorId: req.user.id }).sort({ createdAt: -1 });
+    let queryDoctorId = req.user.id;
+    if (req.user.role === "nurse") {
+      const Admin = (await import("../models/Admin.js")).default;
+      const nurse = await Admin.findById(req.user.id);
+      if (nurse) {
+        const Doctor = (await import("../models/Doctor.js")).default;
+        const doctor = await Doctor.findOne({ allocatedNurse: nurse.name });
+        if (doctor) {
+          queryDoctorId = doctor._id;
+        }
+      }
+    }
+    const records = await SurgeryRecord.find({ doctorId: queryDoctorId }).sort({ createdAt: -1 });
     res.json(records);
   } catch (err) {
     console.error(err.message);
@@ -19,7 +31,7 @@ router.get("/", auth, async (req, res) => {
 // 2. CREATE NEW RECORD
 router.post("/create", auth, async (req, res) => {
   try {
-    const { name, nic, patientId, hospital, surgeryCardImage } = req.body;
+    const { name, nic, patientId, hospital, surgeryCardImage, doctorId: bodyDoctorId } = req.body;
 
     if (!name || !patientId || !surgeryCardImage) {
       return res.status(400).json({ msg: "Name, Patient ID, and Surgery Card Image are required" });
@@ -31,8 +43,29 @@ router.post("/create", auth, async (req, res) => {
       return res.status(400).json({ msg: "Invalid Patient ID. Patient does not exist." });
     }
 
+    let doctorId = bodyDoctorId || req.user.id;
+    if (req.user.role === "nurse") {
+      if (bodyDoctorId) {
+        doctorId = bodyDoctorId;
+      } else {
+        const Admin = (await import("../models/Admin.js")).default;
+        const nurse = await Admin.findById(req.user.id);
+        if (nurse) {
+          const Doctor = (await import("../models/Doctor.js")).default;
+          const doctor = await Doctor.findOne({ allocatedNurse: nurse.name });
+          if (doctor) {
+            doctorId = doctor._id;
+          } else {
+            return res.status(400).json({ msg: "No doctor is currently assigned to this nurse" });
+          }
+        } else {
+          return res.status(404).json({ msg: "Nurse not found" });
+        }
+      }
+    }
+
     const newRecord = new SurgeryRecord({
-      doctorId: req.user.id,
+      doctorId,
       name,
       nic: nic || patient.nicNumber || "",
       patientId: patientId.trim().toUpperCase(),
