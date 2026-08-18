@@ -23,11 +23,15 @@ router.post("/update", auth, async (req, res) => {
       if (!doctor.isArrived) {
         return res.status(400).json({ msg: "Cannot start session until the doctor has been marked as arrived." });
       }
+      if (doctor.sessionEndedToday) {
+        return res.status(400).json({ msg: "Doctor session has already been completed today and cannot be restarted." });
+      }
       doctor.sessionStarted = true;
       doctor.currentQueueNumber = 1;
     } else if (action === "end") {
       doctor.sessionStarted = false;
       doctor.currentQueueNumber = 0;
+      doctor.sessionEndedToday = true;
     } else if (currentServingNumber !== undefined) {
       doctor.currentQueueNumber = currentServingNumber;
     }

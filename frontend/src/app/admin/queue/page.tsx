@@ -418,6 +418,7 @@ export default function NurseQueueDashboard() {
                 setDoctors(prev => prev.map(d => d._id === updatedDoc._id ? {
                     ...d,
                     sessionStarted: updatedDoc.sessionStarted,
+                    sessionEndedToday: updatedDoc.sessionEndedToday,
                     currentQueueNumber: updatedDoc.currentQueueNumber
                 } : d));
             }
@@ -484,6 +485,10 @@ export default function NurseQueueDashboard() {
                                         <div className="bg-emerald-50 text-emerald-700 px-4 py-1.5 rounded-full text-sm font-bold border border-emerald-200 animate-pulse">
                                             Session Active
                                         </div>
+                                    ) : doc.sessionEndedToday ? (
+                                        <div className="bg-rose-50 text-rose-700 px-4 py-1.5 rounded-full text-sm font-bold border border-rose-200">
+                                            Session Ended
+                                        </div>
                                     ) : (
                                         <div className="bg-slate-100 text-slate-500 px-4 py-1.5 rounded-full text-sm font-bold border border-slate-200">
                                             Ready to Start
@@ -498,7 +503,11 @@ export default function NurseQueueDashboard() {
 
                                     {doc.sessionStarted ? (
                                         <Button
-                                            onClick={() => handleUpdateDoctor(doc, { sessionStarted: false, currentQueueNumber: 0 }, "end")}
+                                            onClick={() => {
+                                                if (window.confirm("Are you sure you want to end this session? Once ended, you will not be able to restart it today.")) {
+                                                    handleUpdateDoctor(doc, { sessionStarted: false, currentQueueNumber: 0 }, "end");
+                                                }
+                                            }}
                                             disabled={saving[doc._id]}
                                             variant="destructive"
                                             className="w-full md:w-auto font-bold h-12 px-6"
@@ -509,14 +518,16 @@ export default function NurseQueueDashboard() {
                                         <div className="space-y-2">
                                             <Button
                                                 onClick={() => handleUpdateDoctor(doc, { sessionStarted: true, currentQueueNumber: 1 }, "start")}
-                                                disabled={saving[doc._id] || !doc.isArrived}
-                                                className={`w-full md:w-auto font-bold h-12 px-8 shadow-md ${!doc.isArrived ? 'bg-slate-300' : 'bg-blue-600 hover:bg-blue-700'}`}
+                                                disabled={saving[doc._id] || !doc.isArrived || doc.sessionEndedToday}
+                                                className={`w-full md:w-auto font-bold h-12 px-8 shadow-md ${(!doc.isArrived || doc.sessionEndedToday) ? 'bg-slate-300' : 'bg-blue-600 hover:bg-blue-700'}`}
                                             >
                                                 {saving[doc._id] ? <Loader2 className="animate-spin h-5 w-5 mx-auto" /> : <><Play className="mr-2 h-5 w-5 fill-white" /> Start Session</>}
                                             </Button>
-                                            {!doc.isArrived && (
+                                            {doc.sessionEndedToday ? (
+                                                <p className="text-[11px] text-rose-600 font-bold italic">Session has already been completed today and cannot be restarted.</p>
+                                            ) : !doc.isArrived ? (
                                                 <p className="text-[11px] text-amber-600 font-bold italic">Waiting for receptionist confirmation...</p>
-                                            )}
+                                            ) : null}
                                         </div>
                                     )}
                                 </div>

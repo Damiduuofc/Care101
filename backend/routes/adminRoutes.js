@@ -965,14 +965,16 @@ const syncTodaySchedulesToDoctors = async () => {
       const schedules = doctorSchedules[docIdStr] || [];
 
       // Check if arrival status is from a previous day and reset if needed
-      if (doc.isArrived) {
-        const arrivalDate = doc.lastArrivalDate ? new Date(doc.lastArrivalDate) : null;
-        if (!arrivalDate || arrivalDate.toDateString() !== now.toDateString()) {
-          doc.isArrived = false;
-          doc.sessionStarted = false;
-          doc.currentQueueNumber = 0;
-          await doc.save();
-        }
+      const arrivalDate = doc.lastArrivalDate ? new Date(doc.lastArrivalDate) : null;
+      const isNewDay = !arrivalDate || arrivalDate.toDateString() !== now.toDateString();
+
+      if (isNewDay) {
+        let changed = false;
+        if (doc.isArrived) { doc.isArrived = false; changed = true; }
+        if (doc.sessionStarted) { doc.sessionStarted = false; changed = true; }
+        if (doc.sessionEndedToday) { doc.sessionEndedToday = false; changed = true; }
+        if (doc.currentQueueNumber !== 0) { doc.currentQueueNumber = 0; changed = true; }
+        if (changed) await doc.save();
       }
 
       let selectedSchedule = null;
@@ -1019,7 +1021,7 @@ const syncTodaySchedulesToDoctors = async () => {
 router.get("/doctors", protect, authorize(["system_admin", "receptionist", "nurse"]), async (req, res) => {
   try {
     await syncTodaySchedulesToDoctors();
-    const doctors = await Doctor.find().select("name specialization isArrived allocatedRoom allocatedNurse channelingTime channelingStatus phone profileImage sessionStarted currentQueueNumber");
+    const doctors = await Doctor.find().select("name specialization isArrived allocatedRoom allocatedNurse channelingTime channelingStatus phone profileImage sessionStarted sessionEndedToday currentQueueNumber");
     res.json(doctors);
   } catch (err) {
     res.status(500).send("Server Error");
