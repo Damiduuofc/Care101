@@ -23,6 +23,7 @@ export default function InstructionDetailScreen() {
   const [expiresAtDate, setExpiresAtDate] = useState<string | null>(null);
   const [showExpireSelect, setShowExpireSelect] = useState(false);
   const [generatingShare, setGeneratingShare] = useState(false);
+  const [selectedSection, setSelectedSection] = useState<'preOp' | 'postOp' | null>(null);
 
   useEffect(() => { fetchData(); }, [id]);
 
@@ -114,16 +115,11 @@ export default function InstructionDetailScreen() {
 
   if (loading) return <ActivityIndicator style={{marginTop:50}} size="large" color="#0891b2" />;
   if (!data) return <Text>Not Found</Text>;
-
   const getFrontendUrl = () => {
-    if (process.env.EXPO_PUBLIC_FRONTEND_URL) {
-      return process.env.EXPO_PUBLIC_FRONTEND_URL;
-    }
     if (API_URL) {
       let url = API_URL.replace(/\/api\/?$/, '');
-      if (url.includes(':5002')) {
-        url = url.replace(':5002', ':9002');
-      }
+      // Replace any port (e.g. :5000 or :5002) with the nextjs port :9002
+      url = url.replace(/:[0-9]+$/, ':9002');
       return url;
     }
     return 'http://localhost:9002';
@@ -133,7 +129,8 @@ export default function InstructionDetailScreen() {
     ? `${getFrontendUrl()}/patient/instructions/${shareToken}`
     : '';
 
-  const handleQrPress = () => {
+  const handleQrPress = (section: 'preOp' | 'postOp') => {
+    setSelectedSection(section);
     setShowExpireSelect(true);
   };
 
@@ -148,7 +145,7 @@ export default function InstructionDetailScreen() {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`
         },
-        body: JSON.stringify({ expireDays: days })
+        body: JSON.stringify({ expireDays: days, section: selectedSection })
       });
       if (res.ok) {
         const shareData = await res.json();
@@ -191,7 +188,7 @@ export default function InstructionDetailScreen() {
         {/* PRE-OP */}
         <InstructionSection 
             title="Pre-Operative" color="#3b82f6"
-            onQrPress={handleQrPress}
+            onQrPress={() => handleQrPress('preOp')}
             files={data.preOp}
             onUpload={(type: any) => handleUpload('preOp', type)}
             onRemove={(type: any) => handleRemoveFile('preOp', type)}
@@ -201,7 +198,7 @@ export default function InstructionDetailScreen() {
         {/* POST-OP */}
         <InstructionSection 
             title="Post-Operative" color="#10b981"
-            onQrPress={handleQrPress}
+            onQrPress={() => handleQrPress('postOp')}
             files={data.postOp}
             onUpload={(type: any) => handleUpload('postOp', type)}
             onRemove={(type: any) => handleRemoveFile('postOp', type)}

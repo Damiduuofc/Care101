@@ -60,7 +60,7 @@ export default function DashboardScreen() {
   const [showNotifModal, setShowNotifModal] = useState(false);
   const [notifLoading, setNotifLoading] = useState(false);
 
-  const bannerImage = { uri: "https://images.unsplash.com/photo-1576091160550-2173bdb999ef?auto=format&fit=crop&w=800&q=80" };
+  const bannerImage = require('../../assets/images/doctorwallpaper.jpg');
 
   // --- DATA FETCHING ---
   const fetchDashboard = async () => {

@@ -121,7 +121,7 @@ router.put("/:id/:section/:type", auth, upload.single("file"), async (req, res) 
 router.post("/:id/share", auth, async (req, res) => {
   try {
     const { id } = req.params;
-    const { expireDays } = req.body;
+    const { expireDays, section } = req.body;
     
     const instruction = await Instruction.findById(id);
     if (!instruction) {
@@ -129,6 +129,7 @@ router.post("/:id/share", auth, async (req, res) => {
     }
 
     const days = [30, 60, 90].includes(Number(expireDays)) ? Number(expireDays) : 30;
+    const sec = ["preOp", "postOp"].includes(section) ? section : "preOp";
     
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + days);
@@ -137,6 +138,7 @@ router.post("/:id/share", auth, async (req, res) => {
 
     const newShare = new InstructionShare({
       instruction: id,
+      section: sec,
       token,
       expiresAt
     });
@@ -158,7 +160,13 @@ router.get("/share/:token", async (req, res) => {
   try {
     const { token } = req.params;
 
-    const share = await InstructionShare.findOne({ token }).populate("instruction");
+    const share = await InstructionShare.findOne({ token }).populate({
+      path: "instruction",
+      populate: {
+        path: "doctor",
+        select: "name slmcReg specialization"
+      }
+    });
     if (!share) {
       return res.status(404).json({ msg: "Invalid or expired access token." });
     }
@@ -167,7 +175,10 @@ router.get("/share/:token", async (req, res) => {
       return res.status(410).json({ msg: "This access token has expired." });
     }
 
-    res.json(share.instruction);
+    res.json({
+      instruction: share.instruction,
+      section: share.section
+    });
   } catch (err) {
     console.error("Error fetching shared instruction:", err);
     res.status(500).send("Server Error");

@@ -325,9 +325,7 @@ export default function PatientDashboardScreen() {
             </View>
         );
     }
-
-    const bannerImage = { uri: "https://images.unsplash.com/photo-1506126613408-eca07ce68773?ixlib=rb-1.2.1&auto=format&fit=crop&w=800&q=80" };
-
+     const bannerImage = require('../../assets/images/paitentwallpaper.jpg');
     const quickActions = [
         { id: 1, title: 'Book Appointment', subtitle: 'Schedule a visit', icon: Calendar, link: '/patient-dashboard/appointments', color: '#06b6d4', bg: '#cffafe' },
         { id: 2, title: 'Medical Records', subtitle: 'View history', icon: FileText, link: '/patient-dashboard/records', color: '#8b5cf6', bg: '#f5f3ff' },

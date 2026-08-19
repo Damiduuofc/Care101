@@ -2,6 +2,7 @@ import mongoose from "mongoose";
 
 const InstructionShareSchema = new mongoose.Schema({
   instruction: { type: mongoose.Schema.Types.ObjectId, ref: "Instruction", required: true },
+  section: { type: String, enum: ["preOp", "postOp"], required: true },
   token: { type: String, required: true, unique: true },
   expiresAt: { type: Date, required: true },
   createdAt: { type: Date, default: Date.now }
