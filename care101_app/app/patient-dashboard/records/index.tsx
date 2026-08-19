@@ -9,12 +9,17 @@ import {
     StatusBar,
     ActivityIndicator,
     Alert,
-    RefreshControl
+    RefreshControl,
+    Modal,
+    ScrollView,
+    Image
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Search, ChevronRight, FileText, Award } from 'lucide-react-native';
+import { Search, ChevronRight, FileText, Award, X, Download } from 'lucide-react-native';
 import * as SecureStore from 'expo-secure-store';
+import * as FileSystem from 'expo-file-system/legacy';
+import * as Sharing from 'expo-sharing';
 import { useAuth } from '@/context/auth';
 import PatientBottomNavBar from '@/components/PatientBottomNavBar';
 
@@ -29,6 +34,10 @@ export default function PatientRecordsListScreen() {
     const [refreshing, setRefreshing] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
 
+    const [selectedRecordData, setSelectedRecordData] = useState<any>(null);
+    const [showViewRecordModal, setShowViewRecordModal] = useState(false);
+    const [fetchingRecord, setFetchingRecord] = useState(false);
+
     useEffect(() => {
         fetchRecords();
     }, [user]);
@@ -39,18 +48,111 @@ export default function PatientRecordsListScreen() {
             const patientId = user?.patientId;
             const patientNIC = user?.nicNumber || user?.nic;
 
-            let url = `${API_URL}/surgery-records/patient/my-records?`;
-            if (patientId) {
-                url += `patientId=${encodeURIComponent(patientId)}`;
-            } else if (patientNIC) {
-                url += `nic=${encodeURIComponent(patientNIC)}`;
-            } else {
+            if (!patientId && !patientNIC) {
                 console.warn('No Patient ID or NIC found in user profile');
                 setLoading(false);
                 return;
             }
 
-            const response = await fetch(url, {
+            let surgeryUrl = `${API_URL}/surgery-records/patient/my-records?`;
+            if (patientId) {
+                surgeryUrl += `patientId=${encodeURIComponent(patientId)}`;
+            } else if (patientNIC) {
+                surgeryUrl += `nic=${encodeURIComponent(patientNIC)}`;
+            }
+
+            const [surgeryRes, medicalRes] = await Promise.all([
+                fetch(surgeryUrl, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json',
+                        'ngrok-skip-browser-warning': 'true'
+                    }
+                }),
+                fetch(`${API_URL}/medical-records/my-records`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json',
+                        'ngrok-skip-browser-warning': 'true'
+                    }
+                })
+            ]);
+
+            let surgeryData = [];
+            if (surgeryRes.ok) {
+                surgeryData = await surgeryRes.json();
+            }
+
+            let medicalData = [];
+            if (medicalRes.ok) {
+                medicalData = await medicalRes.json();
+            }
+
+            const formattedSurgery = surgeryData.map((s: any) => ({
+                ...s,
+                isSurgery: true
+            }));
+
+            // Filter for reports uploaded by Lab Assistant (or containing lab assistant)
+            const directLabReports = medicalData
+                .filter((m: any) => m.doctorName === "Lab Assistant" || m.doctorName?.toLowerCase().includes("lab assistant"))
+                .map((m: any) => ({
+                    ...m,
+                    isSurgery: false
+                }));
+
+            const combined = [...formattedSurgery, ...directLabReports].sort((a, b) => {
+                const dateA = new Date(a.updatedAt || a.date || a.createdAt);
+                const dateB = new Date(b.updatedAt || b.date || b.createdAt);
+                return dateB.getTime() - dateA.getTime();
+            });
+
+            setRecords(combined);
+        } catch (error) {
+            console.error('Fetch Records Error:', error);
+        } finally {
+            setLoading(false);
+            setRefreshing(false);
+        }
+    };
+
+    const handleDownloadFile = async (fileData: string, fileName: string, fileType: string) => {
+        try {
+            let base64Code = fileData;
+            if (fileData.includes(';base64,')) {
+                base64Code = fileData.split(';base64,')[1];
+            }
+
+            let extension = '.jpg';
+            if (fileType === 'application/pdf') {
+                extension = '.pdf';
+            } else if (fileType === 'image/png') {
+                extension = '.png';
+            }
+
+            const safeFileName = fileName.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+            const fileUri = `${FileSystem.documentDirectory}${safeFileName}${extension}`;
+
+            await FileSystem.writeAsStringAsync(fileUri, base64Code, {
+                encoding: FileSystem.EncodingType.Base64,
+            });
+
+            if (await Sharing.isAvailableAsync()) {
+                await Sharing.shareAsync(fileUri);
+            } else {
+                Alert.alert('Success', `File saved to: ${fileUri}`);
+            }
+        } catch (error) {
+            console.error('Download error:', error);
+            Alert.alert('Error', 'Failed to download file.');
+        }
+    };
+
+    const handleViewRecord = async (recordId: string) => {
+        setFetchingRecord(true);
+        try {
+            const token = await SecureStore.getItemAsync('token');
+            const response = await fetch(`${API_URL}/medical-records/download/${recordId}`, {
                 headers: {
                     'Authorization': `Bearer ${token}`,
                     'Content-Type': 'application/json',
@@ -60,16 +162,16 @@ export default function PatientRecordsListScreen() {
 
             if (response.ok) {
                 const data = await response.json();
-                setRecords(data);
+                setSelectedRecordData(data);
+                setShowViewRecordModal(true);
             } else {
-                const errorText = await response.text();
-                console.error('Failed to fetch records:', errorText);
+                Alert.alert("Error", "Failed to load medical record details.");
             }
         } catch (error) {
-            console.error('Fetch Records Error:', error);
+            console.error("View Record Error:", error);
+            Alert.alert("Error", "Connection failed");
         } finally {
-            setLoading(false);
-            setRefreshing(false);
+            setFetchingRecord(false);
         }
     };
 
@@ -89,10 +191,16 @@ export default function PatientRecordsListScreen() {
     };
 
     const filteredRecords = records.filter((r: any) => {
-        const doctorName = (r.doctorName || r.doctorId?.name || '').toLowerCase();
-        const hospital = (r.hospital || r.doctorId?.hospital || '').toLowerCase();
         const query = searchQuery.toLowerCase();
-        return doctorName.includes(query) || hospital.includes(query);
+        if (r.isSurgery) {
+            const doctorName = (r.doctorName || r.doctorId?.name || '').toLowerCase();
+            const hospital = (r.hospital || r.doctorId?.hospital || '').toLowerCase();
+            return doctorName.includes(query) || hospital.includes(query);
+        } else {
+            const title = (r.title || '').toLowerCase();
+            const doctorName = (r.doctorName || '').toLowerCase();
+            return title.includes(query) || doctorName.includes(query);
+        }
     });
 
     const getInitials = (name: string) => {
@@ -105,43 +213,81 @@ export default function PatientRecordsListScreen() {
     };
 
     const renderRecordItem = ({ item }: any) => {
-        const doctorName = item.doctorName || item.doctorId?.name || 'Dr. Unknown';
-        const slmcReg = item.doctorSlmc || item.doctorId?.slmcReg || 'N/A';
-        const hospitalName = item.doctorHospital || item.hospital || item.doctorId?.hospital || 'N/A';
-        const lastUpdate = formatDate(item.updatedAt || item.date || item.createdAt);
+        if (item.isSurgery) {
+            const doctorName = item.doctorName || item.doctorId?.name || 'Dr. Unknown';
+            const slmcReg = item.doctorSlmc || item.doctorId?.slmcReg || 'N/A';
+            const hospitalName = item.doctorHospital || item.hospital || item.doctorId?.hospital || 'N/A';
+            const lastUpdate = formatDate(item.updatedAt || item.date || item.createdAt);
 
-        return (
-            <TouchableOpacity
-                style={styles.doctorCard}
-                onPress={() => router.push(`/patient-dashboard/records/${item._id}` as any)}
-                activeOpacity={0.7}
-            >
-                <View style={styles.doctorCardMain}>
-                    <View style={styles.doctorAvatarContainer}>
-                        <Text style={styles.avatarText}>{getInitials(doctorName)}</Text>
-                    </View>
-                    <View style={styles.doctorInfo}>
-                        <Text style={styles.doctorNameText}>{doctorName}</Text>
-                        <Text style={styles.specializationText}>SURGERY RECORD</Text>
-                        
-                        <View style={styles.detailRow}>
-                            <Award size={14} color="#64748b" style={styles.inlineIcon} />
-                            <Text style={styles.infoText}>SLMC: {slmcReg}</Text>
+            return (
+                <TouchableOpacity
+                    style={styles.doctorCard}
+                    onPress={() => router.push(`/patient-dashboard/records/${item._id}` as any)}
+                    activeOpacity={0.7}
+                >
+                    <View style={styles.doctorCardMain}>
+                        <View style={styles.doctorAvatarContainer}>
+                            <Text style={styles.avatarText}>{getInitials(doctorName)}</Text>
                         </View>
-                        
-                        <Text style={styles.hospitalText}>Hospital: {hospitalName}</Text>
-                        <Text style={styles.dateText}>Last Updated: {lastUpdate}</Text>
+                        <View style={styles.doctorInfo}>
+                            <Text style={styles.doctorNameText}>{doctorName}</Text>
+                            <Text style={styles.specializationText}>SURGERY RECORD</Text>
+                            
+                            <View style={styles.detailRow}>
+                                <Award size={14} color="#64748b" style={styles.inlineIcon} />
+                                <Text style={styles.infoText}>SLMC: {slmcReg}</Text>
+                            </View>
+                            
+                            <Text style={styles.hospitalText}>Hospital: {hospitalName}</Text>
+                            <Text style={styles.dateText}>Last Updated: {lastUpdate}</Text>
+                        </View>
+                        <ChevronRight size={20} color="#94a3b8" />
                     </View>
-                    <ChevronRight size={20} color="#94a3b8" />
-                </View>
-                <View style={styles.doctorCardFooter}>
-                    <View style={styles.badge}>
-                        <FileText size={12} color="#0d9488" style={styles.badgeIcon} />
-                        <Text style={styles.badgeText}>Medical Report</Text>
+                    <View style={styles.doctorCardFooter}>
+                        <View style={styles.badge}>
+                            <FileText size={12} color="#0d9488" style={styles.badgeIcon} />
+                            <Text style={styles.badgeText}>Medical Report</Text>
+                        </View>
                     </View>
-                </View>
-            </TouchableOpacity>
-        );
+                </TouchableOpacity>
+            );
+        } else {
+            const title = item.title || 'Lab Report';
+            const lastUpdate = formatDate(item.updatedAt || item.date || item.createdAt);
+
+            return (
+                <TouchableOpacity
+                    style={[styles.doctorCard, { borderColor: '#bae6fd' }]}
+                    onPress={() => handleViewRecord(item._id)}
+                    activeOpacity={0.7}
+                >
+                    <View style={styles.doctorCardMain}>
+                        <View style={[styles.doctorAvatarContainer, { backgroundColor: '#e0f2fe', borderColor: '#bae6fd' }]}>
+                            <Text style={[styles.avatarText, { color: '#0284c7' }]}>LAB</Text>
+                        </View>
+                        <View style={styles.doctorInfo}>
+                            <Text style={styles.doctorNameText}>{title}</Text>
+                            <Text style={[styles.specializationText, { color: '#0284c7' }]}>LAB REPORT</Text>
+                            
+                            <View style={styles.detailRow}>
+                                <Award size={14} color="#64748b" style={styles.inlineIcon} />
+                                <Text style={styles.infoText}>Uploaded by: Lab Assistant</Text>
+                            </View>
+                            
+                            <Text style={styles.hospitalText}>Hospital: Care101 Lab</Text>
+                            <Text style={styles.dateText}>Date: {lastUpdate}</Text>
+                        </View>
+                        <ChevronRight size={20} color="#94a3b8" />
+                    </View>
+                    <View style={styles.doctorCardFooter}>
+                        <View style={[styles.badge, { backgroundColor: '#f0f9ff' }]}>
+                            <FileText size={12} color="#0284c7" style={styles.badgeIcon} />
+                            <Text style={[styles.badgeText, { color: '#0284c7' }]}>View / Download</Text>
+                        </View>
+                    </View>
+                </TouchableOpacity>
+            );
+        }
     };
 
     return (
@@ -190,6 +336,85 @@ export default function PatientRecordsListScreen() {
                     />
                 )}
             </SafeAreaView>
+
+            {/* View Record Modal */}
+            <Modal visible={showViewRecordModal} transparent={true} animationType="fade" onRequestClose={() => setShowViewRecordModal(false)}>
+                <View style={styles.modalOverlay}>
+                    <View style={styles.modalContentCard}>
+                        <View style={styles.modalHeaderRow}>
+                            <View style={{ flex: 1, marginRight: 16 }}>
+                                <Text style={styles.modalTitle} numberOfLines={1}>{selectedRecordData?.fileName || 'Document'}</Text>
+                                <Text style={styles.modalSubtitle}>{selectedRecordData?.fileType || 'Attachment'}</Text>
+                            </View>
+                            <TouchableOpacity onPress={() => setShowViewRecordModal(false)} style={styles.closeBtn}>
+                                <X size={20} color="#64748b" />
+                            </TouchableOpacity>
+                        </View>
+                        
+                        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 20 }}>
+                            <View style={styles.recordDetailContainer}>
+                                {selectedRecordData?.description && (
+                                    <View style={{ marginBottom: 20 }}>
+                                        <Text style={styles.modalLabel}>Description</Text>
+                                        <Text style={styles.recordDescriptionText}>{selectedRecordData.description}</Text>
+                                    </View>
+                                )}
+
+                                <Text style={styles.modalLabel}>Preview</Text>
+                                {selectedRecordData?.fileData ? (
+                                    selectedRecordData.fileType?.startsWith('image/') || selectedRecordData.fileData?.startsWith('data:image/') ? (
+                                        <View style={styles.imagePreviewContainerModal}>
+                                            <Image 
+                                                source={{ uri: selectedRecordData.fileData }} 
+                                                style={styles.previewImageModal} 
+                                            />
+                                        </View>
+                                    ) : (
+                                        <View style={styles.pdfPreviewContainer}>
+                                            <FileText size={48} color="#94a3b8" />
+                                            <Text style={styles.pdfPreviewText}>PDF Document</Text>
+                                            <Text style={styles.pdfPreviewSubtext}>Preview not available. Please download to view.</Text>
+                                        </View>
+                                    )
+                                ) : (
+                                    <View style={styles.pdfPreviewContainer}>
+                                        <Text style={styles.noImageText}>No file attachment available.</Text>
+                                    </View>
+                                )}
+                            </View>
+                        </ScrollView>
+                        
+                        <View style={styles.modalButtonRow}>
+                            {selectedRecordData?.fileData && (
+                                <TouchableOpacity 
+                                    style={[styles.modalButton, styles.primaryModalBtn]}
+                                    onPress={() => handleDownloadFile(selectedRecordData.fileData, selectedRecordData.fileName || 'Report', selectedRecordData.fileType)}
+                                >
+                                    <Download size={18} color="#fff" style={{ marginRight: 6 }} />
+                                    <Text style={styles.primaryModalBtnText}>Download</Text>
+                                </TouchableOpacity>
+                            )}
+                            <TouchableOpacity 
+                                style={[styles.modalButton, styles.modalButtonCancel]}
+                                onPress={() => setShowViewRecordModal(false)}
+                            >
+                                <Text style={styles.modalButtonCancelText}>Cancel</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </View>
+            </Modal>
+
+            {/* Fetching overlay */}
+            {fetchingRecord && (
+                <View style={styles.fetchingOverlay}>
+                    <View style={styles.fetchingBox}>
+                        <ActivityIndicator size="large" color="#06b6d4" />
+                        <Text style={styles.fetchingText}>Opening document...</Text>
+                    </View>
+                </View>
+            )}
+
             <PatientBottomNavBar />
         </View>
     );
@@ -340,5 +565,98 @@ const styles = StyleSheet.create({
         fontSize: 16,
         fontWeight: '600',
         color: '#94a3b8',
+    },
+    modalOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(15, 23, 42, 0.6)',
+        justifyContent: 'center',
+        padding: 20,
+    },
+    modalContentCard: {
+        backgroundColor: '#fff',
+        borderRadius: 24,
+        padding: 24,
+        width: '100%',
+        maxHeight: '85%',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 10 },
+        shadowOpacity: 0.15,
+        shadowRadius: 20,
+        elevation: 10,
+    },
+    modalHeaderRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'flex-start',
+        marginBottom: 20,
+        borderBottomWidth: 1,
+        borderBottomColor: '#f1f5f9',
+        paddingBottom: 16,
+    },
+    modalTitle: { fontSize: 20, fontWeight: '700', color: '#0f172a', marginBottom: 4 },
+    modalSubtitle: { fontSize: 14, color: '#64748b', fontWeight: '500' },
+    closeBtn: {
+        width: 32,
+        height: 32,
+        borderRadius: 16,
+        backgroundColor: '#f1f5f9',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    modalLabel: { fontSize: 14, fontWeight: '600', color: '#0f172a', marginBottom: 8 },
+    recordDetailContainer: { marginVertical: 4 },
+    recordDescriptionText: { fontSize: 15, color: '#475569', lineHeight: 24 },
+    imagePreviewContainerModal: {
+        width: '100%',
+        height: 300,
+        borderRadius: 16,
+        overflow: 'hidden',
+        backgroundColor: '#f8fafc',
+        borderWidth: 1,
+        borderColor: '#e2e8f0',
+    },
+    previewImageModal: { width: '100%', height: '100%', resizeMode: 'contain' },
+    pdfPreviewContainer: {
+        width: '100%',
+        paddingVertical: 60,
+        borderRadius: 16,
+        backgroundColor: '#f8fafc',
+        borderWidth: 1,
+        borderColor: '#e2e8f0',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    pdfPreviewText: { color: '#475569', fontSize: 16, fontWeight: '600', marginTop: 16 },
+    pdfPreviewSubtext: { color: '#94a3b8', fontSize: 13, marginTop: 8, textAlign: 'center', paddingHorizontal: 20 },
+    noImageText: { textAlign: 'center', color: '#94a3b8', fontSize: 15, padding: 20 },
+    modalButtonRow: { flexDirection: 'row', gap: 12, marginTop: 16 },
+    modalButton: { flex: 1, flexDirection: 'row', paddingVertical: 14, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+    primaryModalBtn: { backgroundColor: '#06b6d4' },
+    primaryModalBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
+    modalButtonCancel: { backgroundColor: '#f1f5f9' },
+    modalButtonCancelText: { color: '#475569', fontSize: 15, fontWeight: '600' },
+    fetchingOverlay: {
+        ...StyleSheet.absoluteFillObject,
+        backgroundColor: 'rgba(15, 23, 42, 0.4)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        zIndex: 9999,
+    },
+    fetchingBox: {
+        backgroundColor: '#fff',
+        padding: 24,
+        borderRadius: 16,
+        alignItems: 'center',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.1,
+        shadowRadius: 10,
+        elevation: 5,
+    },
+    fetchingText: {
+        marginTop: 12,
+        color: '#0f172a',
+        fontSize: 15,
+        fontWeight: '600',
     },
 });

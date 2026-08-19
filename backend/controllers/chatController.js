@@ -241,6 +241,7 @@ Operating Hours: ${JSON.stringify(hospitalData.hours)}`;
     ];
 
     const models = [
+      "google/diffusiongemma-26b-a4b-it",
       "meta/llama-3.1-8b-instruct",
       "meta/llama-3.1-70b-instruct",
       "nvidia/nemotron-4-340b-instruct"

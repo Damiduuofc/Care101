@@ -8,14 +8,14 @@ import { auth } from "../middleware/auth.js";
 
 const router = express.Router();
 
-// 1. Doctor or Nurse creates a Lab Request
+// 1. Doctor, Nurse or Lab Assistant creates a Lab Request
 router.post("/create", auth, async (req, res) => {
   try {
-    const { patientId, title, description, doctorId, doctorName } = req.body;
+    const { patientId, title, description, doctorId, doctorName, amount, type } = req.body;
     
-    // Check if user is a doctor or a nurse
-    if (req.user.role !== "doctor" && req.user.role !== "nurse") {
-      return res.status(403).json({ msg: "Only doctors and nurses can create lab requests" });
+    // Check if user is a doctor, nurse, or lab assistant
+    if (req.user.role !== "doctor" && req.user.role !== "nurse" && req.user.role !== "lab_assistant") {
+      return res.status(403).json({ msg: "Only doctors, nurses, and lab assistants can create lab requests" });
     }
 
     // Create associated Bill
@@ -23,7 +23,7 @@ router.post("/create", auth, async (req, res) => {
       patientId,
       title: `Lab Report - ${title}`,
       type: "Lab",
-      amount: 0, // Lab Assistant will update this price later
+      amount: amount || 0, // Use set price if provided
       status: "Pending"
     });
     await newBill.save();
@@ -34,6 +34,8 @@ router.post("/create", auth, async (req, res) => {
     if (req.user.role === "doctor") {
       const doc = await Doctor.findById(req.user.id);
       finalDoctorName = doc ? doc.name : "Doctor";
+    } else if (req.user.role === "lab_assistant") {
+      finalDoctorName = doctorName || "Lab Assistant";
     }
 
     const newRequest = new LabRequest({
@@ -42,6 +44,7 @@ router.post("/create", auth, async (req, res) => {
       doctorName: finalDoctorName,
       title,
       description,
+      type: type || 'lab_tests',
       status: "pending",
       billId: newBill._id
     });
@@ -130,10 +133,10 @@ router.post("/upload/:requestId", auth, async (req, res) => {
       }
     }
 
-    // Create a new MedicalRecord of type 'lab_tests'
+    // Create a new MedicalRecord using the request's type
     const newRecord = new MedicalRecord({
       patientId: labRequest.patientId,
-      type: "lab_tests",
+      type: labRequest.type || "lab_tests",
       title: labRequest.title,
       doctorName: labRequest.doctorName, // the one who requested
       date: new Date(),

@@ -6,6 +6,7 @@ const LabRequestSchema = new mongoose.Schema({
   doctorName: { type: String, required: true },
   title: { type: String, required: true },
   description: { type: String },
+  type: { type: String, enum: ['lab_tests', 'prescriptions', 'reports', 'consultations'], default: 'lab_tests' },
   status: { type: String, enum: ['pending', 'completed'], default: 'pending' },
   recordId: { type: mongoose.Schema.Types.ObjectId, ref: "MedicalRecord" },
   billId: { type: mongoose.Schema.Types.ObjectId, ref: "Bill" },

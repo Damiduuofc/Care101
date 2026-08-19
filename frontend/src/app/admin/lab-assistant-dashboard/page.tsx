@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Loader2, Search, FileText, Upload, Trash2, Eye, Download, User2, Activity } from "lucide-react";
+import { Loader2, Search, FileText, Upload, Trash2, Eye, Download, User2, Activity, Plus } from "lucide-react";
 import Sidebar from "@/components/admin/Sidebar";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -40,6 +40,16 @@ export default function LabAssistantDashboard() {
     description: "",
     fileData: "",
     fileType: ""
+  });
+
+  // Create Request Form State
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [createLoading, setCreateLoading] = useState(false);
+  const [createFormData, setCreateFormData] = useState({
+    title: "",
+    type: "lab_tests",
+    description: "",
+    amount: ""
   });
 
   const fetchPatients = async () => {
@@ -143,10 +153,75 @@ export default function LabAssistantDashboard() {
     setFormData(prev => ({
       ...prev,
       title: req.title,
-      type: "lab_tests",
+      type: req.type || "lab_tests",
       description: req.description || ""
     }));
     setPriceInput(req.billId?.amount ? req.billId.amount.toString() : "");
+  };
+
+  const handleCreateRequest = async () => {
+    if (!createFormData.title || !createFormData.amount) {
+      alert("Title and Price are required!");
+      return;
+    }
+    setCreateLoading(true);
+    try {
+      const token = getAdminToken();
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/lab-requests/create`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          patientId: selectedPatient?._id,
+          title: createFormData.title,
+          description: createFormData.description,
+          type: createFormData.type,
+          amount: Number(createFormData.amount),
+          doctorName: "Lab Assistant"
+        })
+      });
+
+      if (res.ok) {
+        const newReq = await res.json();
+        alert("Report request created successfully!");
+        setIsCreateModalOpen(false);
+        setCreateFormData({ title: "", type: "lab_tests", description: "", amount: "" });
+        
+        // Fetch requests and select the new one
+        const fetchRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/lab-requests/all`, {
+          headers: {
+            "Authorization": `Bearer ${token}`,
+            "x-auth-token": token || "",
+            "ngrok-skip-browser-warning": "true"
+          }
+        });
+        if (fetchRes.ok) {
+          const data = await fetchRes.json();
+          setRequests(data);
+          const matched = data.find((r: any) => r._id === newReq._id);
+          if (matched) {
+            setSelectedRequest(matched);
+            setFormData({
+              title: matched.title,
+              type: matched.type || "lab_tests",
+              description: matched.description || "",
+              fileData: "",
+              fileType: ""
+            });
+          }
+        }
+      } else {
+        const errData = await res.json();
+        alert(`Error: ${errData.msg}`);
+      }
+    } catch (err) {
+      console.error("Failed to create request", err);
+      alert("Failed to create report request");
+    } finally {
+      setCreateLoading(false);
+    }
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -432,7 +507,7 @@ export default function LabAssistantDashboard() {
                                       if (res.ok) {
                                         alert("Price updated successfully!");
                                         fetchRequests(); // Refresh requests list
-                                        setSelectedRequest(prev => {
+                                        setSelectedRequest((prev: any) => {
                                           if (!prev) return null;
                                           return {
                                             ...prev,
@@ -464,59 +539,120 @@ export default function LabAssistantDashboard() {
                       )}
                     </div>
 
-                    {selectedRequest && selectedRequest.billId?.status !== "Paid" ? (
-                      <div className="flex flex-col items-end gap-1">
-                        <Button className="bg-slate-200 text-slate-400 border border-slate-300 cursor-not-allowed hover:bg-slate-200" disabled>
-                          <Upload className="mr-2 h-4 w-4" /> Upload Blocked
-                        </Button>
-                        <span className="text-[10px] font-semibold text-red-500">
-                          {selectedRequest.billId?.amount > 0 ? "⚠️ Awaiting Patient Payment" : "⚠️ Price Not Set"}
-                        </span>
-                      </div>
+                    {selectedRequest ? (
+                      selectedRequest.billId?.status !== "Paid" ? (
+                        <div className="flex flex-col items-end gap-1">
+                          <Button className="bg-slate-200 text-slate-400 border border-slate-300 cursor-not-allowed hover:bg-slate-200" disabled>
+                            <Upload className="mr-2 h-4 w-4" /> Upload Blocked
+                          </Button>
+                          <span className="text-[10px] font-semibold text-red-500">
+                            {selectedRequest.billId?.amount > 0 ? "⚠️ Awaiting Patient Payment" : "⚠️ Price Not Set"}
+                          </span>
+                        </div>
+                      ) : (
+                        <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
+                          <DialogTrigger asChild>
+                            <Button className="bg-cyan-600 hover:bg-cyan-700">
+                              <Upload className="mr-2 h-4 w-4" /> Upload Document
+                            </Button>
+                          </DialogTrigger>
+                          <DialogContent>
+                          <DialogHeader>
+                            <DialogTitle>Upload Record for {selectedPatient.fullName}</DialogTitle>
+                          </DialogHeader>
+                          <div className="space-y-4 py-4">
+                            <div className="space-y-2">
+                              <label className="text-sm font-medium">Document Title</label>
+                              <Input placeholder="e.g., Blood Test Results" value={formData.title} onChange={(e) => setFormData({...formData, title: e.target.value})} />
+                            </div>
+                            <div className="space-y-2">
+                              <label className="text-sm font-medium">Document Type</label>
+                              <Select value={formData.type} onValueChange={(val) => setFormData({...formData, type: val})} disabled={!!selectedRequest}>
+                                <SelectTrigger><SelectValue /></SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="lab_tests">Lab Test / Report</SelectItem>
+                                  <SelectItem value="prescriptions">Prescription</SelectItem>
+                                  <SelectItem value="reports">Scan Result</SelectItem>
+                                  <SelectItem value="consultations">Consultation Note</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </div>
+                            <div className="space-y-2">
+                              <label className="text-sm font-medium">Description (Optional)</label>
+                              <Textarea placeholder="Add some notes about this document..." value={formData.description} onChange={(e) => setFormData({...formData, description: e.target.value})} />
+                            </div>
+                            <div className="space-y-2">
+                              <label className="text-sm font-medium">Select File</label>
+                              <Input type="file" onChange={handleFileChange} />
+                              <p className="text-[10px] text-slate-500">Max size 5MB (PDF or Image)</p>
+                            </div>
+                            
+                            <Button className="w-full bg-cyan-600" onClick={handleUpload} disabled={uploadLoading}>
+                              {uploadLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Submit Document
+                            </Button>
+                          </div>
+                        </DialogContent>
+                      </Dialog>
+                      )
                     ) : (
-                      <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
+                      <Dialog open={isCreateModalOpen} onOpenChange={setIsCreateModalOpen}>
                         <DialogTrigger asChild>
                           <Button className="bg-cyan-600 hover:bg-cyan-700">
-                            <Upload className="mr-2 h-4 w-4" /> Upload Document
+                            <Plus className="mr-2 h-4 w-4" /> Add Report Request
                           </Button>
                         </DialogTrigger>
                         <DialogContent>
-                        <DialogHeader>
-                          <DialogTitle>Upload Record for {selectedPatient.fullName}</DialogTitle>
-                        </DialogHeader>
-                        <div className="space-y-4 py-4">
-                          <div className="space-y-2">
-                            <label className="text-sm font-medium">Document Title</label>
-                            <Input placeholder="e.g., Blood Test Results" value={formData.title} onChange={(e) => setFormData({...formData, title: e.target.value})} />
+                          <DialogHeader>
+                            <DialogTitle>Add Report Request for {selectedPatient.fullName}</DialogTitle>
+                          </DialogHeader>
+                          <div className="space-y-4 py-4">
+                            <div className="space-y-2">
+                              <label className="text-sm font-medium">Report Name</label>
+                              <Input 
+                                placeholder="e.g., Blood Sugar Test" 
+                                value={createFormData.title} 
+                                onChange={(e) => setCreateFormData({...createFormData, title: e.target.value})} 
+                              />
+                            </div>
+                            <div className="space-y-2">
+                              <label className="text-sm font-medium">Report Type</label>
+                              <Select 
+                                value={createFormData.type} 
+                                onValueChange={(val) => setCreateFormData({...createFormData, type: val})}
+                              >
+                                <SelectTrigger><SelectValue /></SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="lab_tests">Lab Test / Report</SelectItem>
+                                  <SelectItem value="prescriptions">Prescription</SelectItem>
+                                  <SelectItem value="reports">Scan Result</SelectItem>
+                                  <SelectItem value="consultations">Consultation Note</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </div>
+                            <div className="space-y-2">
+                              <label className="text-sm font-medium">Description (Optional)</label>
+                              <Textarea 
+                                placeholder="Add some details or instructions..." 
+                                value={createFormData.description} 
+                                onChange={(e) => setCreateFormData({...createFormData, description: e.target.value})} 
+                              />
+                            </div>
+                            <div className="space-y-2">
+                              <label className="text-sm font-medium">Set Price (LKR)</label>
+                              <Input 
+                                type="number" 
+                                placeholder="e.g., 1500" 
+                                value={createFormData.amount} 
+                                onChange={(e) => setCreateFormData({...createFormData, amount: e.target.value})} 
+                              />
+                            </div>
+                            
+                            <Button className="w-full bg-cyan-600" onClick={handleCreateRequest} disabled={createLoading}>
+                              {createLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Create Request
+                            </Button>
                           </div>
-                          <div className="space-y-2">
-                            <label className="text-sm font-medium">Document Type</label>
-                            <Select value={formData.type} onValueChange={(val) => setFormData({...formData, type: val})} disabled={!!selectedRequest}>
-                              <SelectTrigger><SelectValue /></SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="lab_tests">Lab Test / Report</SelectItem>
-                                <SelectItem value="prescriptions">Prescription</SelectItem>
-                                <SelectItem value="reports">Scan Result</SelectItem>
-                                <SelectItem value="consultations">Consultation Note</SelectItem>
-                              </SelectContent>
-                            </Select>
-                          </div>
-                          <div className="space-y-2">
-                            <label className="text-sm font-medium">Description (Optional)</label>
-                            <Textarea placeholder="Add some notes about this document..." value={formData.description} onChange={(e) => setFormData({...formData, description: e.target.value})} />
-                          </div>
-                          <div className="space-y-2">
-                            <label className="text-sm font-medium">Select File</label>
-                            <Input type="file" onChange={handleFileChange} />
-                            <p className="text-[10px] text-slate-500">Max size 5MB (PDF or Image)</p>
-                          </div>
-                          
-                          <Button className="w-full bg-cyan-600" onClick={handleUpload} disabled={uploadLoading}>
-                            {uploadLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Submit Document
-                          </Button>
-                        </div>
-                      </DialogContent>
-                    </Dialog>
+                        </DialogContent>
+                      </Dialog>
                     )}
                   </CardContent>
                 </Card>
