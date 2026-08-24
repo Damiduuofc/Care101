@@ -78,7 +78,7 @@ export default function RecordDetailsScreen() {
     setFetchingRecord(true);
     try {
       const token = await SecureStore.getItemAsync('token');
-      const baseApi = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.1.100:5000/api';
+      const baseApi = process.env.EXPO_PUBLIC_API_URL;
       const response = await fetch(`${baseApi}/medical-records/download/${recordId}`, {
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -115,7 +115,7 @@ export default function RecordDetailsScreen() {
     setSubmittingLab(true);
     try {
       const token = await SecureStore.getItemAsync('token');
-      const baseApi = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.1.100:5000/api';
+      const baseApi = process.env.EXPO_PUBLIC_API_URL;
 
       // 1. Get patient Mongoose ID from their patientId (e.g. SHP001)
       const searchRes = await fetch(`${baseApi}/patients/search-by-patientid/${record.patientId}`, {
@@ -183,7 +183,7 @@ export default function RecordDetailsScreen() {
 
         // Fetch patient lab reports
         try {
-          const baseApi = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.1.100:5000/api';
+          const baseApi = process.env.EXPO_PUBLIC_API_URL;
           const searchRes = await fetch(`${baseApi}/patients/search-by-patientid/${data.patientId}`, {
             headers: {
               Authorization: `Bearer ${token}`,

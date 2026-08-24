@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import {
- Eye, EyeOff, UserPlus, Trash2, Mail, Lock, Building, Briefcase, Loader2, Key, Copy, CheckCircle2
+ Eye, EyeOff, UserPlus, Trash2, Mail, Lock, Building, Briefcase, Loader2, Key, Copy, CheckCircle2, Search
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -34,6 +34,22 @@ const [showPassword, setShowPassword] = useState(false);
     role: "nurse", // Default
     department: ""
   });
+
+  // Search & Filter State
+  const [searchQuery, setSearchQuery] = useState("");
+  const [selectedRole, setSelectedRole] = useState("all");
+
+  // Computed filtered staff list
+  const filteredAndSortedStaff = staffList.filter((staff) => {
+    // Search ONLY by name
+    const matchesSearch = staff.name.toLowerCase().includes(searchQuery.toLowerCase());
+    
+    // Filter by role
+    const matchesRole = selectedRole === "all" || staff.role === selectedRole;
+    
+    return matchesSearch && matchesRole;
+  });
+
 
   // 1. Fetch Staff List
   const fetchStaff = async () => {
@@ -240,7 +256,7 @@ const [showPassword, setShowPassword] = useState(false);
                       <label className="text-sm font-medium">Role</label>
                       <Select value={formData.role} onValueChange={(val) => setFormData({ ...formData, role: val })}>
                         <SelectTrigger><SelectValue /></SelectTrigger>
-                        <SelectContent>
+                        <SelectContent className="[--accent:180_100%_96%] [--accent-foreground:189_95%_30%]">
                           <SelectItem value="nurse">Nurse</SelectItem>
                           <SelectItem value="receptionist">Receptionist</SelectItem>
                           <SelectItem value="lab_assistant">Lab Assistant</SelectItem>
@@ -293,65 +309,104 @@ const [showPassword, setShowPassword] = useState(false);
             </Dialog>
           </div>
 
-          {/* Staff List Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {staffList.map((staff) => (
-              <Card key={staff._id} className="hover:shadow-md transition-shadow border-slate-200">
-                <CardHeader className="flex flex-row items-center justify-between pb-2">
-                  <Badge className={`uppercase ${staff.role === 'system_admin' ? 'bg-purple-100 text-purple-700 hover:bg-purple-100' :
-                    staff.role === 'nurse' ? 'bg-green-100 text-green-700 hover:bg-green-100' :
-                      'bg-blue-100 text-blue-700 hover:bg-blue-100'
-                    }`}>
-                    {staff.role.replace('_', ' ')}
-                  </Badge>
-                  
-                  <div className="flex gap-1">
-                    {/* Reset Password Button */}
-                    <Button 
-                      variant="ghost" 
-                      size="icon" 
-                      className="h-8 w-8 text-slate-400 hover:text-amber-600 hover:bg-amber-50" 
-                      title="Reset Password"
-                      onClick={() => {
-                        setSelectedStaff(staff);
-                        setIsResetModalOpen(true);
-                      }}
-                    >
-                      <Key className="h-4 w-4" />
-                    </Button>
-                    
-                    {/* Delete Button */}
-                    <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-400 hover:text-red-600 hover:bg-red-50" onClick={() => handleDelete(staff._id)} title="Remove Staff">
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
+          {/* Search, Filter & Sort Controls */}
+          <div className="flex flex-col md:flex-row gap-4 items-center justify-between bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+            <div className="relative w-full md:flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+              <Input
+                placeholder="Search staff by name..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-9 w-full border-slate-200 focus-visible:ring-cyan-500"
+              />
+            </div>
+            
+            <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto items-center">
+              {/* Role Filter Dropdown */}
+              <div className="w-full sm:w-48">
+                <Select value={selectedRole} onValueChange={setSelectedRole}>
+                  <SelectTrigger className="border-slate-200 text-slate-700 focus:ring-cyan-500">
+                    <SelectValue placeholder="Filter by Role" />
+                  </SelectTrigger>
+                  <SelectContent className="[--accent:180_100%_96%] [--accent-foreground:189_95%_30%]">
+                    <SelectItem value="all">All Roles</SelectItem>
+                    <SelectItem value="nurse">Nurse</SelectItem>
+                    <SelectItem value="receptionist">Receptionist</SelectItem>
+                    <SelectItem value="lab_assistant">Lab Assistant</SelectItem>
+                    <SelectItem value="system_admin">System Admin</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
 
-                </CardHeader>
-                <CardContent>
-                  <div className="flex items-center gap-3 mb-4">
-                    <div className="h-10 w-10 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 font-bold text-lg">
-                      {staff.name.charAt(0)}
-                    </div>
-                    <div>
-                      <h3 className="font-bold text-slate-900">{staff.name}</h3>
-                      <p className="text-xs text-slate-500">{staff.email}</p>
-                    </div>
-                  </div>
 
-                  <div className="space-y-2 text-sm text-slate-600">
-                    <div className="flex items-center gap-2">
-                      <Building className="h-4 w-4 text-slate-400" />
-                      <span>{staff.department || "General"}</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Briefcase className="h-4 w-4 text-slate-400" />
-                      <span className="capitalize">{staff.role.replace('_', ' ')}</span>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
+            </div>
           </div>
+
+          {/* Staff List Grid */}
+          {filteredAndSortedStaff.length > 0 ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {filteredAndSortedStaff.map((staff) => (
+                <Card key={staff._id} className="hover:shadow-md hover:border-cyan-500 transition-all border-slate-200">
+                  <CardHeader className="flex flex-row items-center justify-between pb-2">
+                    <Badge className={`uppercase ${staff.role === 'system_admin' ? 'bg-purple-100 text-purple-700 hover:bg-purple-100' :
+                      staff.role === 'nurse' ? 'bg-green-100 text-green-700 hover:bg-green-100' :
+                        'bg-blue-100 text-blue-700 hover:bg-blue-100'
+                      }`}>
+                      {staff.role.replace('_', ' ')}
+                    </Badge>
+                    
+                    <div className="flex gap-1">
+                      {/* Reset Password Button */}
+                      <Button 
+                        variant="ghost" 
+                        size="icon" 
+                        className="h-8 w-8 text-slate-400 hover:text-cyan-600 hover:bg-cyan-50" 
+                        title="Reset Password"
+                        onClick={() => {
+                          setSelectedStaff(staff);
+                          setIsResetModalOpen(true);
+                        }}
+                      >
+                        <Key className="h-4 w-4" />
+                      </Button>
+                      
+                      {/* Delete Button */}
+                      <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-400 hover:text-red-600 hover:bg-red-50" onClick={() => handleDelete(staff._id)} title="Remove Staff">
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+
+                  </CardHeader>
+                  <CardContent>
+                    <div className="flex items-center gap-3 mb-4">
+                      <div className="h-10 w-10 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 font-bold text-lg">
+                        {staff.name.charAt(0)}
+                      </div>
+                      <div>
+                        <h3 className="font-bold text-slate-900">{staff.name}</h3>
+                        <p className="text-xs text-slate-500">{staff.email}</p>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2 text-sm text-slate-600">
+                      <div className="flex items-center gap-2">
+                        <Building className="h-4 w-4 text-slate-400" />
+                        <span>{staff.department || "General"}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Briefcase className="h-4 w-4 text-slate-400" />
+                        <span className="capitalize">{staff.role.replace('_', ' ')}</span>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-12 bg-white rounded-xl border border-slate-200 shadow-sm">
+              <p className="text-slate-500">No staff members found matching your criteria.</p>
+            </div>
+          )}
 
         </div>
       </main>

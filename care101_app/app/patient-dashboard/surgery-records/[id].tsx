@@ -44,7 +44,7 @@ export default function PatientRecordDetailsScreen() {
 
                 // Fetch patient lab reports
                 try {
-                    const baseApi = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.1.100:5000/api';
+                    const baseApi = process.env.EXPO_PUBLIC_API_URL;
                     const searchRes = await fetch(`${baseApi}/patients/search-by-patientid/${data.patientId}`, {
                         headers: {
                             Authorization: `Bearer ${token}`,
@@ -126,7 +126,7 @@ export default function PatientRecordDetailsScreen() {
         setFetchingRecord(true);
         try {
             const token = await SecureStore.getItemAsync('token');
-            const baseApi = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.1.100:5000/api';
+            const baseApi = process.env.EXPO_PUBLIC_API_URL;
             const response = await fetch(`${baseApi}/medical-records/download/${recordId}`, {
                 headers: {
                     'Authorization': `Bearer ${token}`,

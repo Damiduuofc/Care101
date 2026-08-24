@@ -16,7 +16,7 @@ import { useRouter } from 'expo-router';
 import { Search, UserPlus, ArrowLeft, CheckCircle } from 'lucide-react-native';
 import * as SecureStore from 'expo-secure-store';
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.1.100:5000/api';
+const API_URL = process.env.EXPO_PUBLIC_API_URL;
 
 export default function AddPatientScreen() {
     const router = useRouter();

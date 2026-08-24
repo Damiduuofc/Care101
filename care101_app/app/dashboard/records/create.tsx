@@ -34,7 +34,7 @@ export default function CreateRecordScreen() {
   const fetchDoctorProfile = async () => {
     try {
       const token = await SecureStore.getItemAsync('token');
-      const baseApi = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.1.100:5000/api';
+      const baseApi = process.env.EXPO_PUBLIC_API_URL;
       const res = await fetch(`${baseApi}/doctor/profile`, {
         headers: { Authorization: `Bearer ${token}` }
       });
@@ -60,7 +60,7 @@ export default function CreateRecordScreen() {
     setVerifying(true);
     try {
       const token = await SecureStore.getItemAsync('token');
-      const baseApi = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.1.100:5000/api';
+      const baseApi = process.env.EXPO_PUBLIC_API_URL;
       const url = `${baseApi}/patients/search-by-patientid/${idToVerify.trim().toUpperCase()}`;
       
       console.log('Verifying patient ID at URL:', url);

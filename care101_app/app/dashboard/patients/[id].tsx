@@ -17,7 +17,7 @@ import { ArrowLeft, User, Phone, Mail, Calendar, MapPin, AlertCircle, FileText, 
 import * as SecureStore from 'expo-secure-store';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
-const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.1.100:5000/api';
+const API_URL = process.env.EXPO_PUBLIC_API_URL;
 
 export default function PatientDetailScreen() {
     const router = useRouter();
