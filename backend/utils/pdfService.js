@@ -1,4 +1,5 @@
 import PDFDocument from 'pdfkit';
+import mongoose from 'mongoose';
 
 // ---------------------------------------------------------------------------
 // Brand palette
@@ -48,8 +49,36 @@ function hr(doc, y, color = COLORS.border, x1 = MARGIN, x2 = PAGE.width - MARGIN
  * @returns {Promise<Buffer>} - Returns the generated PDF as a buffer
  */
 export const generateReceiptPdf = (bill, appointment, doctor, patient) => {
-  return new Promise((resolve, reject) => {
+  return new Promise(async (resolve, reject) => {
     try {
+      // Resolve room from schedule for this specific appointment/bill date
+      let room = 'TBA';
+      if (doctor) {
+        room = doctor.allocatedRoom || 'TBA';
+        const targetDate = appointment?.date || bill?.date;
+        if (targetDate) {
+          try {
+            const startOfDay = new Date(targetDate);
+            startOfDay.setHours(0, 0, 0, 0);
+            const endOfDay = new Date(targetDate);
+            endOfDay.setHours(23, 59, 59, 999);
+            
+            const ScheduleRequest = mongoose.model('ScheduleRequest');
+            const schedule = await ScheduleRequest.findOne({
+              doctorId: doctor._id,
+              status: 'approved',
+              date: { $gte: startOfDay, $lte: endOfDay }
+            });
+            
+            if (schedule && schedule.allocatedRoom) {
+              room = schedule.allocatedRoom;
+            }
+          } catch (err) {
+            console.error("Error fetching room from schedule for receipt:", err.message);
+          }
+        }
+      }
+
       const doc = new PDFDocument({ margin: MARGIN, size: 'A4', bufferPages: true });
       const buffers = [];
       doc.on('data', buffers.push.bind(buffers));
@@ -64,7 +93,6 @@ export const generateReceiptPdf = (bill, appointment, doctor, patient) => {
       });
       const desc = bill?.title || `Consultation - ${appointment?.doctorName || doctor?.name || 'Doctor'}`;
       const docName = appointment?.doctorName || doctor?.name || 'N/A';
-      const room = doctor?.allocatedRoom || 'TBA';
       const amount = bill?.amount || 3500;
       const amountFmt = amount.toLocaleString('en-US', { minimumFractionDigits: 2 });
 

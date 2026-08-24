@@ -1041,8 +1041,8 @@ const fetchNextPatientId = async () => {
                             )}
                           </div>
                           
-                          {matchingPatients.length > 1 && (
-                            <div className="flex justify-end pt-2">
+                          <div className="flex justify-between items-center pt-2">
+                            {matchingPatients.length > 1 ? (
                               <Button
                                 type="button"
                                 variant="outline"
@@ -1051,12 +1051,23 @@ const fetchNextPatientId = async () => {
                                   setSelectedPatient(null);
                                   setIsPatientFound(false);
                                 }}
-                                className="text-cyan-600 border-cyan-200 hover:bg-cyan-50 h-8"
+                                className="text-slate-600 border-slate-200 hover:bg-slate-50 h-8"
                               >
-                                Select Another Family Member
+                                Back to List
                               </Button>
-                            </div>
-                          )}
+                            ) : (
+                              <div />
+                            )}
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={handleChooseRegisterNewPatient}
+                              className="text-cyan-600 border-cyan-200 hover:bg-cyan-50 h-8 font-semibold flex items-center gap-1.5"
+                            >
+                              <Plus className="w-3.5 h-3.5" /> Register New Patient
+                            </Button>
+                          </div>
                         </div>
                       )}
 

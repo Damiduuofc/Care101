@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
     View,
     Text,
@@ -68,9 +68,36 @@ export default function PatientDetailScreen() {
         }
     };
 
+    const fetchPatientDetails = useCallback(async () => {
+        try {
+            setLoading(true);
+            const token = await SecureStore.getItemAsync('token');
+
+            const response = await fetch(`${API_URL}/patient/${id}/medical-history`, {
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json',
+                    'ngrok-skip-browser-warning': 'true'
+                }
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                setPatientData(data);
+            } else {
+                Alert.alert('Error', 'Failed to fetch patient details');
+            }
+        } catch (error) {
+            console.error('Fetch Patient Error:', error);
+            Alert.alert('Error', 'Connection failed');
+        } finally {
+            setLoading(false);
+        }
+    }, [id]);
+
     useEffect(() => {
         fetchPatientDetails();
-    }, [id]);
+    }, [fetchPatientDetails]);
 
     const handleSubmitLabRequest = async () => {
         if (!labTitle.trim()) {
@@ -139,32 +166,7 @@ export default function PatientDetailScreen() {
         }
     };
 
-    const fetchPatientDetails = async () => {
-        try {
-            setLoading(true);
-            const token = await SecureStore.getItemAsync('token');
 
-            const response = await fetch(`${API_URL}/patient/${id}/medical-history`, {
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json',
-                    'ngrok-skip-browser-warning': 'true'
-                }
-            });
-
-            if (response.ok) {
-                const data = await response.json();
-                setPatientData(data);
-            } else {
-                Alert.alert('Error', 'Failed to fetch patient details');
-            }
-        } catch (error) {
-            console.error('Fetch Patient Error:', error);
-            Alert.alert('Error', 'Connection failed');
-        } finally {
-            setLoading(false);
-        }
-    };
 
     const formatDate = (dateString: string) => {
         if (!dateString) return 'N/A';

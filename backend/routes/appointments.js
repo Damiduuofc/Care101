@@ -261,7 +261,26 @@ router.post("/book", auth, async (req, res) => {
         const patient = await Patient.findById(req.user.id);
         if (patient && patient.email) {
           const doctorInfo = await Doctor.findById(doctorId);
-          const doctorRoom = doctorInfo ? doctorInfo.allocatedRoom : "TBA";
+          let doctorRoom = doctorInfo ? doctorInfo.allocatedRoom : "TBA";
+          if (savedAppointment && savedAppointment.date && doctorInfo) {
+            try {
+              const startOfDay = new Date(savedAppointment.date);
+              startOfDay.setHours(0, 0, 0, 0);
+              const endOfDay = new Date(savedAppointment.date);
+              endOfDay.setHours(23, 59, 59, 999);
+              
+              const schedule = await ScheduleRequest.findOne({
+                doctorId: doctorInfo._id,
+                status: 'approved',
+                date: { $gte: startOfDay, $lte: endOfDay }
+              });
+              if (schedule && schedule.allocatedRoom) {
+                doctorRoom = schedule.allocatedRoom;
+              }
+            } catch (err) {
+              console.error("Failed to fetch room from schedule in appointments route:", err.message);
+            }
+          }
           
           let pdfBuffer = null;
           if (paymentStatus === 'paid' && createdBill) {

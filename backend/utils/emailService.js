@@ -945,3 +945,64 @@ export const sendAdminPasswordReset = async (admin, resetUrl) => {
     console.error("❌ Error sending admin password reset email:", err);
   }
 };
+
+/**
+ * Sends a welcome SMS/email to a newly registered walk-in patient with their Patient ID and password.
+ * @param {object} patient - Patient document
+ * @param {string} plainPassword - Plain-text password
+ */
+export const sendWalkinPatientCredentials = async (patient, plainPassword) => {
+  const hasSmsConfig = process.env.SMS_GATEWAY_PASSWORD && process.env.SMS_GATEWAY_PASSWORD !== 'your_password_here';
+
+  const textBody = `Hello ${patient.fullName},\n\nWelcome to Care101! Your patient account has been created successfully.\n\nYour Patient ID (SHP) is: ${patient.patientId}\nYour Password is: ${plainPassword}\n\nPlease use these credentials to log in to the Care101 mobile app.`;
+
+  if (hasSmsConfig && patient.mobileNumber) {
+    try {
+      await sendSms(patient.mobileNumber, textBody);
+      console.log(`✅ Sent walkin credentials SMS to ${patient.mobileNumber}`);
+    } catch (smsErr) {
+      console.error("❌ SMS patient credentials failed:", smsErr);
+    }
+  } else {
+    console.log(`⚠️ SMS gateway config missing or no phone number. Credentials for ${patient.fullName}: ID: ${patient.patientId}, Pwd: ${plainPassword}`);
+  }
+
+  // Also send an email as a fallback if they have provided one
+  if (patient.email && !patient.email.startsWith("walkin-")) {
+    try {
+      const transporter = await getTransporter();
+
+      const bodyHtml = `
+        <p style="margin:0 0 16px 0;">Hello ${patient.fullName},</p>
+        <p style="margin:0 0 16px 0;">Welcome to Care101! Your patient account has been created successfully from the hospital receptionist side.</p>
+        
+        <h3 style="margin:0 0 8px 0; font-size:14px; color:${BRAND.text};">Account Details</h3>
+        <p style="margin:0 0 8px 0;"><strong>Patient ID:</strong> ${patient.patientId}</p>
+        <p style="margin:0 0 16px 0;"><strong>Password:</strong> ${plainPassword}</p>
+
+        <p style="margin:0 0 16px 0;">Please use these credentials to log in to the Care101 mobile application.</p>
+      `;
+
+      const html = renderEmailShell({
+        preheader: `Welcome to Care101!`,
+        heading: 'Welcome to Care101!',
+        subheading: 'Your patient account credentials.',
+        bodyHtml
+      });
+
+      const mailOptions = {
+        from: process.env.EMAIL_USER || '"Care101" <no-reply@care101.com>',
+        to: patient.email,
+        subject: "Welcome to Care101 - Patient Credentials",
+        text: textBody,
+        html
+      };
+
+      const info = await transporter.sendMail(mailOptions);
+      console.log(`✅ Patient walkin credentials email sent: ${info.messageId}`);
+    } catch (err) {
+      console.error("❌ Error sending patient credentials email:", err);
+    }
+  }
+};
+

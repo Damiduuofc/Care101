@@ -200,6 +200,8 @@ router.post("/appointments/walkin", protect, async (req, res) => {
       patient = await Patient.findOne({ patientId: patientId.toUpperCase() });
     }
 
+    const passwordPlain = "Walkin123!";
+
     if (!patient) {
       // Create new patient
       const baseUsername = fullName.toLowerCase().replace(/\s+/g, "") || "patient";
@@ -207,7 +209,7 @@ router.post("/appointments/walkin", protect, async (req, res) => {
       const username = `${baseUsername}${randomSuffix}`;
 
       const salt = await bcrypt.genSalt(10);
-      const hashedPassword = await bcrypt.hash("Walkin123!", salt);
+      const hashedPassword = await bcrypt.hash(passwordPlain, salt);
 
       // Generate unique values for optional fields if not provided
       const resolvedNic = (nic && nic.trim() !== "")
@@ -234,6 +236,16 @@ router.post("/appointments/walkin", protect, async (req, res) => {
       });
 
       await patient.save();
+
+      // Send credentials to patient's mobile number via SMS
+      try {
+        const { sendWalkinPatientCredentials } = await import("../utils/emailService.js");
+        sendWalkinPatientCredentials(patient, passwordPlain).catch(err => {
+          console.error("Failed to send walkin credentials:", err);
+        });
+      } catch (err) {
+        console.error("Failed to import sendWalkinPatientCredentials:", err);
+      }
     } else {
       // Update missing/mock details if admin has now provided real data
       let detailsUpdated = false;
@@ -424,7 +436,26 @@ router.post("/appointments/walkin", protect, async (req, res) => {
     (async () => {
       try {
         const doctorInfo = await Doctor.findById(doctorId);
-        const doctorRoom = doctorInfo ? doctorInfo.allocatedRoom : "TBA";
+        let doctorRoom = doctorInfo ? doctorInfo.allocatedRoom : "TBA";
+        if (savedAppointment && savedAppointment.date && doctorInfo) {
+          try {
+            const startOfDay = new Date(savedAppointment.date);
+            startOfDay.setHours(0, 0, 0, 0);
+            const endOfDay = new Date(savedAppointment.date);
+            endOfDay.setHours(23, 59, 59, 999);
+            
+            const schedule = await ScheduleRequest.findOne({
+              doctorId: doctorInfo._id,
+              status: 'approved',
+              date: { $gte: startOfDay, $lte: endOfDay }
+            });
+            if (schedule && schedule.allocatedRoom) {
+              doctorRoom = schedule.allocatedRoom;
+            }
+          } catch (err) {
+            console.error("Failed to fetch room from schedule in admin routes:", err.message);
+          }
+        }
         
         let pdfBuffer = null;
         if (paymentStatus === 'paid' && createdBill) {
