@@ -259,6 +259,7 @@ router.get("/:id/medical-history", auth, async (req, res) => {
     // Get lab requests
     const LabRequest = (await import("../models/LabRequest.js")).default;
     const labRequests = await LabRequest.find({ patientId })
+      .populate("doctorId", "name fullName nameWithInitials specialization")
       .populate("billId")
       .sort({ createdAt: -1 })
       .lean();
