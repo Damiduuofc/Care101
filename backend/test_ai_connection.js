@@ -14,12 +14,13 @@ console.log("NVIDIA API Key loaded:", process.env.NVIDIA_API_KEY ? "Yes" : "No")
 const openai = new OpenAI({
     baseURL: "https://integrate.api.nvidia.com/v1",
     apiKey: process.env.NVIDIA_API_KEY,
+    maxRetries: 0,
 });
 
 const models = [
-    "meta/llama-3.1-405b-instruct",
-    "meta/llama-3.1-70b-instruct",
-    "meta/llama-3.1-8b-instruct"
+    "meta/llama-3.2-11b-vision-instruct",
+    "minimaxai/minimax-m3",
+    "nvidia/nemotron-3-super-120b-a12b"
 ];
 
 async function testModels() {
