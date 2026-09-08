@@ -140,23 +140,62 @@ export default function LabAssistantDashboard() {
     }
   };
 
+  const formatDoctorName = (name?: string, doctorIdObj?: any) => {
+    if (doctorIdObj && typeof doctorIdObj === 'object') {
+      const docName = doctorIdObj.name || doctorIdObj.fullName || doctorIdObj.nameWithInitials;
+      if (docName) {
+        return docName.startsWith("Dr.") ? docName : `Dr. ${docName}`;
+      }
+    }
+    if (!name || name.trim() === "Doctor") {
+      return "Dr. Medical Officer";
+    }
+    if (name.startsWith("Dr.") || name.startsWith("Nurse") || name.startsWith("Lab") || name === "Self Uploaded") {
+      return name;
+    }
+    return `Dr. ${name}`;
+  };
+
   const handlePatientSelect = (patient: any) => {
     setSelectedPatient(patient);
     setSelectedRequest(null);
     fetchPatientRecords(patient._id);
+    setFormData({
+      title: "",
+      type: "lab_tests",
+      description: "",
+      fileData: "",
+      fileType: ""
+    });
+    setPriceInput("");
   };
 
   const handleRequestSelect = (req: any) => {
-    setSelectedPatient(req.patientId); // It's populated, so it has ._id and .fullName
+    const reqPatient = (typeof req.patientId === 'object' && req.patientId !== null) ? req.patientId : {};
+    const patientMongoId = reqPatient._id || req.patientId;
+    const directoryPatient = patients.find(p => p._id === patientMongoId);
+
+    const resolvedPatient = {
+      ...reqPatient,
+      ...(directoryPatient || {}),
+      patientId: directoryPatient?.patientId || reqPatient.patientId || (typeof patientMongoId === 'string' && patientMongoId.startsWith('PID-') ? patientMongoId : "N/A"),
+      nicNumber: directoryPatient?.nicNumber || reqPatient.nicNumber || "",
+      mobileNumber: directoryPatient?.mobileNumber || reqPatient.mobileNumber || ""
+    };
+
+    setSelectedPatient(resolvedPatient);
     setSelectedRequest(req);
-    fetchPatientRecords(req.patientId._id);
-    setFormData(prev => ({
-      ...prev,
-      title: req.title,
+    if (patientMongoId) {
+      fetchPatientRecords(patientMongoId);
+    }
+    setFormData({
+      title: req.title || "",
       type: req.type || "lab_tests",
-      description: req.description || ""
-    }));
-    setPriceInput(req.billId?.amount ? req.billId.amount.toString() : "");
+      description: req.description || "",
+      fileData: "",
+      fileType: ""
+    });
+    setPriceInput(req.billId?.amount != null && req.billId?.amount > 0 ? req.billId.amount.toString() : "");
   };
 
   const handleCreateRequest = async () => {
@@ -352,7 +391,7 @@ export default function LabAssistantDashboard() {
               <Input 
                 className="pl-9 bg-white" 
                 placeholder="Search by Name or Patient ID..." 
-                value={search} 
+                value={search || ""} 
                 onChange={(e) => setSearch(e.target.value)} 
               />
             </div>
@@ -399,27 +438,51 @@ export default function LabAssistantDashboard() {
                     ))
                   )
                 ) : (
-                  requests.filter(r => r.status === 'pending').length === 0 ? (
-                    <p className="text-center text-slate-400 mt-4 text-sm">No pending requests</p>
-                  ) : (
-                    requests.filter(r => r.status === 'pending').map((req) => (
-                      <div 
-                        key={req._id} 
-                        onClick={() => handleRequestSelect(req)}
-                        className={`p-3 rounded-lg cursor-pointer transition-all border ${selectedRequest?._id === req._id ? "bg-orange-50 border-orange-200" : "bg-white border-slate-100 hover:bg-slate-50"}`}
-                      >
-                        <div className="font-semibold text-slate-800 text-sm flex items-center justify-between">
-                          {req.patientId?.fullName || "Unknown Patient"}
+                  (() => {
+                    const pending = requests.filter(r => r.status === 'pending');
+                    const filtered = pending.filter(req => {
+                      if (!search.trim()) return true;
+                      const lower = search.toLowerCase();
+                      const pName = req.patientId?.fullName?.toLowerCase() || "";
+                      const pId = req.patientId?.patientId?.toLowerCase() || "";
+                      const title = req.title?.toLowerCase() || "";
+                      const doc = (req.doctorName || "").toLowerCase();
+                      return pName.includes(lower) || pId.includes(lower) || title.includes(lower) || doc.includes(lower);
+                    });
+
+                    if (filtered.length === 0) {
+                      return <p className="text-center text-slate-400 mt-4 text-sm">No pending requests</p>;
+                    }
+
+                    return filtered.map((req) => {
+                      const patientMongoId = req.patientId?._id || req.patientId;
+                      const dirPatient = patients.find(p => p._id === patientMongoId);
+                      const displayPatientId = req.patientId?.patientId || dirPatient?.patientId || "";
+                      const displayDoctor = formatDoctorName(req.doctorName, req.doctorId);
+                      return (
+                        <div 
+                          key={req._id} 
+                          onClick={() => handleRequestSelect(req)}
+                          className={`p-3 rounded-lg cursor-pointer transition-all border ${selectedRequest?._id === req._id ? "bg-orange-50 border-orange-200" : "bg-white border-slate-100 hover:bg-slate-50"}`}
+                        >
+                          <div className="font-semibold text-slate-800 text-sm flex items-center justify-between">
+                            <span className="truncate mr-2">{req.patientId?.fullName || "Unknown Patient"}</span>
+                            {displayPatientId && (
+                              <Badge variant="outline" className="text-[10px] font-mono font-normal flex-shrink-0">
+                                {displayPatientId}
+                              </Badge>
+                            )}
+                          </div>
+                          <div className="text-xs font-medium text-orange-600 mt-1 truncate">
+                            Req: {req.title}
+                          </div>
+                          <div className="text-[10px] text-slate-500 mt-1">
+                            By: {displayDoctor}
+                          </div>
                         </div>
-                        <div className="text-xs font-medium text-orange-600 mt-1 truncate">
-                          Req: {req.title}
-                        </div>
-                        <div className="text-[10px] text-slate-500 mt-1">
-                          By: {req.doctorName}
-                        </div>
-                      </div>
-                    ))
-                  )
+                      );
+                    });
+                  })()
                 )}
               </div>
             </div>
@@ -439,7 +502,7 @@ export default function LabAssistantDashboard() {
                   <CardContent className="p-6 flex justify-between items-center">
                     <div>
                       <h2 className="text-xl font-bold text-slate-800">{selectedPatient.fullName}</h2>
-                      <div className="flex gap-3 text-sm text-slate-500 mt-2">
+                      <div className="flex gap-3 text-sm text-slate-500 mt-2 flex-wrap">
                         <span>Patient ID: {selectedPatient.patientId || "N/A"}</span>
                         {selectedPatient.nicNumber && (
                           <>
@@ -455,7 +518,9 @@ export default function LabAssistantDashboard() {
                           <p className="text-sm font-semibold text-cyan-800 flex items-center gap-2">
                             <Activity className="h-4 w-4 text-cyan-600" /> Pending Request: {selectedRequest.title}
                           </p>
-                          <p className="text-xs text-cyan-600">Requested by: {selectedRequest.doctorName}</p>
+                          <p className="text-xs text-cyan-600">
+                            Requested by: {formatDoctorName(selectedRequest.doctorName, selectedRequest.doctorId)}
+                          </p>
                           {selectedRequest.description && (
                             <p className="text-xs text-cyan-700 italic">"{selectedRequest.description}"</p>
                           )}
@@ -482,7 +547,7 @@ export default function LabAssistantDashboard() {
                                   type="number" 
                                   placeholder="Enter Price (LKR)" 
                                   className="h-8 text-xs bg-white w-32"
-                                  value={priceInput}
+                                  value={priceInput || ""}
                                   onChange={(e) => setPriceInput(e.target.value)}
                                 />
                                 <Button 
@@ -563,7 +628,7 @@ export default function LabAssistantDashboard() {
                           <div className="space-y-4 py-4">
                             <div className="space-y-2">
                               <label className="text-sm font-medium">Document Title</label>
-                              <Input placeholder="e.g., Blood Test Results" value={formData.title} onChange={(e) => setFormData({...formData, title: e.target.value})} />
+                              <Input placeholder="e.g., Blood Test Results" value={formData.title || ""} onChange={(e) => setFormData({...formData, title: e.target.value})} />
                             </div>
                             <div className="space-y-2">
                               <label className="text-sm font-medium">Document Type</label>
@@ -579,7 +644,7 @@ export default function LabAssistantDashboard() {
                             </div>
                             <div className="space-y-2">
                               <label className="text-sm font-medium">Description (Optional)</label>
-                              <Textarea placeholder="Add some notes about this document..." value={formData.description} onChange={(e) => setFormData({...formData, description: e.target.value})} />
+                              <Textarea placeholder="Add some notes about this document..." value={formData.description || ""} onChange={(e) => setFormData({...formData, description: e.target.value})} />
                             </div>
                             <div className="space-y-2">
                               <label className="text-sm font-medium">Select File</label>
@@ -610,7 +675,7 @@ export default function LabAssistantDashboard() {
                               <label className="text-sm font-medium">Report Name</label>
                               <Input 
                                 placeholder="e.g., Blood Sugar Test" 
-                                value={createFormData.title} 
+                                value={createFormData.title || ""} 
                                 onChange={(e) => setCreateFormData({...createFormData, title: e.target.value})} 
                               />
                             </div>
@@ -633,7 +698,7 @@ export default function LabAssistantDashboard() {
                               <label className="text-sm font-medium">Description (Optional)</label>
                               <Textarea 
                                 placeholder="Add some details or instructions..." 
-                                value={createFormData.description} 
+                                value={createFormData.description || ""} 
                                 onChange={(e) => setCreateFormData({...createFormData, description: e.target.value})} 
                               />
                             </div>
@@ -642,7 +707,7 @@ export default function LabAssistantDashboard() {
                               <Input 
                                 type="number" 
                                 placeholder="e.g., 1500" 
-                                value={createFormData.amount} 
+                                value={createFormData.amount || ""} 
                                 onChange={(e) => setCreateFormData({...createFormData, amount: e.target.value})} 
                               />
                             </div>
@@ -682,7 +747,7 @@ export default function LabAssistantDashboard() {
                           <h4 className="font-bold text-slate-800 truncate mb-1">{rec.title}</h4>
                           <p className="text-xs text-slate-500 mb-4 line-clamp-2">{rec.description || "No description provided."}</p>
                           <div className="flex justify-between items-center text-xs text-slate-400">
-                            <span>By: {rec.doctorName}</span>
+                            <span>By: {formatDoctorName(rec.doctorName)}</span>
                             <Button variant="ghost" size="sm" className="h-8 text-cyan-600 hover:text-cyan-700 hover:bg-cyan-50" onClick={() => downloadRecord(rec._id, rec.title)}>
                               <Download className="h-4 w-4 mr-1" /> View Form
                             </Button>

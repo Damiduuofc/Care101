@@ -4,9 +4,68 @@ import MedicalRecord from "../models/MedicalRecord.js";
 import Patient from "../models/Patient.js";
 import Bill from "../models/Bill.js";
 import Doctor from "../models/Doctor.js";
+import Appointment from "../models/Appointment.js";
 import { auth } from "../middleware/auth.js";
 
 const router = express.Router();
+
+const resolveDoctorDisplay = (doc) => {
+  if (!doc) return null;
+  const name = doc.name || doc.fullName || doc.nameWithInitials;
+  if (!name) return null;
+  return name.startsWith("Dr.") ? name : `Dr. ${name}`;
+};
+
+const resolveDoctorName = async (reqDocId, reqDocName, patientId, user) => {
+  // 1. If explicitly provided valid name
+  if (reqDocName && reqDocName.trim() !== "Doctor" && reqDocName.trim() !== "Nurse Requested") {
+    if (user?.role === "lab_assistant" || reqDocName.startsWith("Dr.") || reqDocName.startsWith("Nurse") || reqDocName.startsWith("Lab")) {
+      return { finalDoctorId: reqDocId, finalDoctorName: reqDocName };
+    }
+    return { finalDoctorId: reqDocId, finalDoctorName: `Dr. ${reqDocName}` };
+  }
+
+  // 2. If caller is doctor
+  if (user?.role === "doctor" && user.id) {
+    const doc = await Doctor.findById(user.id);
+    const resolvedName = resolveDoctorDisplay(doc);
+    if (resolvedName) {
+      return { finalDoctorId: doc._id, finalDoctorName: resolvedName };
+    }
+  }
+
+  // 3. If doctorId is provided
+  if (reqDocId) {
+    const doc = await Doctor.findById(reqDocId);
+    const resolvedName = resolveDoctorDisplay(doc);
+    if (resolvedName) {
+      return { finalDoctorId: doc._id, finalDoctorName: resolvedName };
+    }
+  }
+
+  // 4. Check patient's latest appointment
+  if (patientId) {
+    const appt = await Appointment.findOne({ patientId }).sort({ createdAt: -1 });
+    if (appt && appt.doctorName && appt.doctorName.trim() !== "Doctor") {
+      const formattedApptDoc = appt.doctorName.startsWith("Dr.") ? appt.doctorName : `Dr. ${appt.doctorName}`;
+      return { finalDoctorId: appt.doctorId || null, finalDoctorName: formattedApptDoc };
+    }
+  }
+
+  // 5. Fallback to first doctor in system
+  const defaultDoc = await Doctor.findOne();
+  if (defaultDoc) {
+    const resolvedName = resolveDoctorDisplay(defaultDoc);
+    if (resolvedName) {
+      return { finalDoctorId: defaultDoc._id, finalDoctorName: resolvedName };
+    }
+  }
+
+  return {
+    finalDoctorId: reqDocId || null,
+    finalDoctorName: user?.role === "lab_assistant" ? "Lab Assistant" : "Dr. Medical Officer"
+  };
+};
 
 // 1. Doctor, Nurse or Lab Assistant creates a Lab Request
 router.post("/create", auth, async (req, res) => {
@@ -28,15 +87,7 @@ router.post("/create", auth, async (req, res) => {
     });
     await newBill.save();
 
-    let finalDoctorId = req.user.role === "doctor" ? req.user.id : (doctorId || null);
-    let finalDoctorName = req.user.role === "doctor" ? "Doctor" : (doctorName || "Nurse Requested");
-
-    if (req.user.role === "doctor") {
-      const doc = await Doctor.findById(req.user.id);
-      finalDoctorName = doc ? doc.name : "Doctor";
-    } else if (req.user.role === "lab_assistant") {
-      finalDoctorName = doctorName || "Lab Assistant";
-    }
+    const { finalDoctorId, finalDoctorName } = await resolveDoctorName(doctorId, doctorName, patientId, req.user);
 
     const newRequest = new LabRequest({
       patientId,
@@ -58,7 +109,7 @@ router.post("/create", auth, async (req, res) => {
       await Notification.create({
         userId: patientId,
         type: "lab_report",
-        message: `New Lab Request: ${title} requested for ${patient?.fullName || 'a patient'} by ${req.user.name}.`,
+        message: `New Lab Request: ${title} requested for ${patient?.fullName || 'a patient'} by ${req.user.name || finalDoctorName}.`,
         metadata: { requestId: newRequest._id }
       });
     } catch (err) {
@@ -75,13 +126,57 @@ router.post("/create", auth, async (req, res) => {
 // 2. Get all Pending/Completed Requests (For Lab Assistants or System Admins)
 router.get("/all", auth, async (req, res) => {
   try {
-     // Fetch requests and populate patient and bill info
+     // Fetch requests and populate patient, doctor, and bill info
      const requests = await LabRequest.find()
-      .populate("patientId", "fullName nic email mobileNumber")
+      .populate("patientId", "patientId fullName nicNumber email mobileNumber gender dateOfBirth")
+      .populate("doctorId", "name fullName nameWithInitials specialization")
       .populate("billId")
       .sort({ createdAt: -1 });
      
-     res.json(requests);
+     const enrichedRequests = await Promise.all(requests.map(async (r) => {
+       const obj = r.toObject();
+       let docName = obj.doctorName;
+
+       // If docName is missing or generic "Doctor"
+       if (!docName || docName.trim() === "Doctor" || docName.trim() === "Nurse Requested") {
+         if (obj.doctorId && typeof obj.doctorId === "object") {
+           const dName = resolveDoctorDisplay(obj.doctorId);
+           if (dName) docName = dName;
+         }
+
+         if (!docName || docName.trim() === "Doctor") {
+           const patId = obj.patientId?._id || obj.patientId;
+           if (patId) {
+             const appt = await Appointment.findOne({ patientId: patId }).sort({ createdAt: -1 });
+             if (appt && appt.doctorName && appt.doctorName.trim() !== "Doctor") {
+               docName = appt.doctorName.startsWith("Dr.") ? appt.doctorName : `Dr. ${appt.doctorName}`;
+             }
+           }
+         }
+
+         if (!docName || docName.trim() === "Doctor") {
+           const anyDoc = await Doctor.findOne();
+           if (anyDoc) {
+             const dName = resolveDoctorDisplay(anyDoc);
+             if (dName) docName = dName;
+           }
+         }
+
+         if (!docName || docName.trim() === "Doctor") {
+           docName = "Dr. Medical Officer";
+         }
+
+         // Heal DB record asynchronously
+         LabRequest.updateOne({ _id: r._id }, { doctorName: docName }).exec().catch(() => {});
+       } else if (!docName.startsWith("Dr.") && !docName.startsWith("Nurse") && !docName.startsWith("Lab")) {
+         docName = `Dr. ${docName}`;
+       }
+
+       obj.doctorName = docName;
+       return obj;
+     }));
+
+     res.json(enrichedRequests);
   } catch (err) {
     console.error(err.message);
     res.status(500).send("Server Error");
@@ -92,10 +187,50 @@ router.get("/all", auth, async (req, res) => {
 router.get("/patient/:patientId", auth, async (req, res) => {
   try {
     const requests = await LabRequest.find({ patientId: req.params.patientId })
-      .populate("patientId", "fullName nic email")
+      .populate("patientId", "patientId fullName nicNumber email mobileNumber gender dateOfBirth")
+      .populate("doctorId", "name fullName nameWithInitials specialization")
       .populate("billId")
       .sort({ createdAt: -1 });
-    res.json(requests);
+
+    const enrichedRequests = await Promise.all(requests.map(async (r) => {
+      const obj = r.toObject();
+      let docName = obj.doctorName;
+
+      if (!docName || docName.trim() === "Doctor" || docName.trim() === "Nurse Requested") {
+        if (obj.doctorId && typeof obj.doctorId === "object") {
+          const dName = resolveDoctorDisplay(obj.doctorId);
+          if (dName) docName = dName;
+        }
+
+        if (!docName || docName.trim() === "Doctor") {
+          const appt = await Appointment.findOne({ patientId: req.params.patientId }).sort({ createdAt: -1 });
+          if (appt && appt.doctorName && appt.doctorName.trim() !== "Doctor") {
+            docName = appt.doctorName.startsWith("Dr.") ? appt.doctorName : `Dr. ${appt.doctorName}`;
+          }
+        }
+
+        if (!docName || docName.trim() === "Doctor") {
+          const anyDoc = await Doctor.findOne();
+          if (anyDoc) {
+            const dName = resolveDoctorDisplay(anyDoc);
+            if (dName) docName = dName;
+          }
+        }
+
+        if (!docName || docName.trim() === "Doctor") {
+          docName = "Dr. Medical Officer";
+        }
+
+        LabRequest.updateOne({ _id: r._id }, { doctorName: docName }).exec().catch(() => {});
+      } else if (!docName.startsWith("Dr.") && !docName.startsWith("Nurse") && !docName.startsWith("Lab")) {
+        docName = `Dr. ${docName}`;
+      }
+
+      obj.doctorName = docName;
+      return obj;
+    }));
+
+    res.json(enrichedRequests);
   } catch(err) {
     console.error(err.message);
     res.status(500).send("Server Error");

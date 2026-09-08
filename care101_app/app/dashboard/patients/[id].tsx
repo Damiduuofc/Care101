@@ -108,6 +108,17 @@ export default function PatientDetailScreen() {
         setSubmittingLab(true);
         try {
             const token = await SecureStore.getItemAsync('token');
+            const userDataStr = await SecureStore.getItemAsync('user_data');
+            let doctorName = '';
+            let doctorId = '';
+            if (userDataStr) {
+                try {
+                    const userData = JSON.parse(userDataStr);
+                    doctorName = userData.name || userData.fullName || '';
+                    doctorId = userData.id || userData._id || '';
+                } catch(e) {}
+            }
+
             const response = await fetch(`${API_URL}/lab-requests/create`, {
                 method: 'POST',
                 headers: {
@@ -118,6 +129,8 @@ export default function PatientDetailScreen() {
                     patientId: id,
                     title: labTitle.trim(),
                     description: labDescription.trim(),
+                    doctorId,
+                    doctorName
                 })
             });
 

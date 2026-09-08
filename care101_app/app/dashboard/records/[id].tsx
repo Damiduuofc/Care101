@@ -139,6 +139,17 @@ export default function RecordDetailsScreen() {
 
       const patientMongooseId = searchData.patient._id;
 
+      const userDataStr = await SecureStore.getItemAsync('user_data');
+      let doctorName = '';
+      let doctorId = '';
+      if (userDataStr) {
+        try {
+          const userData = JSON.parse(userDataStr);
+          doctorName = userData.name || userData.fullName || '';
+          doctorId = userData.id || userData._id || '';
+        } catch(e) {}
+      }
+
       // 2. Submit Lab Request
       const res = await fetch(`${baseApi}/lab-requests/create`, {
         method: 'POST',
@@ -149,7 +160,9 @@ export default function RecordDetailsScreen() {
         body: JSON.stringify({
           patientId: patientMongooseId,
           title: labTitle.trim(),
-          description: labDescription.trim()
+          description: labDescription.trim(),
+          doctorId,
+          doctorName
         })
       });
 
