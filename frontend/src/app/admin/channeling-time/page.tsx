@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Input } from "@/components/ui/input";
 import { 
     Loader2, Clock, CalendarDays, Check, User, ChevronDown, Search, X, AlertTriangle 
 } from "lucide-react";
@@ -103,6 +104,10 @@ export default function ChannelingRequestPage() {
     const [requests, setRequests] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [loadingAction, setLoadingAction] = useState<string | null>(null);
+const [doctorSearchQuery, setDoctorSearchQuery] = useState("");
+
+
+
 
     // Form fields for direct scheduling
     const [doctorsList, setDoctorsList] = useState<any[]>([]);
@@ -376,6 +381,19 @@ export default function ChannelingRequestPage() {
 
     const pendingRequests = requests.filter(r => r.status === "pending");
     const historyRequests = requests.filter(r => r.status !== "pending");
+ 
+  const filteredRequests = pendingRequests.filter((req: any) => {
+  const query = doctorSearchQuery.toLowerCase().trim();
+  const doctorName = req.doctorName || req.doctorId?.fullName || req.doctor?.name || req.name || "";
+  return doctorName.toLowerCase().includes(query);
+});
+  
+const filteredHistoryRequests = historyRequests.filter((req: any) => {
+  const query = doctorSearchQuery.toLowerCase().trim();
+  const doctorName = req.doctorName || req.doctorId?.fullName || req.doctor?.name || req.name || "";
+  return doctorName.toLowerCase().includes(query);
+});
+
 
     const filteredDoctors = doctorsList.filter((doc) => {
         const name = (doc.name || doc.fullName || "").toLowerCase();
@@ -433,12 +451,19 @@ export default function ChannelingRequestPage() {
                                 <div className="p-6">
                                     <form onSubmit={handleCreateSchedule} className="space-y-4">
                                         
-                                        {/* 1. Doctor Selection */}
-                                        <div>
-                                            <label className="block text-xs font-semibold text-slate-700 mb-1">
-                                                Select Doctor
-                                            </label>
-                                            <div className="relative" ref={dropdownRef}>
+{/* 1. Doctor Selection */}
+<div>
+  <label className="block text-xs font-semibold text-slate-700 mb-1">
+    Select Doctor
+  </label>
+  {/* ADD THIS LINE AT LINE 454 */}
+  <div className="relative" ref={dropdownRef}>
+    <button
+      type="button"
+      onClick={() => setIsOpen(!isOpen)}
+      className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-4 focus:ring-cyan-500/10"
+    ></button>
+
                                                 <button
                                                     type="button"
                                                     onClick={() => setIsOpen(!isOpen)}
@@ -628,10 +653,21 @@ export default function ChannelingRequestPage() {
                         </TabsList>
 
                         <TabsContent value="pending" className="space-y-4 outline-none">
-                            {pendingRequests.length === 0 ? (
-                                <EmptyState message="No pending requests to review." />
-                            ) : (
-                                pendingRequests.map(req => (
+                           <div className="relative w-full sm:w-72 mb-4 mt-2">
+    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+    <Input
+      type="text"
+      placeholder="Search history by doctor..."
+      value={doctorSearchQuery}
+      onChange={(e: React.ChangeEvent<HTMLInputElement>) => setDoctorSearchQuery(e.target.value)}
+      className="pl-9 w-full border-slate-200 focus-visible:ring-cyan-500 bg-white text-xs h-9"
+    />
+  </div>
+
+ {filteredRequests.length === 0 ? (
+  <EmptyState message="No pending requests found." />
+) : (
+  filteredRequests.map(req => (
                                     <RequestCard 
                                         key={req._id} 
                                         req={req} 
@@ -649,22 +685,34 @@ export default function ChannelingRequestPage() {
                             )}
                         </TabsContent>
 
-                        <TabsContent value="history" className="space-y-4 outline-none">
-                            {historyRequests.length === 0 ? (
-                                <EmptyState message="History is empty." />
-                            ) : (
-                                historyRequests.map(req => (
-                                    <RequestCard 
-                                        key={req._id} 
-                                        req={req} 
-                                        isHistory 
-                                        onAction={handleAction}
-                                        loadingId={loadingAction}
-                                        formatDate={formatDate}
-                                        formatTime={formatTime}
-                                    />
-                                ))
-                            )}
+
+                       <TabsContent value="history" className="space-y-4 outline-none">
+  <div className="relative w-full sm:w-72 mb-4 mt-2">
+    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+    <Input
+      type="text"
+      placeholder="Search history by doctor..."
+      value={doctorSearchQuery}
+      onChange={(e: React.ChangeEvent<HTMLInputElement>) => setDoctorSearchQuery(e.target.value)}
+      className="pl-9 w-full border-slate-200 focus-visible:ring-cyan-500 bg-white text-xs h-9"
+    />
+  </div>
+
+  {filteredHistoryRequests.length === 0 ? (
+    <EmptyState message="History is empty." />
+  ) : (
+    filteredHistoryRequests.map((req: any) => (
+      <RequestCard
+        key={req._id}
+        req={req}
+        isHistory
+        loadingId={loadingAction}
+        formatDate={formatDate}
+        formatTime={formatTime}
+      />
+    ))
+  )}
+  
                         </TabsContent>
                     </Tabs>
                 )}
@@ -777,14 +825,17 @@ export default function ChannelingRequestPage() {
                     </div>
                 )}
             </main>
-        </div>
+        </div>     
     );
 }
 
 // --- SUB COMPONENTS ---
 
+
 function RequestCard({ req, onAction, onApproveClick, loadingId, isHistory, formatDate, formatTime }: any) {
     const isLoading = loadingId === req._id;
+
+    
 
     return (
         <Card className={`group border-slate-200 shadow-sm overflow-hidden transition-all duration-300 ${isHistory ? 'bg-slate-50/50' : 'hover:shadow-md hover:border-cyan-500/30 bg-white'}`}>

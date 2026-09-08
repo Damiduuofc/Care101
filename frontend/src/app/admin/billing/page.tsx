@@ -135,6 +135,10 @@ function StripeCardForm({ amount, billId, onSuccess, onCancel }: CardFormProps) 
         }
     };
 
+
+
+
+
     return (
         <form onSubmit={handleSubmit} className="space-y-4 mt-2">
             <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
@@ -173,6 +177,18 @@ export default function BillingPage() {
     const [open, setOpen] = useState(false);
     const [stripeModalOpen, setStripeModalOpen] = useState(false);
     const [pendingBill, setPendingBill] = useState<any>(null);
+    const [billingSearchQuery, setBillingSearchQuery] = useState("");
+
+    const filteredHistory = history.filter((inv) => {
+  const query = billingSearchQuery.toLowerCase().trim();
+  const patientId = inv.patientId?.patientId || inv.patientId || '';
+  const fullName = inv.patientId?.fullName || '';
+
+  return (
+    patientId.toLowerCase().includes(query) ||
+    fullName.toLowerCase().includes(query)
+  );
+});
 
     // Search State
     const [searchPatientId, setSearchPatientId] = useState("");
@@ -698,13 +714,33 @@ fetch(`${API_URL}/admin/doctors`, { headers })
                     </Card>
                 </div>
 
+
                 <Card className="border-slate-200 shadow-sm bg-white overflow-hidden">
-                    <CardHeader className="border-b border-slate-100 p-4 bg-slate-50/50 flex flex-row items-center justify-between">
-                        <CardTitle className="text-lg font-bold text-slate-800">Billing History</CardTitle>
-                        <Button variant="ghost" className="h-8 text-xs text-[#06b6d4]" onClick={fetchHistoryAndDoctors}>
-                            <Clock className="mr-2 h-3 w-3" /> Refresh history
-                        </Button>
-                    </CardHeader>
+    <CardHeader className="border-b border-slate-100 p-4 bg-slate-50/50 flex flex-col sm:flex-row items-center justify-between gap-4">
+  <div className="flex items-center justify-between w-full sm:w-auto gap-4">
+    <CardTitle className="text-lg font-bold text-slate-800">Billing History</CardTitle>
+    <Button variant="ghost" className="h-8 text-xs text-[#06b6d4] sm:hidden" onClick={fetchHistoryAndDoctors}>
+      <Clock className="mr-2 h-3 w-3" /> Refresh history
+    </Button>
+  </div>
+
+  <div className="flex items-center gap-3 w-full sm:w-auto">
+    <div className="relative w-full sm:w-64">
+      <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+      <Input
+        placeholder="Search history..."
+        value={billingSearchQuery}
+        onChange={(e) => setBillingSearchQuery(e.target.value)}
+        className="pl-9 h-9 w-full border-slate-200 focus-visible:ring-cyan-500 bg-white"
+      />
+    </div>
+    <Button variant="ghost" className="h-8 text-xs text-[#06b6d4] hidden sm:flex" onClick={fetchHistoryAndDoctors}>
+      <Clock className="mr-2 h-3 w-3" /> Refresh history
+    </Button>
+  </div>
+</CardHeader>
+
+
                     <CardContent className="p-0">
                         {loading ? (
                             <div className="py-20 text-center flex flex-col items-center gap-3">
@@ -723,7 +759,14 @@ fetch(`${API_URL}/admin/doctors`, { headers })
                                     </TableRow>
                                 </TableHeader>
                                 <TableBody>
-                                    {history.length > 0 ? history.map((inv, idx) => (
+
+
+
+
+                                    {filteredHistory.length > 0 ? filteredHistory.map((inv, idx) => (
+
+
+
                                         <TableRow key={inv._id || idx}>
                                             <TableCell>
                                                 <Badge className={inv.status === "Paid" ? "bg-emerald-100 text-emerald-700 border-emerald-200" : "bg-amber-100 text-amber-700 border-amber-200"}>
@@ -869,5 +912,6 @@ fetch(`${API_URL}/admin/doctors`, { headers })
                 </Dialog>
             </main>
         </div>
+
     );
 }
