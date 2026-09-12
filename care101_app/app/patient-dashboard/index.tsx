@@ -443,22 +443,6 @@ export default function PatientDashboardScreen() {
                                         <View style={styles.liveIndicator}><View style={styles.liveDot} /><Text style={styles.liveText}>Live</Text></View>
                                     </View>
                                 </View>
-
-                                <View style={styles.predictionsBlock}>
-                                    <View style={styles.predictionItem}>
-                                        <Text style={styles.predictionLabel}>Est. Waiting Time</Text>
-                                        <Text style={styles.predictionValue}>
-                                            {queueData.estimatedWaitingMinutes !== undefined ? `${queueData.estimatedWaitingMinutes} mins` : "--"}
-                                        </Text>
-                                    </View>
-                                    <View style={styles.predictionItem}>
-                                        <Text style={styles.predictionLabel}>Recommended Arrival</Text>
-                                        <Text style={styles.predictionValue}>
-                                            {queueData.estimatedArrivalTime || "TBA"}
-                                        </Text>
-                                    </View>
-                                </View>
-
                             </View>
                         ) : <ActivityIndicator color="#06b6d4" />}
                         <TouchableOpacity style={styles.closeButton} onPress={() => setQueueVisible(false)}><Text style={styles.closeButtonText}>Close</Text></TouchableOpacity>
@@ -602,11 +586,6 @@ const styles = StyleSheet.create({
     activeTokenLabel: { fontSize: 12, color: '#0891b2' },
     activeTokenNumber: { fontSize: 36, fontWeight: '800', color: '#06b6d4' },
     liveIndicator: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#06b6d4', paddingHorizontal: 8, borderRadius: 10 },
-    predictionsBlock: { backgroundColor: '#f8fafc', borderRadius: 16, padding: 15, borderWidth: 1, borderColor: '#e2e8f0' },
-    predictionItem: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#f1f5f9' },
-    predictionLabel: { fontSize: 13, fontWeight: '600', color: '#64748b' },
-    predictionValue: { fontSize: 14, fontWeight: '700', color: '#0f172a' },
-    confidenceText: { fontSize: 10, color: '#94a3b8', fontStyle: 'italic', textAlign: 'center', marginTop: 4 },
     liveDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#fff', marginRight: 4 },
     liveText: { color: '#fff', fontSize: 10, fontWeight: '700' },
     closeButton: { marginTop: 15, backgroundColor: '#0f172a', paddingVertical: 14, borderRadius: 12, alignItems: 'center' },
