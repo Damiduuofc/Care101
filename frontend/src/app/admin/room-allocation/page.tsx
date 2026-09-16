@@ -53,6 +53,17 @@ const getRoomsForDoctor = (specialization: string) => {
     .map(([room]) => room);
 };
 
+// Helper to format date safely
+const formatDate = (dateStr: string) => {
+  if (!dateStr) return "";
+  try {
+    const d = new Date(dateStr);
+    return isNaN(d.getTime()) ? "" : d.toLocaleDateString();
+  } catch {
+    return "";
+  }
+};
+
 // Check if two time blocks overlap: (StartA < EndB) && (EndA > StartB)
 const checkTimeOverlap = (startA: string, endA: string, startB: string, endB: string) => {
   const tStartA = new Date(startA).getTime();
@@ -274,9 +285,15 @@ function AllocationCard({
             </span>
           </div>
           <CardDescription className="text-xs text-slate-500 font-medium mt-0.5">{doctorSpec}</CardDescription>
-          <div className="flex items-center gap-1 mt-1 text-xs text-[#06b6d4] font-bold">
-            <Clock className="h-3.5 w-3.5" />
-            {formatTime(sched.startTime)} – {formatTime(sched.endTime)}
+          <div className="flex items-center flex-wrap gap-x-3 gap-y-1 mt-1 text-xs text-[#06b6d4] font-bold">
+            <div className="flex items-center gap-1">
+              <CalendarIcon className="h-3.5 w-3.5" />
+              <span>{formatDate(sched.date || sched.startTime)}</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <Clock className="h-3.5 w-3.5" />
+              <span>{formatTime(sched.startTime)} – {formatTime(sched.endTime)}</span>
+            </div>
           </div>
         </div>
       </CardHeader>
@@ -890,6 +907,10 @@ export default function RoomAllocation() {
                                 </div>
                                 <div className="border-l border-slate-200/60 pl-3">
                                   <p className="font-bold text-slate-800 flex items-center gap-1">
+                                    <CalendarIcon className="h-3 w-3 text-cyan-600" />
+                                    {formatDate(alloc.date || alloc.startTime)}
+                                  </p>
+                                  <p className="font-bold text-slate-800 flex items-center gap-1 mt-0.5">
                                     <Clock className="h-3 w-3 text-cyan-600" />
                                     {formatTime(alloc.startTime)} – {formatTime(alloc.endTime)}
                                   </p>
@@ -981,7 +1002,7 @@ export default function RoomAllocation() {
                       <div className="flex flex-wrap items-center gap-5 w-full md:w-auto">
                         <div className="flex items-center gap-2 text-slate-600 text-xs">
                           <CalendarIcon className="h-4 w-4 text-cyan-600" />
-                          <span className="font-semibold">{new Date(req.date).toLocaleDateString()}</span>
+                          <span className="font-semibold">{formatDate(req.date || req.startTime)}</span>
                         </div>
                         <div className="flex items-center gap-2 text-slate-600 text-xs">
                           <Clock className="h-4 w-4 text-cyan-600" />

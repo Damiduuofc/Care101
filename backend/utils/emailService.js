@@ -67,11 +67,15 @@ const getTransporter = async () => {
   const pass = process.env.EMAIL_PASS;
 
   if (user && pass) {
+    const cleanPass = pass.trim().replace(/\s+/g, '');
     cachedTransporter = nodemailer.createTransport({
       host,
       port,
       secure: port === 465, // true for 465, false for other ports
-      auth: { user, pass }
+      auth: { user, pass: cleanPass },
+      tls: {
+        rejectUnauthorized: false
+      }
     });
     return cachedTransporter;
   }
