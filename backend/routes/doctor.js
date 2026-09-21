@@ -212,6 +212,22 @@ router.put("/delay-status", auth, async (req, res) => {
       }
     }
     
+    if (req.io) {
+      req.io.emit("doctorStatusUpdated", doctor);
+      req.io.emit("doctorDelayAlert", {
+        doctorId: doctor._id,
+        doctorName: doctor.name,
+        specialization: doctor.specialization,
+        channelingStatus: doctor.channelingStatus,
+        status: doctor.channelingStatus,
+        previousStatus,
+        allocatedNurse: doctor.allocatedNurse,
+        allocatedRoom: doctor.allocatedRoom,
+        channelingTime: doctor.channelingTime,
+        timestamp: new Date()
+      });
+    }
+
     res.json({ msg: "Delay Status Updated", status: doctor.channelingStatus });
   } catch (err) {
     res.status(500).send("Server Error");
@@ -264,6 +280,20 @@ router.put("/arrival-status", auth, async (req, res) => {
       }
     }
     
+    if (req.io) {
+      req.io.emit("doctorStatusUpdated", doctor);
+      req.io.emit("doctorArrivalAlert", {
+        doctorId: doctor._id,
+        doctorName: doctor.name,
+        specialization: doctor.specialization,
+        isArrived: doctor.isArrived,
+        allocatedNurse: doctor.allocatedNurse,
+        allocatedRoom: doctor.allocatedRoom,
+        channelingTime: doctor.channelingTime,
+        timestamp: new Date()
+      });
+    }
+
     res.json({ msg: "Arrival Status Updated", isArrived: doctor.isArrived });
   } catch (err) {
     res.status(500).send("Server Error");

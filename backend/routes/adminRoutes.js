@@ -1101,6 +1101,7 @@ router.put("/doctors/:id/status", protect, authorize(["system_admin", "reception
     }
     
     const prevQueueNumber = doctor.currentQueueNumber || 0;
+    const prevStatus = doctor.channelingStatus;
 
     // Update Doctor Fields
     if (isArrived !== undefined) {
@@ -1163,6 +1164,20 @@ router.put("/doctors/:id/status", protect, authorize(["system_admin", "reception
 
     if (req.io) {
       req.io.emit("doctorStatusUpdated", doctor);
+      if (channelingStatus !== undefined && channelingStatus !== prevStatus) {
+        req.io.emit("doctorDelayAlert", {
+          doctorId: doctor._id,
+          doctorName: doctor.name,
+          specialization: doctor.specialization,
+          channelingStatus: doctor.channelingStatus,
+          status: doctor.channelingStatus,
+          previousStatus: prevStatus,
+          allocatedNurse: doctor.allocatedNurse,
+          allocatedRoom: doctor.allocatedRoom,
+          channelingTime: doctor.channelingTime,
+          timestamp: new Date()
+        });
+      }
     }
 
     res.json(doctor);
