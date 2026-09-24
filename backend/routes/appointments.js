@@ -350,6 +350,167 @@ router.get("/upcoming", auth, async (req, res) => {
 });
 
 // ==========================================
+// 3B. GET HOME SCREEN WIDGET STATUS
+// ==========================================
+router.get("/widget-status", auth, async (req, res) => {
+  try {
+    const patientId = req.user.id || req.query.patientId;
+    if (!patientId) {
+      return res.json({ state: "empty", message: "Patient not identified" });
+    }
+
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+    const endOfToday = new Date();
+    endOfToday.setHours(23, 59, 59, 999);
+
+    // 1. Look for today's active/upcoming appointment
+    const todayAppt = await Appointment.findOne({
+      patientId,
+      date: { $gte: startOfToday, $lte: endOfToday },
+      status: { $ne: "cancelled" }
+    }).populate("doctorId");
+
+    if (todayAppt) {
+      const doc = todayAppt.doctorId;
+      let room = (doc && doc.allocatedRoom) ? doc.allocatedRoom : "";
+      
+      // If room not set on doctor model, check approved schedule
+      if (!room && doc && doc._id) {
+        try {
+          const schedule = await ScheduleRequest.findOne({
+            doctorId: doc._id,
+            status: "approved",
+            date: { $gte: startOfToday, $lte: endOfToday }
+          });
+          if (schedule && schedule.allocatedRoom) {
+            room = schedule.allocatedRoom;
+          }
+        } catch (scheduleErr) {
+          console.error("Schedule room lookup error:", scheduleErr);
+        }
+      }
+      if (!room) room = "Room TBA";
+
+      const hospitalName = (doc && doc.hospital) ? doc.hospital : "SUWASEWANA HOSPITAL";
+      const doctorName = (doc && (doc.fullName || doc.name)) ? doc.name : todayAppt.doctorName;
+      const myToken = todayAppt.queueNumber || 0;
+      const ongoingToken = (doc && doc.currentQueueNumber) ? doc.currentQueueNumber : 0;
+      const isSessionStarted = !!(doc && doc.sessionStarted);
+      const isSessionEnded = !!(doc && doc.sessionEndedToday) || todayAppt.status === "completed";
+      const channelingStatus = (doc && doc.channelingStatus) ? doc.channelingStatus : "On Time";
+      const isDelayed = channelingStatus.toLowerCase() !== "on time";
+      const delayMessage = isDelayed ? `Doctor Delayed: ${channelingStatus}` : "Doctor On Time";
+
+      // Case 1: Session has ended / completed
+      if (isSessionEnded) {
+        const nextAppt = await Appointment.findOne({
+          patientId,
+          date: { $gt: endOfToday },
+          status: { $in: ["confirmed", "Confirmed", "pending", "Pending"] }
+        }).sort({ date: 1 }).populate("doctorId");
+
+        if (nextAppt) {
+          const nextDoc = nextAppt.doctorId;
+          let nextRoom = (nextDoc && nextDoc.allocatedRoom) ? nextDoc.allocatedRoom : "Room TBA";
+          return res.json({
+            state: "completed",
+            hasUpcoming: true,
+            completedDoctor: doctorName,
+            nextDoctorName: (nextDoc && (nextDoc.fullName || nextDoc.name)) ? nextDoc.name : nextAppt.doctorName,
+            nextHospitalName: (nextDoc && nextDoc.hospital) ? nextDoc.hospital : "SUWASEWANA HOSPITAL",
+            nextRoom,
+            nextToken: nextAppt.queueNumber || "--",
+            nextDate: new Date(nextAppt.date).toLocaleDateString("en-US", { month: "short", day: "numeric", weekday: "short" })
+          });
+        } else {
+          // No further upcoming appointments -> show app logo with white background
+          return res.json({
+            state: "empty",
+            message: "No upcoming appointments"
+          });
+        }
+      }
+
+      // Case 2: Session has started -> Real-time live queue
+      if (isSessionStarted) {
+        const peopleAhead = Math.max(0, myToken - ongoingToken);
+        const estWait = peopleAhead * (doc && doc.averageConsultationDuration ? doc.averageConsultationDuration : 10);
+        return res.json({
+          state: "queue",
+          hospitalName,
+          doctorName,
+          room,
+          myToken,
+          ongoingToken,
+          peopleAhead,
+          estimatedWait: estWait,
+          isDelayed,
+          delayMessage: isDelayed ? `Delayed: ${channelingStatus}` : "Session in progress",
+          channelingStatus,
+          lastUpdated: new Date()
+        });
+      }
+
+      // Case 3: Before session starts -> Upcoming appointment with doctor delay message
+      return res.json({
+        state: "upcoming",
+        hospitalName,
+        doctorName,
+        room,
+        myToken,
+        formattedDate: "Today",
+        channelingTime: (doc && doc.channelingTime) ? doc.channelingTime : "Scheduled Today",
+        isDelayed,
+        delayMessage,
+        channelingStatus,
+        lastUpdated: new Date()
+      });
+    }
+
+    // 2. No appointment today -> check for future upcoming appointments
+    const futureAppt = await Appointment.findOne({
+      patientId,
+      date: { $gt: endOfToday },
+      status: { $in: ["confirmed", "Confirmed", "pending", "Pending"] }
+    }).sort({ date: 1 }).populate("doctorId");
+
+    if (futureAppt) {
+      const doc = futureAppt.doctorId;
+      const hospitalName = (doc && doc.hospital) ? doc.hospital : "SUWASEWANA HOSPITAL";
+      const doctorName = (doc && (doc.fullName || doc.name)) ? doc.name : futureAppt.doctorName;
+      const room = (doc && doc.allocatedRoom) ? doc.allocatedRoom : "Room TBA";
+      const channelingStatus = (doc && doc.channelingStatus) ? doc.channelingStatus : "On Time";
+      const isDelayed = channelingStatus.toLowerCase() !== "on time";
+
+      return res.json({
+        state: "upcoming",
+        hospitalName,
+        doctorName,
+        room,
+        myToken: futureAppt.queueNumber || "--",
+        formattedDate: new Date(futureAppt.date).toLocaleDateString("en-US", { month: "short", day: "numeric", weekday: "short" }),
+        channelingTime: (doc && doc.channelingTime) ? doc.channelingTime : "Scheduled",
+        isDelayed,
+        delayMessage: isDelayed ? `Doctor Delayed: ${channelingStatus}` : "Doctor On Time",
+        channelingStatus,
+        lastUpdated: new Date()
+      });
+    }
+
+    // 3. No upcoming appointments -> Empty state
+    return res.json({
+      state: "empty",
+      message: "No upcoming appointments"
+    });
+
+  } catch (err) {
+    console.error("Widget Status Error:", err);
+    res.status(500).json({ error: "Failed to fetch widget status" });
+  }
+});
+
+// ==========================================
 // 4. GET QUEUE STATUS
 // ==========================================
 router.get("/queue-status/:id", auth, async (req, res) => {

@@ -1,0 +1,497 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root_container"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_background"
+    android:padding="12dp">
+
+    <!-- ======================================================== -->
+    <!-- 1. REAL-TIME QUEUE / ACTIVE SESSION LAYOUT               -->
+    <!-- ======================================================== -->
+    <LinearLayout
+        android:id="@+id/layout_active_queue"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:visibility="gone">
+
+        <!-- Header: Hospital + Room + Refresh -->
+        <RelativeLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content">
+
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_alignParentStart="true"
+                android:layout_toStartOf="@id/iv_active_refresh"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+
+                <!-- Hospital Pill -->
+                <LinearLayout
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:background="@drawable/badge_hospital"
+                    android:paddingHorizontal="6dp"
+                    android:paddingVertical="3dp"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+                    <ImageView
+                        android:layout_width="12dp"
+                        android:layout_height="12dp"
+                        android:src="@drawable/ic_hospital"
+                        android:layout_marginEnd="4dp" />
+                    <TextView
+                        android:id="@+id/tv_queue_hospital_name"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="SUWASEWANA HOSPITAL"
+                        android:textColor="#0284C7"
+                        android:textSize="10sp"
+                        android:textStyle="bold"
+                        android:singleLine="true" />
+                </LinearLayout>
+
+                <!-- Room Pill -->
+                <LinearLayout
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:background="@drawable/badge_room"
+                    android:paddingHorizontal="6dp"
+                    android:paddingVertical="3dp"
+                    android:layout_marginStart="6dp"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+                    <ImageView
+                        android:layout_width="12dp"
+                        android:layout_height="12dp"
+                        android:src="@drawable/ic_room"
+                        android:layout_marginEnd="4dp" />
+                    <TextView
+                        android:id="@+id/tv_queue_room_name"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Room 04"
+                        android:textColor="#9333EA"
+                        android:textSize="10sp"
+                        android:textStyle="bold"
+                        android:singleLine="true" />
+                </LinearLayout>
+            </LinearLayout>
+
+            <!-- Refresh Icon Button -->
+            <ImageView
+                android:id="@+id/iv_active_refresh"
+                android:layout_width="22dp"
+                android:layout_height="22dp"
+                android:layout_alignParentEnd="true"
+                android:src="@drawable/ic_refresh"
+                android:contentDescription="Refresh Queue" />
+        </RelativeLayout>
+
+        <!-- Doctor Name & Live Indicator -->
+        <RelativeLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp">
+
+            <TextView
+                android:id="@+id/tv_queue_doctor_name"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_alignParentStart="true"
+                android:layout_toStartOf="@id/badge_live_container"
+                android:text="Dr. Nimal Perera"
+                android:textColor="#0F172A"
+                android:textSize="14sp"
+                android:textStyle="bold"
+                android:singleLine="true" />
+
+            <LinearLayout
+                android:id="@+id/badge_live_container"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_alignParentEnd="true"
+                android:background="@drawable/badge_live"
+                android:paddingHorizontal="8dp"
+                android:paddingVertical="2dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="● LIVE"
+                    android:textColor="#FFFFFF"
+                    android:textSize="10sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
+        </RelativeLayout>
+
+        <!-- Tokens Row -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:orientation="horizontal"
+            android:layout_marginTop="8dp">
+
+            <!-- My Token Box -->
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:background="@drawable/box_my_token"
+                android:orientation="vertical"
+                android:gravity="center"
+                android:padding="4dp"
+                android:layout_marginEnd="5dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="MY TOKEN"
+                    android:textColor="#64748B"
+                    android:textSize="9sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/tv_queue_my_token"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="#12"
+                    android:textColor="#1E293B"
+                    android:textSize="22sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
+
+            <!-- Ongoing Token Box -->
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:background="@drawable/box_ongoing_token"
+                android:orientation="vertical"
+                android:gravity="center"
+                android:padding="4dp"
+                android:layout_marginStart="5dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="ONGOING NOW"
+                    android:textColor="#0891B2"
+                    android:textSize="9sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/tv_queue_ongoing_token"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="#08"
+                    android:textColor="#0891B2"
+                    android:textSize="24sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <!-- Bottom Status Line -->
+        <TextView
+            android:id="@+id/tv_queue_wait_status"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:text="4 Patients Ahead • Approx 30 mins wait"
+            android:textColor="#475569"
+            android:textSize="10sp"
+            android:textStyle="bold"
+            android:gravity="center"
+            android:singleLine="true" />
+    </LinearLayout>
+
+    <!-- ======================================================== -->
+    <!-- 2. BEFORE SESSION START (UPCOMING APPOINTMENT)            -->
+    <!-- ======================================================== -->
+    <LinearLayout
+        android:id="@+id/layout_upcoming"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:visibility="gone">
+
+        <!-- Header: Badge + Refresh -->
+        <RelativeLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content">
+
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:background="@drawable/badge_hospital"
+                android:paddingHorizontal="7dp"
+                android:paddingVertical="3dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+                <ImageView
+                    android:layout_width="12dp"
+                    android:layout_height="12dp"
+                    android:src="@drawable/ic_calendar"
+                    android:layout_marginEnd="4dp" />
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="UPCOMING APPOINTMENT"
+                    android:textColor="#0284C7"
+                    android:textSize="10sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
+
+            <ImageView
+                android:id="@+id/iv_upcoming_refresh"
+                android:layout_width="22dp"
+                android:layout_height="22dp"
+                android:layout_alignParentEnd="true"
+                android:src="@drawable/ic_refresh"
+                android:contentDescription="Refresh" />
+        </RelativeLayout>
+
+        <!-- Doctor & Token Row -->
+        <RelativeLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp">
+
+            <TextView
+                android:id="@+id/tv_upcoming_doctor_name"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_alignParentStart="true"
+                android:layout_toStartOf="@id/tv_upcoming_token"
+                android:text="Dr. Samantha Silva"
+                android:textColor="#0F172A"
+                android:textSize="14sp"
+                android:textStyle="bold"
+                android:singleLine="true" />
+
+            <TextView
+                android:id="@+id/tv_upcoming_token"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_alignParentEnd="true"
+                android:text="Token #09"
+                android:textColor="#0284C7"
+                android:textSize="13sp"
+                android:textStyle="bold" />
+        </RelativeLayout>
+
+        <!-- Hospital & Channeling Room Details -->
+        <TextView
+            android:id="@+id/tv_upcoming_hospital_room"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:text="Suwasewana Hospital • Room 02"
+            android:textColor="#64748B"
+            android:textSize="11sp"
+            android:singleLine="true" />
+
+        <!-- Date & Scheduled Time -->
+        <TextView
+            android:id="@+id/tv_upcoming_datetime"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:text="Scheduled: Today • 04:30 PM"
+            android:textColor="#334155"
+            android:textSize="11sp"
+            android:textStyle="bold"
+            android:singleLine="true" />
+
+        <!-- Doctor Delayed Message / Status Banner -->
+        <LinearLayout
+            android:id="@+id/layout_upcoming_delay_banner"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:layout_marginTop="6dp"
+            android:background="@drawable/badge_delayed"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingHorizontal="8dp"
+            android:paddingVertical="4dp">
+
+            <ImageView
+                android:id="@+id/iv_upcoming_delay_icon"
+                android:layout_width="16dp"
+                android:layout_height="16dp"
+                android:src="@drawable/ic_warning"
+                android:layout_marginEnd="6dp" />
+
+            <TextView
+                android:id="@+id/tv_upcoming_delay_text"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Doctor Delayed: Delayed by 30 mins"
+                android:textColor="#B45309"
+                android:textSize="11sp"
+                android:textStyle="bold"
+                android:singleLine="true" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <!-- ======================================================== -->
+    <!-- 3. AFTER SESSION IS COMPLETED (SHOW NEXT APPOINTMENT)     -->
+    <!-- ======================================================== -->
+    <LinearLayout
+        android:id="@+id/layout_completed"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:visibility="gone">
+
+        <!-- Header: Session Completed + Refresh -->
+        <RelativeLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content">
+
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:background="@drawable/badge_completed"
+                android:paddingHorizontal="7dp"
+                android:paddingVertical="3dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+                <ImageView
+                    android:layout_width="12dp"
+                    android:layout_height="12dp"
+                    android:src="@drawable/ic_check"
+                    android:layout_marginEnd="4dp" />
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="SESSION COMPLETED"
+                    android:textColor="#15803D"
+                    android:textSize="10sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
+
+            <ImageView
+                android:id="@+id/iv_completed_refresh"
+                android:layout_width="22dp"
+                android:layout_height="22dp"
+                android:layout_alignParentEnd="true"
+                android:src="@drawable/ic_refresh"
+                android:contentDescription="Refresh" />
+        </RelativeLayout>
+
+        <!-- Subheader for next coming appointment -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:text="Next Upcoming Appointment:"
+            android:textColor="#64748B"
+            android:textSize="10sp"
+            android:textStyle="bold" />
+
+        <!-- Next Doctor & Token -->
+        <RelativeLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp">
+
+            <TextView
+                android:id="@+id/tv_completed_next_doctor"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_alignParentStart="true"
+                android:layout_toStartOf="@id/tv_completed_next_token"
+                android:text="Dr. Samantha Silva"
+                android:textColor="#0F172A"
+                android:textSize="14sp"
+                android:textStyle="bold"
+                android:singleLine="true" />
+
+            <TextView
+                android:id="@+id/tv_completed_next_token"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_alignParentEnd="true"
+                android:text="Token #05"
+                android:textColor="#0284C7"
+                android:textSize="12sp"
+                android:textStyle="bold" />
+        </RelativeLayout>
+
+        <!-- Next Hospital & Room -->
+        <TextView
+            android:id="@+id/tv_completed_next_hospital_room"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:text="Suwasewana Hospital • Room 02"
+            android:textColor="#475569"
+            android:textSize="11sp"
+            android:singleLine="true" />
+
+        <!-- Next Appointment Date -->
+        <TextView
+            android:id="@+id/tv_completed_next_date"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:text="Date: Oct 12, Mon"
+            android:textColor="#0284C7"
+            android:textSize="11sp"
+            android:textStyle="bold"
+            android:singleLine="true" />
+    </LinearLayout>
+
+    <!-- ======================================================== -->
+    <!-- 4. EMPTY STATE (NO APPOINTMENTS - APP LOGO ON WHITE BG)   -->
+    <!-- ======================================================== -->
+    <LinearLayout
+        android:id="@+id/layout_empty"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:gravity="center"
+        android:visibility="visible">
+
+        <ImageView
+            android:id="@+id/iv_empty_logo"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:src="@drawable/app_logo"
+            android:contentDescription="Care101 Logo" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:text="Care101"
+            android:textColor="#0F172A"
+            android:textSize="14sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:text="No upcoming appointments"
+            android:textColor="#64748B"
+            android:textSize="11sp" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="3dp"
+            android:text="Tap to book an appointment"
+            android:textColor="#0284C7"
+            android:textSize="10sp"
+            android:textStyle="bold" />
+    </LinearLayout>
+
+</RelativeLayout>

@@ -35,6 +35,7 @@ import PatientBottomNavBar from '../../components/PatientBottomNavBar';
 import { useAuth } from '@/context/auth';
 import AiAssistant from '@/components/ui/AiAssistant';
 import { io } from 'socket.io-client';
+import { WidgetService } from '@/services/widgetService';
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL;
 
@@ -136,8 +137,14 @@ export default function PatientDashboardScreen() {
             }
         });
 
+        socket.on("doctorDelayAlert", () => {
+            fetchDashboardData();
+            if (user) WidgetService.syncWithServer(token, user._id || user.id);
+        });
+
         socket.on("appointmentUpdated", () => {
             fetchDashboardData();
+            if (user) WidgetService.syncWithServer(token, user._id || user.id);
         });
 
         socket.on("disconnect", () => {
@@ -292,11 +299,13 @@ export default function PatientDashboardScreen() {
         if (user && token) {
             fetchDashboardData();
             fetchUnreadCount();
+            WidgetService.syncWithServer(token, user._id || user.id);
 
             const refreshInterval = setInterval(() => {
                 fetchDashboardData();
                 fetchNotifications(false); // Silent background fetch
                 fetchUnreadCount();
+                WidgetService.syncWithServer(token, user._id || user.id);
             }, 20000);
 
             return () => clearInterval(refreshInterval);

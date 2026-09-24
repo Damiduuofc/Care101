@@ -28,5 +28,20 @@
         <data android:scheme="carelinkdoctorapp"/>
       </intent-filter>
     </activity>
+
+    <!-- Care101 Android Home Screen Queue Widget -->
+    <receiver
+        android:name=".widget.QueueWidgetProvider"
+        android:label="@string/widget_name"
+        android:exported="true">
+      <intent-filter>
+        <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+        <action android:name="com.damiduuofc.carelinkdoctorapp.widget.ACTION_REFRESH" />
+        <action android:name="com.damiduuofc.carelinkdoctorapp.widget.ACTION_UPDATE_DATA" />
+      </intent-filter>
+      <meta-data
+          android:name="android.appwidget.provider"
+          android:resource="@xml/queue_widget_info" />
+    </receiver>
   </application>
 </manifest>

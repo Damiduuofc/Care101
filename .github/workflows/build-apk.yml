@@ -1,0 +1,192 @@
+name: Build Android APK
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'care101_app/**'
+      - '.github/workflows/build-apk.yml'
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      build_type:
+        description: 'Build Type (release or debug)'
+        required: true
+        default: 'release'
+        type: choice
+        options:
+          - 'release'
+          - 'debug'
+      api_url:
+        description: 'Override EXPO_PUBLIC_API_URL (Optional)'
+        required: false
+        default: ''
+        type: string
+      create_github_release:
+        description: 'Create a GitHub Release with the APK attached'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+
+jobs:
+  build-android:
+    name: Build Android APK (${{ inputs.build_type || 'release' }})
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. Checkout repository
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      # 2. Setup Node.js
+      - name: Setup Node.js (v20)
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: 'care101_app/package-lock.json'
+
+      # 3. Setup Java JDK 17 (Required for modern Android/Gradle builds)
+      - name: Setup Java JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      # 4. Setup Gradle (Caches Gradle wrapper and dependencies)
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      # 5. Inject / Generate .env file
+      - name: Inject and Configure .env File
+        run: |
+          cd care101_app
+          
+          # Priority 1: Full DOT_ENV secret if provided in repository secrets
+          if [ -n "${{ secrets.DOT_ENV }}" ]; then
+            echo "::notice::Using full DOT_ENV secret configured in GitHub Secrets."
+            echo "${{ secrets.DOT_ENV }}" > .env
+          else
+            echo "::notice::Constructing .env from individual secrets, workflow inputs, and project defaults."
+            
+            # 1. API URL priority: workflow input > GitHub Secret > project fallback
+            API_URL="${{ inputs.api_url }}"
+            if [ -z "$API_URL" ]; then
+              API_URL="${{ secrets.EXPO_PUBLIC_API_URL }}"
+            fi
+            if [ -z "$API_URL" ]; then
+              API_URL="http://10.44.41.232:5002/api"
+            fi
+
+            # 2. OpenRouter API Key
+            OPENROUTER_KEY="${{ secrets.EXPO_PUBLIC_OPENROUTER_API_KEY }}"
+            if [ -z "$OPENROUTER_KEY" ]; then
+              OPENROUTER_KEY="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"
+            fi
+
+            # 3. Stripe Publishable Key
+            STRIPE_KEY="${{ secrets.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY }}"
+            if [ -z "$STRIPE_KEY" ]; then
+              STRIPE_KEY="pk_test_51Sbj21BWg8jc02PZb7HHgv3wgpSj7VoyiGAGHfnJKJudlecapvgVZhdYy0eigpSLtbTVT1r8CjovznYagOucw7Yi00lXdYS7tm"
+            fi
+
+            cat << EOF > .env
+          EXPO_PUBLIC_API_URL=$API_URL
+          EXPO_PUBLIC_OPENROUTER_API_KEY=$OPENROUTER_KEY
+          EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY=$STRIPE_KEY
+          EOF
+          fi
+
+          echo "✅ .env created successfully at care101_app/.env"
+          echo "Configured environment keys:"
+          grep -o '^[^=]*' .env
+
+      # 6. Install Node dependencies
+      - name: Install Dependencies
+        run: |
+          cd care101_app
+          npm ci
+
+      # 7. Build Android APK using Gradle
+      - name: Build Android APK
+        run: |
+          cd care101_app/android
+          chmod +x gradlew
+          
+          BUILD_TYPE="${{ inputs.build_type || 'release' }}"
+          echo "Starting build for type: $BUILD_TYPE"
+          
+          if [ "$BUILD_TYPE" = "debug" ]; then
+            ./gradlew assembleDebug --no-daemon --stacktrace
+          else
+            ./gradlew assembleRelease --no-daemon --stacktrace
+          fi
+
+      # 8. Locate and Prepare APK for Output
+      - name: Prepare APK Artifact
+        id: prepare_apk
+        run: |
+          mkdir -p build_output
+          BUILD_TYPE="${{ inputs.build_type || 'release' }}"
+          
+          if [ "$BUILD_TYPE" = "debug" ]; then
+            APK_PATH=$(find care101_app/android/app/build/outputs/apk/debug -name "*.apk" | head -n 1)
+          else
+            APK_PATH=$(find care101_app/android/app/build/outputs/apk/release -name "*.apk" | head -n 1)
+          fi
+
+          if [ -z "$APK_PATH" ] || [ ! -f "$APK_PATH" ]; then
+            echo "::error::No APK file generated!"
+            exit 1
+          fi
+
+          FILE_SIZE=$(ls -lh "$APK_PATH" | awk '{print $5}')
+          TIMESTAMP=$(date +'%Y%m%d_%H%M%S')
+          FINAL_NAME="Care101_${BUILD_TYPE}_${TIMESTAMP}.apk"
+          
+          cp "$APK_PATH" "build_output/$FINAL_NAME"
+          
+          echo "APK_PATH=build_output/$FINAL_NAME" >> $GITHUB_ENV
+          echo "APK_NAME=$FINAL_NAME" >> $GITHUB_ENV
+          echo "APK_SIZE=$FILE_SIZE" >> $GITHUB_ENV
+          echo "BUILD_TYPE=$BUILD_TYPE" >> $GITHUB_ENV
+
+          # Summary for GitHub Actions page
+          cat << EOF >> $GITHUB_STEP_SUMMARY
+          ### 📱 Android APK Build Summary
+          | Property | Value |
+          |---|---|
+          | **Build Type** | \`$BUILD_TYPE\` |
+          | **File Name** | \`$FINAL_NAME\` |
+          | **File Size** | \`$FILE_SIZE\` |
+          | **Environment Loaded** | \`care101_app/.env\` ✅ |
+          
+          Download the APK directly from the **Artifacts** section below!
+          EOF
+
+      # 9. Upload APK as Workflow Artifact (Available to download on run page)
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.APK_NAME }}
+          path: ${{ env.APK_PATH }}
+          retention-days: 30
+
+      # 10. Optional: Create GitHub Release if Tagged or Requested
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/') || inputs.create_github_release == true
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ env.APK_PATH }}
+          name: Release ${{ github.ref_name || env.APK_NAME }}
+          tag_name: ${{ github.ref_name || format('build-{0}', github.run_number) }}
+          generate_release_notes: true
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
