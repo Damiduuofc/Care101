@@ -12,7 +12,7 @@ on:
   workflow_dispatch:
     inputs:
       build_type:
-        description: 'Build Type (release or debug)'
+        description: 'Build Type'
         required: true
         default: 'release'
         type: choice
@@ -30,6 +30,10 @@ on:
         default: false
         type: boolean
 
+concurrency:
+  group: android-apk-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: write
 
@@ -39,145 +43,194 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # 1. Checkout repository
+
+      # ---------------------------------------------------------
+      # 1. Checkout
+      # ---------------------------------------------------------
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      # 2. Setup Node.js
-      - name: Setup Node.js (v20)
+      # ---------------------------------------------------------
+      # 2. Node.js + npm cache
+      # ---------------------------------------------------------
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: 'npm'
-          cache-dependency-path: 'care101_app/package-lock.json'
+          cache: npm
+          cache-dependency-path: care101_app/package-lock.json
 
-      # 3. Setup Java JDK 17 (Required for modern Android/Gradle builds)
+      # ---------------------------------------------------------
+      # 3. Java 17
+      # ---------------------------------------------------------
       - name: Setup Java JDK 17
         uses: actions/setup-java@v4
         with:
           java-version: '17'
-          distribution: 'temurin'
+          distribution: temurin
+          cache: gradle
 
-      # 4. Setup Gradle (Caches Gradle wrapper and dependencies)
+      # ---------------------------------------------------------
+      # 4. Gradle caching
+      # ---------------------------------------------------------
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: false
 
-      # 5. Inject / Generate .env file
-      - name: Inject and Configure .env File
+      # ---------------------------------------------------------
+      # 5. Configure environment
+      # ---------------------------------------------------------
+      - name: Configure Environment
+        working-directory: care101_app
+        env:
+          DOT_ENV: ${{ secrets.DOT_ENV }}
+          API_URL_INPUT: ${{ inputs.api_url }}
+          API_URL_SECRET: ${{ secrets.EXPO_PUBLIC_API_URL }}
+          OPENROUTER_KEY: ${{ secrets.EXPO_PUBLIC_OPENROUTER_API_KEY }}
+          STRIPE_KEY: ${{ secrets.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY }}
         run: |
-          cd care101_app
-          
-          # Priority 1: Full DOT_ENV secret if provided in repository secrets
-          if [ -n "${{ secrets.DOT_ENV }}" ]; then
-            echo "::notice::Using full DOT_ENV secret configured in GitHub Secrets."
-            echo "${{ secrets.DOT_ENV }}" > .env
+          set -e
+
+          if [ -n "$DOT_ENV" ]; then
+            echo "::notice::Using DOT_ENV from GitHub Secrets."
+            printf '%s\n' "$DOT_ENV" > .env
           else
-            echo "::notice::Constructing .env from individual secrets, workflow inputs, and project defaults."
-            
-            # 1. API URL priority: workflow input > GitHub Secret > project fallback
-            API_URL="${{ inputs.api_url }}"
+            echo "::notice::Creating .env from GitHub Secrets."
+
+            API_URL="$API_URL_INPUT"
+
             if [ -z "$API_URL" ]; then
-              API_URL="${{ secrets.EXPO_PUBLIC_API_URL }}"
-            fi
-            if [ -z "$API_URL" ]; then
-              API_URL="http://10.44.41.232:5002/api"
+              API_URL="$API_URL_SECRET"
             fi
 
-            # 2. OpenRouter API Key
-            OPENROUTER_KEY="${{ secrets.EXPO_PUBLIC_OPENROUTER_API_KEY }}"
+            if [ -z "$API_URL" ]; then
+              echo "::error::EXPO_PUBLIC_API_URL is not configured."
+              exit 1
+            fi
+
             if [ -z "$OPENROUTER_KEY" ]; then
-              OPENROUTER_KEY="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"
+              echo "::error::EXPO_PUBLIC_OPENROUTER_API_KEY is not configured."
+              exit 1
             fi
 
-            # 3. Stripe Publishable Key
-            STRIPE_KEY="${{ secrets.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY }}"
             if [ -z "$STRIPE_KEY" ]; then
-              STRIPE_KEY="pk_test_51Sbj21BWg8jc02PZb7HHgv3wgpSj7VoyiGAGHfnJKJudlecapvgVZhdYy0eigpSLtbTVT1r8CjovznYagOucw7Yi00lXdYS7tm"
+              echo "::error::EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY is not configured."
+              exit 1
             fi
 
-            cat << EOF > .env
+            cat > .env << EOF
           EXPO_PUBLIC_API_URL=$API_URL
           EXPO_PUBLIC_OPENROUTER_API_KEY=$OPENROUTER_KEY
           EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY=$STRIPE_KEY
           EOF
           fi
 
-          echo "✅ .env created successfully at care101_app/.env"
-          echo "Configured environment keys:"
-          grep -o '^[^=]*' .env
+          echo "Environment configured successfully."
 
-      # 6. Install Node dependencies
+ 
       - name: Install Dependencies
-        run: |
-          cd care101_app
-          npm ci
+        working-directory: care101_app
+        run: npm ci --prefer-offline
 
-      # 7. Build Android APK using Gradle
+
       - name: Build Android APK
+        working-directory: care101_app/android
+        env:
+          BUILD_TYPE: ${{ inputs.build_type || 'release' }}
         run: |
-          cd care101_app/android
-          chmod +x gradlew
-          
-          BUILD_TYPE="${{ inputs.build_type || 'release' }}"
-          echo "Starting build for type: $BUILD_TYPE"
-          
+          set -e
+
+          echo "========================================"
+          echo "Care101 Android Build"
+          echo "Build type: $BUILD_TYPE"
+          echo "Architecture: arm64-v8a"
+          echo "========================================"
+
           if [ "$BUILD_TYPE" = "debug" ]; then
-            ./gradlew assembleDebug --no-daemon --stacktrace
+            ./gradlew assembleDebug \
+              --build-cache \
+              --configuration-cache \
+              -PreactNativeArchitectures=arm64-v8a
           else
-            ./gradlew assembleRelease --no-daemon --stacktrace
+            ./gradlew assembleRelease \
+              --build-cache \
+              --configuration-cache \
+              -PreactNativeArchitectures=arm64-v8a
           fi
 
-      # 8. Locate and Prepare APK for Output
-      - name: Prepare APK Artifact
-        id: prepare_apk
+      # ---------------------------------------------------------
+      # 8. Locate APK
+      # ---------------------------------------------------------
+      - name: Prepare APK
+        env:
+          BUILD_TYPE: ${{ inputs.build_type || 'release' }}
         run: |
+          set -e
+
           mkdir -p build_output
-          BUILD_TYPE="${{ inputs.build_type || 'release' }}"
-          
+
           if [ "$BUILD_TYPE" = "debug" ]; then
-            APK_PATH=$(find care101_app/android/app/build/outputs/apk/debug -name "*.apk" | head -n 1)
+            APK_DIR="care101_app/android/app/build/outputs/apk/debug"
           else
-            APK_PATH=$(find care101_app/android/app/build/outputs/apk/release -name "*.apk" | head -n 1)
+            APK_DIR="care101_app/android/app/build/outputs/apk/release"
           fi
+
+          APK_PATH=$(find "$APK_DIR" -type f -name "*.apk" | head -n 1)
 
           if [ -z "$APK_PATH" ] || [ ! -f "$APK_PATH" ]; then
-            echo "::error::No APK file generated!"
+            echo "::error::No APK file generated."
             exit 1
           fi
 
-          FILE_SIZE=$(ls -lh "$APK_PATH" | awk '{print $5}')
-          TIMESTAMP=$(date +'%Y%m%d_%H%M%S')
-          FINAL_NAME="Care101_${BUILD_TYPE}_${TIMESTAMP}.apk"
-          
-          cp "$APK_PATH" "build_output/$FINAL_NAME"
-          
-          echo "APK_PATH=build_output/$FINAL_NAME" >> $GITHUB_ENV
-          echo "APK_NAME=$FINAL_NAME" >> $GITHUB_ENV
-          echo "APK_SIZE=$FILE_SIZE" >> $GITHUB_ENV
-          echo "BUILD_TYPE=$BUILD_TYPE" >> $GITHUB_ENV
+          FILE_SIZE=$(du -h "$APK_PATH" | cut -f1)
 
-          # Summary for GitHub Actions page
-          cat << EOF >> $GITHUB_STEP_SUMMARY
-          ### 📱 Android APK Build Summary
+          TIMESTAMP=$(date +'%Y%m%d_%H%M%S')
+
+          FINAL_NAME="Care101_${BUILD_TYPE}_${TIMESTAMP}.apk"
+
+          cp "$APK_PATH" "build_output/$FINAL_NAME"
+
+          echo "APK_PATH=build_output/$FINAL_NAME" >> "$GITHUB_ENV"
+          echo "APK_NAME=$FINAL_NAME" >> "$GITHUB_ENV"
+          echo "APK_SIZE=$FILE_SIZE" >> "$GITHUB_ENV"
+          echo "BUILD_TYPE=$BUILD_TYPE" >> "$GITHUB_ENV"
+
+          cat >> "$GITHUB_STEP_SUMMARY" << EOF
+          ## 📱 Care101 Android APK
+
           | Property | Value |
           |---|---|
-          | **Build Type** | \`$BUILD_TYPE\` |
-          | **File Name** | \`$FINAL_NAME\` |
-          | **File Size** | \`$FILE_SIZE\` |
-          | **Environment Loaded** | \`care101_app/.env\` ✅ |
-          
-          Download the APK directly from the **Artifacts** section below!
+          | Build Type | \`$BUILD_TYPE\` |
+          | Architecture | \`arm64-v8a\` |
+          | APK | \`$FINAL_NAME\` |
+          | Size | \`$FILE_SIZE\` |
+
+          The APK is available in the **Artifacts** section.
           EOF
 
-      # 9. Upload APK as Workflow Artifact (Available to download on run page)
+          echo "APK prepared successfully:"
+          echo "$FINAL_NAME"
+          echo "Size: $FILE_SIZE"
+
+      # ---------------------------------------------------------
+      # 9. Upload APK
+      #
+      # APK files are already compressed.
+      # compression-level: 0 makes artifact upload faster.
+      # ---------------------------------------------------------
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ env.APK_NAME }}
           path: ${{ env.APK_PATH }}
+          if-no-files-found: error
+          compression-level: 0
           retention-days: 30
 
-      # 10. Optional: Create GitHub Release if Tagged or Requested
+      # ---------------------------------------------------------
+      # 10. Optional GitHub Release
+      # ---------------------------------------------------------
       - name: Create GitHub Release
         if: startsWith(github.ref, 'refs/tags/') || inputs.create_github_release == true
         uses: softprops/action-gh-release@v2
@@ -190,3 +243,4 @@ jobs:
           prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
