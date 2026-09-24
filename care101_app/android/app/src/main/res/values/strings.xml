@@ -1,8 +1,7 @@
 <resources>
-  <string name="app_name">carelink doctor app</string>
+  <string name="app_name">carelink 101</string>
   <string name="expo_system_ui_user_interface_style" translatable="false">automatic</string>
   <string name="expo_splash_screen_resize_mode" translatable="false">contain</string>
-  <string name="expo_splash_screen_status_bar_translucent" translatable="false">false</string>
   <string name="widget_name">Care101 Queue</string>
   <string name="widget_description">Live Queue &amp; Appointment Tracker</string>
 </resources>
