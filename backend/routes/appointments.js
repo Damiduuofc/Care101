@@ -435,7 +435,6 @@ router.get("/widget-status", auth, async (req, res) => {
       // Case 2: Session has started -> Real-time live queue
       if (isSessionStarted) {
         const peopleAhead = Math.max(0, myToken - ongoingToken);
-        const estWait = peopleAhead * (doc && doc.averageConsultationDuration ? doc.averageConsultationDuration : 10);
         return res.json({
           state: "queue",
           hospitalName,
@@ -444,7 +443,6 @@ router.get("/widget-status", auth, async (req, res) => {
           myToken,
           ongoingToken,
           peopleAhead,
-          estimatedWait: estWait,
           isDelayed,
           delayMessage: isDelayed ? `Delayed: ${channelingStatus}` : "Session in progress",
           channelingStatus,

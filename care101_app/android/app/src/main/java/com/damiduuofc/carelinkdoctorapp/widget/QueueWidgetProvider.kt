@@ -1,15 +1,16 @@
 package com.damiduuofc.carelinkdoctorapp.widget
 
+import android.app.AlarmManager
 import android.app.PendingIntent
 import android.appwidget.AppWidgetManager
 import android.appwidget.AppWidgetProvider
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
-import android.content.SharedPreferences
 import android.graphics.Color
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.util.Log
 import android.view.View
 import android.widget.RemoteViews
@@ -36,6 +37,9 @@ class QueueWidgetProvider : AppWidgetProvider() {
         const val ACTION_UPDATE_DATA = "com.damiduuofc.carelinkdoctorapp.widget.ACTION_UPDATE_DATA"
 
         private val executor = Executors.newSingleThreadExecutor()
+        private val mainHandler = Handler(Looper.getMainLooper())
+        private var burstCount = 0
+        private var burstRunnable: Runnable? = null
 
         fun updateAllWidgets(context: Context) {
             val appWidgetManager = AppWidgetManager.getInstance(context)
@@ -43,6 +47,51 @@ class QueueWidgetProvider : AppWidgetProvider() {
             val allWidgetIds = appWidgetManager.getAppWidgetIds(thisWidget)
             for (widgetId in allWidgetIds) {
                 updateAppWidget(context, appWidgetManager, widgetId)
+            }
+            if (allWidgetIds.isNotEmpty()) {
+                schedulePeriodicRefresh(context)
+            }
+        }
+
+        fun schedulePeriodicRefresh(context: Context) {
+            try {
+                val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager ?: return
+                val intent = Intent(context, QueueWidgetProvider::class.java).apply {
+                    action = ACTION_REFRESH
+                }
+                val pendingIntent = PendingIntent.getBroadcast(
+                    context,
+                    1001,
+                    intent,
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                )
+                // Repeat every 60s while device is awake (RTC does not wake sleeping screen)
+                alarmManager.setInexactRepeating(
+                    AlarmManager.ELAPSED_REALTIME,
+                    SystemClock.elapsedRealtime() + 15_000L,
+                    60_000L,
+                    pendingIntent
+                )
+            } catch (e: Exception) {
+                Log.w(TAG, "Unable to schedule widget alarm", e)
+            }
+        }
+
+        fun cancelPeriodicRefresh(context: Context) {
+            try {
+                val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager ?: return
+                val intent = Intent(context, QueueWidgetProvider::class.java).apply {
+                    action = ACTION_REFRESH
+                }
+                val pendingIntent = PendingIntent.getBroadcast(
+                    context,
+                    1001,
+                    intent,
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                )
+                alarmManager.cancel(pendingIntent)
+            } catch (e: Exception) {
+                Log.w(TAG, "Unable to cancel widget alarm", e)
             }
         }
 
@@ -109,15 +158,14 @@ class QueueWidgetProvider : AppWidgetProvider() {
             views.setViewVisibility(R.id.layout_upcoming, View.GONE)
             views.setViewVisibility(R.id.layout_completed, View.GONE)
 
-            val hospital = data.optString("hospitalName", "SUWASEWANA HOSPITAL")
+            val hospital = data.optString("hospitalName", "SUWASEWANA HOSPITAL").uppercase()
             val room = data.optString("room", "Room TBA")
             val doctor = data.optString("doctorName", "Doctor")
             val myToken = data.optString("myToken", "--")
             val ongoingToken = data.optString("ongoingToken", "--")
             val peopleAhead = data.optInt("peopleAhead", 0)
-            val estWait = data.optInt("estimatedWait", 0)
             val isDelayed = data.optBoolean("isDelayed", false)
-            val delayMsg = data.optString("delayMessage", "")
+            val channelingStatus = data.optString("channelingStatus", "")
 
             views.setTextViewText(R.id.tv_queue_hospital_name, hospital)
             views.setTextViewText(R.id.tv_queue_room_name, room)
@@ -125,14 +173,21 @@ class QueueWidgetProvider : AppWidgetProvider() {
             views.setTextViewText(R.id.tv_queue_my_token, "#$myToken")
             views.setTextViewText(R.id.tv_queue_ongoing_token, "#$ongoingToken")
 
-            var waitStatus = if (peopleAhead > 0) {
-                "$peopleAhead Ahead • ~$estWait mins wait"
+            if (isDelayed) {
+                views.setTextViewText(R.id.tv_queue_live_badge, "● DELAYED")
             } else {
-                "Your turn is next / ongoing"
+                views.setTextViewText(R.id.tv_queue_live_badge, "● LIVE")
             }
 
-            if (isDelayed && delayMsg.isNotEmpty()) {
-                waitStatus += " • $delayMsg"
+            // No estimated arrival/wait time - only accurate queue count and delay notice
+            var waitStatus = when {
+                peopleAhead <= 0 -> "Your Turn is Now!"
+                peopleAhead == 1 -> "1 Patient Ahead of You"
+                else -> "$peopleAhead Patients Ahead of You"
+            }
+
+            if (isDelayed && channelingStatus.isNotEmpty() && !channelingStatus.equals("On Time", ignoreCase = true)) {
+                waitStatus += " • $channelingStatus"
             }
 
             views.setTextViewText(R.id.tv_queue_wait_status, waitStatus)
@@ -151,23 +206,40 @@ class QueueWidgetProvider : AppWidgetProvider() {
             val formattedDate = data.optString("formattedDate", "Today")
             val time = data.optString("channelingTime", "")
             val isDelayed = data.optBoolean("isDelayed", false)
-            val delayMsg = data.optString("delayMessage", "Doctor On Time")
+            val channelingStatus = data.optString("channelingStatus", "")
+            val delayMsg = data.optString("delayMessage", "")
 
             views.setTextViewText(R.id.tv_upcoming_doctor_name, doctor)
             views.setTextViewText(R.id.tv_upcoming_token, "Token #$myToken")
-            views.setTextViewText(R.id.tv_upcoming_hospital_room, "$hospital • $room")
 
-            val timeDisplay = if (time.isNotEmpty()) "Scheduled: $formattedDate • $time" else "Scheduled: $formattedDate"
-            views.setTextViewText(R.id.tv_upcoming_datetime, timeDisplay)
+            val scheduleSuffix = if (time.isNotEmpty() && !time.equals("Scheduled Today", ignoreCase = true)) {
+                "$formattedDate ($time)"
+            } else {
+                formattedDate
+            }
+            views.setTextViewText(R.id.tv_upcoming_hospital_room, "$hospital • $room • $scheduleSuffix")
 
             if (isDelayed) {
+                views.setInt(R.id.layout_upcoming_delay_banner, "setBackgroundResource", R.drawable.badge_delayed)
                 views.setImageViewResource(R.id.iv_upcoming_delay_icon, R.drawable.ic_warning)
-                views.setTextViewText(R.id.tv_upcoming_delay_text, delayMsg)
+                views.setTextViewText(R.id.tv_upcoming_delay_title, "DOCTOR DELAY NOTICE")
+                views.setTextColor(R.id.tv_upcoming_delay_title, Color.parseColor("#92400E"))
+
+                val cleanDelayText = when {
+                    channelingStatus.isNotEmpty() && !channelingStatus.equals("On Time", ignoreCase = true) -> channelingStatus
+                    delayMsg.startsWith("Doctor Delayed:", ignoreCase = true) -> delayMsg.substringAfter(":").trim()
+                    delayMsg.isNotEmpty() -> delayMsg
+                    else -> "Session start is delayed"
+                }
+                views.setTextViewText(R.id.tv_upcoming_delay_text, cleanDelayText)
                 views.setTextColor(R.id.tv_upcoming_delay_text, Color.parseColor("#B45309"))
             } else {
+                views.setInt(R.id.layout_upcoming_delay_banner, "setBackgroundResource", R.drawable.badge_ontime)
                 views.setImageViewResource(R.id.iv_upcoming_delay_icon, R.drawable.ic_check)
-                views.setTextViewText(R.id.tv_upcoming_delay_text, if (delayMsg.isNotEmpty()) delayMsg else "Doctor On Time")
-                views.setTextColor(R.id.tv_upcoming_delay_text, Color.parseColor("#15803D"))
+                views.setTextViewText(R.id.tv_upcoming_delay_title, "DOCTOR ON SCHEDULE")
+                views.setTextColor(R.id.tv_upcoming_delay_title, Color.parseColor("#065F46"))
+                views.setTextViewText(R.id.tv_upcoming_delay_text, "Session is on time • Waiting to begin")
+                views.setTextColor(R.id.tv_upcoming_delay_text, Color.parseColor("#047857"))
             }
         }
 
@@ -196,24 +268,55 @@ class QueueWidgetProvider : AppWidgetProvider() {
         }
     }
 
+    override fun onEnabled(context: Context) {
+        super.onEnabled(context)
+        schedulePeriodicRefresh(context)
+        fetchRemoteData(context)
+        startShortBurstPolling(context)
+    }
+
+    override fun onDisabled(context: Context) {
+        super.onDisabled(context)
+        cancelPeriodicRefresh(context)
+    }
+
     override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
         for (appWidgetId in appWidgetIds) {
             updateAppWidget(context, appWidgetManager, appWidgetId)
         }
-        // Background refresh from server if possible
+        schedulePeriodicRefresh(context)
         fetchRemoteData(context)
+        startShortBurstPolling(context)
     }
 
     override fun onReceive(context: Context, intent: Intent) {
         super.onReceive(context, intent)
         when (intent.action) {
-            ACTION_REFRESH -> {
+            ACTION_REFRESH, Intent.ACTION_USER_PRESENT -> {
                 fetchRemoteData(context)
+                startShortBurstPolling(context)
             }
             ACTION_UPDATE_DATA -> {
                 updateAllWidgets(context)
             }
         }
+    }
+
+    private fun startShortBurstPolling(context: Context) {
+        val appContext = context.applicationContext
+        burstRunnable?.let { mainHandler.removeCallbacks(it) }
+        burstCount = 0
+        val runnable = object : Runnable {
+            override fun run() {
+                if (burstCount < 6) {
+                    burstCount++
+                    fetchRemoteData(appContext)
+                    mainHandler.postDelayed(this, 10_000L)
+                }
+            }
+        }
+        burstRunnable = runnable
+        mainHandler.postDelayed(runnable, 10_000L)
     }
 
     private fun fetchRemoteData(context: Context) {
@@ -252,9 +355,8 @@ class QueueWidgetProvider : AppWidgetProvider() {
                     val responseJson = sb.toString()
                     Log.d(TAG, "Widget Remote Response: $responseJson")
 
-                    // Save and refresh
                     prefs.edit().putString(KEY_WIDGET_DATA, responseJson).apply()
-                    Handler(Looper.getMainLooper()).post {
+                    mainHandler.post {
                         updateAllWidgets(context)
                     }
                 } else {

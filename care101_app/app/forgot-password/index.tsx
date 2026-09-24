@@ -18,7 +18,7 @@ export default function ForgotPasswordEmailScreen() {
     try {
       const res = await fetch(`${API_URL}/auth/forgot-password`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' },
         body: JSON.stringify({ email: identifier.trim() }) // Send the identifier in the 'email' field for backend compatibility
       });
       

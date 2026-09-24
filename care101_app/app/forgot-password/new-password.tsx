@@ -24,7 +24,7 @@ export default function NewPasswordScreen() {
     try {
       const res = await fetch(`${API_URL}/auth/reset-password`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' },
         body: JSON.stringify({ email, otp, newPassword })
       });
       

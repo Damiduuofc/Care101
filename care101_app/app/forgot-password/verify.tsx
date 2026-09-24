@@ -19,7 +19,7 @@ export default function VerifyOTPScreen() {
     try {
       const res = await fetch(`${API_URL}/auth/verify-otp`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' },
         body: JSON.stringify({ email, otp })
       });
       

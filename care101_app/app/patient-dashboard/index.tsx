@@ -55,8 +55,15 @@ export default function PatientDashboardScreen() {
     const [unreadCount, setUnreadCount] = useState(0);
 
     const upcomingAppointmentRef = React.useRef(upcomingAppointment);
+    const socketRef = React.useRef<any>(null);
     useEffect(() => {
         upcomingAppointmentRef.current = upcomingAppointment;
+        if (upcomingAppointment && socketRef.current?.connected) {
+            const apptDocId = upcomingAppointment.doctorId?._id || upcomingAppointment.doctorId;
+            if (apptDocId) {
+                socketRef.current.emit("joinDoctorRoom", apptDocId);
+            }
+        }
     }, [upcomingAppointment]);
 
     // Session Check
@@ -78,7 +85,13 @@ export default function PatientDashboardScreen() {
             console.error("Invalid API URL for socket:", e);
         }
 
-        const socket = io(socketUrl);
+        const socket = io(socketUrl, {
+            extraHeaders: {
+                'ngrok-skip-browser-warning': 'true'
+            },
+            transports: ['websocket', 'polling']
+        });
+        socketRef.current = socket;
 
         socket.on("connect", () => {
             console.log("🔌 Patient App Connected to Socket.IO Server");
@@ -93,6 +106,7 @@ export default function PatientDashboardScreen() {
 
         // 1. Listen for dynamic doctor updates
         socket.on("doctorStatusUpdated", (updatedDoc: any) => {
+            if (user) WidgetService.syncWithServer(token, user._id || user.id);
             const currentAppt = upcomingAppointmentRef.current;
             if (currentAppt) {
                 const apptDocId = currentAppt.doctorId?._id || currentAppt.doctorId;
@@ -102,21 +116,20 @@ export default function PatientDashboardScreen() {
                         const myToken = prev.queueNumber || 0;
                         const currentToken = updatedDoc.currentQueueNumber || 0;
                         const peopleAhead = Math.max(0, myToken - currentToken);
-                        const estimatedWait = peopleAhead * (prev.averageDuration || 10);
                         return {
                             ...prev,
                             currentToken,
                             currentServingNumber: currentToken,
-                            peopleAhead,
-                            estimatedWaitingMinutes: estimatedWait
+                            peopleAhead
                         };
                     });
                 }
             }
         });
 
-        // 2. Listen for calculated prediction live broadcasts
+        // 2. Listen for live queue broadcasts
         socket.on("queueUpdated", (payload: any) => {
+            if (user) WidgetService.syncWithServer(token, user._id || user.id);
             const currentAppt = upcomingAppointmentRef.current;
             if (currentAppt) {
                 const apptDocId = currentAppt.doctorId?._id || currentAppt.doctorId;
@@ -127,8 +140,6 @@ export default function PatientDashboardScreen() {
                             ...prev,
                             currentToken: payload.currentToken,
                             currentServingNumber: payload.currentServingNumber,
-                            estimatedWaitingMinutes: payload.estimatedWaitingMinutes,
-                            estimatedArrivalTime: payload.estimatedArrivalTime,
                             lastUpdated: payload.lastUpdated,
                             peopleAhead: Math.max(0, prev.queueNumber - payload.currentToken)
                         };
@@ -153,8 +164,9 @@ export default function PatientDashboardScreen() {
 
         return () => {
             socket.disconnect();
+            socketRef.current = null;
         };
-    }, [token]);
+    }, [token, user]);
 
     // --- FETCH DASHBOARD DATA ---
     const fetchDashboardData = async () => {
@@ -163,7 +175,8 @@ export default function PatientDashboardScreen() {
                 method: 'GET',
                 headers: {
                     'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json'
+                    'Content-Type': 'application/json',
+                    'ngrok-skip-browser-warning': 'true'
                 }
             });
 
@@ -281,7 +294,10 @@ export default function PatientDashboardScreen() {
 
             const response = await fetch(`${API_URL}/queue/patient/${patientId}`, {
                 method: 'GET',
-                headers: { 'Authorization': `Bearer ${token}` }
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'ngrok-skip-browser-warning': 'true'
+                }
             });
 
             if (response.ok) {
@@ -306,7 +322,7 @@ export default function PatientDashboardScreen() {
                 fetchNotifications(false); // Silent background fetch
                 fetchUnreadCount();
                 WidgetService.syncWithServer(token, user._id || user.id);
-            }, 20000);
+            }, 10000);
 
             return () => clearInterval(refreshInterval);
         }

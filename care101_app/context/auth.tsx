@@ -45,7 +45,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setToken(storedToken); // <--- ✅ Load token into state
           setUser(parsedUser);
           if (parsedUser.role === 'patient') {
-            WidgetService.syncWithServer(storedToken, parsedUser._id || parsedUser.id);
+            const pId = parsedUser._id || parsedUser.id;
+            WidgetService.startRealtimeSocket(storedToken, pId);
+            WidgetService.syncWithServer(storedToken, pId);
           }
         }
       } catch (e) {
@@ -64,7 +66,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       const response = await fetch(`${API_URL}/login`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'ngrok-skip-browser-warning': 'true',
+        },
         body: JSON.stringify({ identifier, password }),
       });
 
@@ -90,7 +95,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       // Navigate based on role
       if (data.user.role === 'patient') {
-        WidgetService.syncWithServer(data.token, data.user._id || data.user.id);
+        const pId = data.user._id || data.user.id;
+        WidgetService.startRealtimeSocket(data.token, pId);
+        WidgetService.syncWithServer(data.token, pId);
         router.replace('/patient-dashboard' as any);
       } else {
         router.replace('/dashboard');
@@ -110,7 +117,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       const response = await fetch(`${API_URL}/register-doctor`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'ngrok-skip-browser-warning': 'true',
+        },
         body: JSON.stringify(userData),
       });
 
@@ -136,7 +146,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       const response = await fetch(`${API_URL}/register-patient`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'ngrok-skip-browser-warning': 'true',
+        },
         body: JSON.stringify(userData),
       });
 
@@ -153,7 +166,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setToken(data.token);
       setUser(data.user);
 
-      WidgetService.syncWithServer(data.token, data.user._id || data.user.id);
+      const pId = data.user._id || data.user.id;
+      WidgetService.startRealtimeSocket(data.token, pId);
+      WidgetService.syncWithServer(data.token, pId);
       router.replace('/patient-dashboard' as any);
 
     } catch (error: any) {

@@ -48,7 +48,9 @@ export default function PatientSignupStep3() {
     useEffect(() => {
         const fetchNextPatientId = async () => {
             try {
-                const response = await fetch(`${process.env.EXPO_PUBLIC_API_URL}/auth/next-patient-id`);
+                const response = await fetch(`${process.env.EXPO_PUBLIC_API_URL}/auth/next-patient-id`, {
+                    headers: { 'ngrok-skip-browser-warning': 'true' }
+                });
                 if (response.ok) {
                     const data = await response.json();
                     setPatientId(data.patientId);
