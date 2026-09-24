@@ -3,6 +3,7 @@ import { auth } from "../middleware/auth.js";
 import Doctor from "../models/Doctor.js";
 import Appointment from "../models/Appointment.js";
 import ConsultationHistory from "../models/ConsultationHistory.js";
+import Notification from "../models/Notification.js";
 import { calculatePrediction, updateDoctorAverageDuration } from "../services/predictionService.js";
 
 const router = express.Router();
@@ -70,9 +71,19 @@ router.post("/update", auth, async (req, res) => {
       }
     }
 
-    // Emit live updates to connected socket client rooms
+    // Emit live updates to connected socket client rooms & globally for widgets
     if (req.io) {
       req.io.emit("doctorStatusUpdated", doctor);
+      req.io.emit("queueUpdated", {
+        doctorId: doctor._id,
+        currentServingNumber: doctor.currentQueueNumber,
+        currentToken: doctor.currentQueueNumber,
+        isArrived: doctor.isArrived,
+        sessionStarted: doctor.sessionStarted,
+        sessionEndedToday: doctor.sessionEndedToday,
+        allocatedRoom: doctor.allocatedRoom,
+        lastUpdated: new Date()
+      });
       
       const startOfDay = new Date();
       startOfDay.setHours(0, 0, 0, 0);
@@ -97,6 +108,54 @@ router.post("/update", auth, async (req, res) => {
           estimatedArrivalTime: pred.estimatedArrivalTime,
           lastUpdated: new Date()
         });
+
+        // Create & emit real-time notifications for session start and queue progress
+        try {
+          const patientToken = appt.queueNumber || 0;
+          const diff = patientToken - doctor.currentQueueNumber;
+
+          if (action === "start") {
+            const notif = await Notification.create({
+              userId: appt.patientId,
+              type: "reminder",
+              title: "Channeling Session Started",
+              message: `Dr. ${doctor.name} has started the session in ${doctor.allocatedRoom || "Room TBA"}. Your Token: #${patientToken} (Ongoing: #1).`,
+              metadata: { doctorId: doctor._id, appointmentId: appt._id, currentQueue: doctor.currentQueueNumber }
+            });
+            req.io.emit("newNotification", notif);
+          } else if (doctor.currentQueueNumber > prevServing) {
+            if (diff === 3) {
+              const notif = await Notification.create({
+                userId: appt.patientId,
+                type: "reminder",
+                title: "Queue Alert: 3 Patients Ahead",
+                message: `Only 3 patients ahead of you (Token #${patientToken}) for Dr. ${doctor.name}. Please get ready.`,
+                metadata: { doctorId: doctor._id, appointmentId: appt._id, currentQueue: doctor.currentQueueNumber }
+              });
+              req.io.emit("newNotification", notif);
+            } else if (diff === 1) {
+              const notif = await Notification.create({
+                userId: appt.patientId,
+                type: "reminder",
+                title: "You Are Next in Queue!",
+                message: `Token #${doctor.currentQueueNumber} is ongoing. Please proceed to ${doctor.allocatedRoom || "the consultation room"} for Dr. ${doctor.name}.`,
+                metadata: { doctorId: doctor._id, appointmentId: appt._id, currentQueue: doctor.currentQueueNumber }
+              });
+              req.io.emit("newNotification", notif);
+            } else if (diff === 0) {
+              const notif = await Notification.create({
+                userId: appt.patientId,
+                type: "reminder",
+                title: "Your Turn Now!",
+                message: `Token #${patientToken} is now being called by Dr. ${doctor.name} in ${doctor.allocatedRoom || "the consultation room"}.`,
+                metadata: { doctorId: doctor._id, appointmentId: appt._id, currentQueue: doctor.currentQueueNumber }
+              });
+              req.io.emit("newNotification", notif);
+            }
+          }
+        } catch (notifErr) {
+          console.error("Queue update notification error:", notifErr);
+        }
       }
     }
 

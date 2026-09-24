@@ -16,8 +16,11 @@ class QueueWidgetModule(private val reactContext: ReactApplicationContext) :
     fun updateWidgetData(dataJson: String, promise: Promise) {
         try {
             val prefs = reactContext.getSharedPreferences(QueueWidgetProvider.PREFS_NAME, Context.MODE_PRIVATE)
+            val prevJson = prefs.getString(QueueWidgetProvider.KEY_WIDGET_DATA, null)
             prefs.edit().putString(QueueWidgetProvider.KEY_WIDGET_DATA, dataJson).apply()
+            QueueWidgetProvider.checkAndNotifyStateTransition(reactContext, prevJson, dataJson)
             QueueWidgetProvider.updateAllWidgets(reactContext)
+            QueueWidgetProvider.startRealtimePolling(reactContext)
             promise.resolve(true)
         } catch (e: Exception) {
             promise.reject("ERROR_UPDATE_WIDGET", e.message, e)
@@ -33,9 +36,21 @@ class QueueWidgetModule(private val reactContext: ReactApplicationContext) :
                 .putString(QueueWidgetProvider.KEY_API_URL, apiUrl)
                 .putString(QueueWidgetProvider.KEY_PATIENT_ID, patientId)
                 .apply()
+            QueueWidgetProvider.ensureNotificationChannel(reactContext)
+            QueueWidgetProvider.startRealtimePolling(reactContext)
             promise.resolve(true)
         } catch (e: Exception) {
             promise.reject("ERROR_SET_AUTH", e.message, e)
+        }
+    }
+
+    @ReactMethod
+    fun showLocalNotification(id: String, title: String, message: String, promise: Promise) {
+        try {
+            QueueWidgetProvider.showSystemNotification(reactContext, id, title, message)
+            promise.resolve(true)
+        } catch (e: Exception) {
+            promise.reject("ERROR_SHOW_NOTIFICATION", e.message, e)
         }
     }
 
@@ -48,6 +63,7 @@ class QueueWidgetModule(private val reactContext: ReactApplicationContext) :
                 .remove(QueueWidgetProvider.KEY_AUTH_TOKEN)
                 .remove(QueueWidgetProvider.KEY_PATIENT_ID)
                 .apply()
+            QueueWidgetProvider.stopRealtimePolling()
             QueueWidgetProvider.updateAllWidgets(reactContext)
             promise.resolve(true)
         } catch (e: Exception) {
@@ -58,6 +74,7 @@ class QueueWidgetModule(private val reactContext: ReactApplicationContext) :
     @ReactMethod
     fun refreshWidget(promise: Promise) {
         try {
+            QueueWidgetProvider.startRealtimePolling(reactContext)
             val intent = Intent(reactContext, QueueWidgetProvider::class.java).apply {
                 action = QueueWidgetProvider.ACTION_REFRESH
             }

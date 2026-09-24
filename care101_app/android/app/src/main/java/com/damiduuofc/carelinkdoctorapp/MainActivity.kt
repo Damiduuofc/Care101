@@ -1,8 +1,13 @@
 package com.damiduuofc.carelinkdoctorapp
 import expo.modules.splashscreen.SplashScreenManager
 
+import android.Manifest
+import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
+import com.damiduuofc.carelinkdoctorapp.widget.QueueWidgetProvider
 
 import com.facebook.react.ReactActivity
 import com.facebook.react.ReactActivityDelegate
@@ -21,6 +26,14 @@ class MainActivity : ReactActivity() {
     SplashScreenManager.registerOnActivity(this)
     // @generated end expo-splashscreen
     super.onCreate(null)
+
+    QueueWidgetProvider.ensureNotificationChannel(this)
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+      if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+        ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1002)
+      }
+    }
+    QueueWidgetProvider.startRealtimePolling(this)
   }
 
   /**

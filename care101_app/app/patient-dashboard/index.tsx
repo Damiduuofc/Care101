@@ -150,7 +150,30 @@ export default function PatientDashboardScreen() {
 
         socket.on("doctorDelayAlert", () => {
             fetchDashboardData();
+            fetchNotifications(false);
+            fetchUnreadCount();
             if (user) WidgetService.syncWithServer(token, user._id || user.id);
+        });
+
+        socket.on("doctorArrivalAlert", () => {
+            fetchDashboardData();
+            fetchNotifications(false);
+            fetchUnreadCount();
+            if (user) WidgetService.syncWithServer(token, user._id || user.id);
+        });
+
+        socket.on("newNotification", (notif: any) => {
+            const myId = user?._id || user?.id;
+            if (notif && String(notif.userId) === String(myId)) {
+                WidgetService.showLocalNotification(
+                    notif._id || `${Date.now()}`,
+                    notif.title || "CareLink 101 Alert",
+                    notif.message || ""
+                );
+                fetchNotifications(false);
+                fetchUnreadCount();
+                WidgetService.syncWithServer(token, myId);
+            }
         });
 
         socket.on("appointmentUpdated", () => {
@@ -205,6 +228,16 @@ export default function PatientDashboardScreen() {
             if (response.ok) {
                 const data = await response.json();
                 setNotifications(data);
+                if (Array.isArray(data) && data.length > 0) {
+                    const latestUnread = data.find((n: any) => !n.read);
+                    if (latestUnread && latestUnread._id) {
+                        WidgetService.showLocalNotification(
+                            latestUnread._id,
+                            latestUnread.title || "CareLink 101 Alert",
+                            latestUnread.message || ""
+                        );
+                    }
+                }
                 if (openModal) setNotifVisible(true);
             }
         } catch (error) {

@@ -1067,8 +1067,12 @@ router.put("/doctors/:id/status", protect, authorize(["system_admin", "reception
 
     if (!doctor) return res.status(404).json({ msg: "Doctor not found" });
 
+    const prevArrived = !!doctor.isArrived;
+    const prevQueueNumber = doctor.currentQueueNumber || 0;
+    const prevStatus = doctor.channelingStatus;
+
     // Handle Doctor Arrival and Patient Notifications
-    if (isArrived === true && !doctor.isArrived) {
+    if (isArrived === true && !prevArrived) {
       try {
         const startOfDay = new Date();
         startOfDay.setHours(0, 0, 0, 0);
@@ -1082,32 +1086,37 @@ router.put("/doctors/:id/status", protect, authorize(["system_admin", "reception
         });
 
         if (activeAppointments.length > 0) {
-          const notificationPromises = activeAppointments.map(app => {
+          const notificationPromises = activeAppointments.map(async (app) => {
             const timeInfo = channelingTime || doctor.channelingTime 
               ? `Sessions start around ${channelingTime || doctor.channelingTime}.` 
               : "Sessions will begin shortly.";
 
-            return Notification.create({
+            const createdNotif = await Notification.create({
               userId: app.patientId,
               type: 'arrival',
               title: "Doctor Arrived",
-              message: `Dr. ${doctor.name} has arrived. ${timeInfo} Please proceed to  ${allocatedRoom || doctor.allocatedRoom || 'TBA'}.`,
+              message: `Dr. ${doctor.name} has arrived at the hospital. ${timeInfo} Please proceed to ${allocatedRoom || doctor.allocatedRoom || 'Room TBA'}.`,
               metadata: { doctorId: doctor._id, appointmentId: app._id }
             });
+            if (req.io && createdNotif) {
+              req.io.emit("newNotification", createdNotif);
+            }
+            return createdNotif;
           });
           await Promise.all(notificationPromises);
         }
       } catch (err) { console.error("Notification trigger error:", err); }
     }
-    
-    const prevQueueNumber = doctor.currentQueueNumber || 0;
-    const prevStatus = doctor.channelingStatus;
 
     // Update Doctor Fields
     if (isArrived !== undefined) {
       doctor.isArrived = isArrived;
       if (isArrived === true) {
         doctor.lastArrivalDate = new Date();
+        // When doctor arrives, clear pre-arrival delay unless explicitly setting a new delay status
+        if (channelingStatus === undefined && doctor.channelingStatus && doctor.channelingStatus.toLowerCase() !== "on time") {
+          doctor.channelingStatus = "On Time";
+        }
       }
     }
     if (allocatedRoom !== undefined) doctor.allocatedRoom = allocatedRoom;
@@ -1118,6 +1127,41 @@ router.put("/doctors/:id/status", protect, authorize(["system_admin", "reception
     if (currentQueueNumber !== undefined) doctor.currentQueueNumber = currentQueueNumber;
 
     await doctor.save();
+
+    // Notify patients if delay status changed
+    if (channelingStatus !== undefined && channelingStatus !== prevStatus) {
+      try {
+        const startOfDay = new Date();
+        startOfDay.setHours(0, 0, 0, 0);
+        const endOfDay = new Date();
+        endOfDay.setHours(23, 59, 59, 999);
+
+        const activeAppointments = await Appointment.find({
+          doctorId: doctor._id,
+          date: { $gte: startOfDay, $lte: endOfDay },
+          status: { $in: ["confirmed", "Confirmed", "pending", "Pending"] }
+        });
+
+        const msg = channelingStatus === "On Time"
+          ? `Good news! Dr. ${doctor.name} is now on schedule.`
+          : `Dr. ${doctor.name} is ${channelingStatus.toLowerCase()}. Please plan accordingly.`;
+
+        await Promise.all(activeAppointments.map(async (appt) => {
+          const notif = await Notification.create({
+            userId: appt.patientId,
+            type: 'doctor_status',
+            title: 'Clinic Delay Update',
+            message: msg,
+            metadata: { doctorId: doctor._id, appointmentId: appt._id, status: channelingStatus }
+          });
+          if (req.io && notif) {
+            req.io.emit("newNotification", notif);
+          }
+        }));
+      } catch (err) {
+        console.error("Delay notification error:", err);
+      }
+    }
 
     // Trigger queue notifications on queue number increment
     if (currentQueueNumber !== undefined && currentQueueNumber > prevQueueNumber) {
@@ -1139,21 +1183,38 @@ router.put("/doctors/:id/status", protect, authorize(["system_admin", "reception
           const diff = patientToken - currentQueueNumber;
 
           if (diff === 3) {
-            notifyPromises.push(Notification.create({
-              userId: appt.patientId,
-              type: 'reminder',
-              title: "Queue Alert",
-              message: `Only 3 patients before you for Dr. ${doctor.name}. Please prepare.`,
-              metadata: { doctorId: doctor._id, appointmentId: appt._id, currentQueue: currentQueueNumber }
-            }));
+            notifyPromises.push((async () => {
+              const notif = await Notification.create({
+                userId: appt.patientId,
+                type: 'reminder',
+                title: "Queue Alert: 3 Patients Ahead",
+                message: `Only 3 patients ahead of you (Token #${patientToken}) for Dr. ${doctor.name}. Please prepare.`,
+                metadata: { doctorId: doctor._id, appointmentId: appt._id, currentQueue: currentQueueNumber }
+              });
+              if (req.io && notif) req.io.emit("newNotification", notif);
+            })());
           } else if (diff === 1) {
-            notifyPromises.push(Notification.create({
-              userId: appt.patientId,
-              type: 'reminder',
-              title: "Queue Alert",
-              message: `Please proceed to the hospital/room for Dr. ${doctor.name}. You are the next patient.`,
-              metadata: { doctorId: doctor._id, appointmentId: appt._id, currentQueue: currentQueueNumber }
-            }));
+            notifyPromises.push((async () => {
+              const notif = await Notification.create({
+                userId: appt.patientId,
+                type: 'reminder',
+                title: "You Are Next in Queue!",
+                message: `Token #${currentQueueNumber} is ongoing. Please proceed to ${doctor.allocatedRoom || 'the consultation room'} for Dr. ${doctor.name}.`,
+                metadata: { doctorId: doctor._id, appointmentId: appt._id, currentQueue: currentQueueNumber }
+              });
+              if (req.io && notif) req.io.emit("newNotification", notif);
+            })());
+          } else if (diff === 0) {
+            notifyPromises.push((async () => {
+              const notif = await Notification.create({
+                userId: appt.patientId,
+                type: 'reminder',
+                title: "Your Turn Now!",
+                message: `Token #${patientToken} is now being called by Dr. ${doctor.name} in ${doctor.allocatedRoom || 'the room'}.`,
+                metadata: { doctorId: doctor._id, appointmentId: appt._id, currentQueue: currentQueueNumber }
+              });
+              if (req.io && notif) req.io.emit("newNotification", notif);
+            })());
           }
         }
         await Promise.all(notifyPromises);
@@ -1164,6 +1225,18 @@ router.put("/doctors/:id/status", protect, authorize(["system_admin", "reception
 
     if (req.io) {
       req.io.emit("doctorStatusUpdated", doctor);
+      if (isArrived !== undefined && isArrived !== prevArrived) {
+        req.io.emit("doctorArrivalAlert", {
+          doctorId: doctor._id,
+          doctorName: doctor.name,
+          specialization: doctor.specialization,
+          isArrived: doctor.isArrived,
+          allocatedNurse: doctor.allocatedNurse,
+          allocatedRoom: doctor.allocatedRoom,
+          channelingTime: doctor.channelingTime,
+          timestamp: new Date()
+        });
+      }
       if (channelingStatus !== undefined && channelingStatus !== prevStatus) {
         req.io.emit("doctorDelayAlert", {
           doctorId: doctor._id,
@@ -1176,6 +1249,17 @@ router.put("/doctors/:id/status", protect, authorize(["system_admin", "reception
           allocatedRoom: doctor.allocatedRoom,
           channelingTime: doctor.channelingTime,
           timestamp: new Date()
+        });
+      }
+      if (currentQueueNumber !== undefined && currentQueueNumber !== prevQueueNumber) {
+        req.io.emit("queueUpdated", {
+          doctorId: doctor._id,
+          currentServingNumber: doctor.currentQueueNumber,
+          currentToken: doctor.currentQueueNumber,
+          isArrived: doctor.isArrived,
+          sessionStarted: doctor.sessionStarted,
+          allocatedRoom: doctor.allocatedRoom,
+          lastUpdated: new Date()
         });
       }
     }

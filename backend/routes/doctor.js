@@ -191,7 +191,7 @@ router.put("/delay-status", auth, async (req, res) => {
       const activeAppointments = await Appointment.find({
         doctorId: doctor._id,
         date: { $gte: startOfDay, $lte: endOfDay },
-          status: { $in: ["confirmed", "Confirmed", "pending", "Pending", "completed", "Completed"] }
+        status: { $in: ["confirmed", "Confirmed", "pending", "Pending", "completed", "Completed"] }
       });
 
       if (activeAppointments.length > 0) {
@@ -199,15 +199,19 @@ router.put("/delay-status", auth, async (req, res) => {
             ? `Good news! Dr. ${doctor.name} is now on time.` 
             : `Dr. ${doctor.name} is now ${status.toLowerCase()}. Please plan accordingly.`;
 
-        const notificationPromises = activeAppointments.map(app => 
-          createNotification(
+        const notificationPromises = activeAppointments.map(async (app) => {
+          const notif = await createNotification(
             app.patientId,
             'doctor_status',
             message,
             { doctorId: doctor._id, appointmentId: app._id, status: status },
             'Clinic Status Update'
-          )
-        );
+          );
+          if (req.io && notif) {
+            req.io.emit("newNotification", notif);
+          }
+          return notif;
+        });
         await Promise.all(notificationPromises);
       }
     }
@@ -247,6 +251,9 @@ router.put("/arrival-status", auth, async (req, res) => {
     doctor.isArrived = isArrived;
     if (isArrived === true) {
       doctor.lastArrivalDate = new Date();
+      if (doctor.channelingStatus && doctor.channelingStatus.toLowerCase() !== "on time") {
+        doctor.channelingStatus = "On Time";
+      }
     }
     await doctor.save();
 
@@ -263,18 +270,22 @@ router.put("/arrival-status", auth, async (req, res) => {
       });
 
       if (activeAppointments.length > 0) {
-        const notificationPromises = activeAppointments.map(app => {
+        const notificationPromises = activeAppointments.map(async (app) => {
           const timeInfo = doctor.channelingTime 
             ? `Sessions start around ${doctor.channelingTime}.` 
             : "Sessions will begin shortly.";
 
-          return createNotification(
+          const notif = await createNotification(
             app.patientId,
             'arrival',
-            `Dr. ${doctor.name} has arrived at the clinic. ${timeInfo}`,
+            `Dr. ${doctor.name} has arrived at the clinic (${doctor.allocatedRoom || 'Room TBA'}). ${timeInfo}`,
             { doctorId: doctor._id, appointmentId: app._id },
             'Doctor Arrived'
           );
+          if (req.io && notif) {
+            req.io.emit("newNotification", notif);
+          }
+          return notif;
         });
         await Promise.all(notificationPromises);
       }

@@ -238,18 +238,26 @@ router.post("/book", auth, async (req, res) => {
 
     // 4. ✅ CREATE NOTIFICATIONS
     try {
-      await Notification.create({
+      const bookingNotif = await Notification.create({
         userId: req.user.id,
         type: 'appointment',
+        title: 'Booking Confirmed',
         message: `Booking Confirmed! Queue #${queueNumber} for Dr. ${doctorName}.`
       });
+      if (req.io && bookingNotif) {
+        req.io.emit("newNotification", bookingNotif);
+      }
 
       if (paymentStatus === 'paid') {
-        await Notification.create({
+        const paymentNotif = await Notification.create({
           userId: req.user.id,
           type: 'payment',
+          title: 'Payment Confirmed',
           message: `Payment of LKR ${totalAmount} received successfully.`
         });
+        if (req.io && paymentNotif) {
+          req.io.emit("newNotification", paymentNotif);
+        }
       }
 
     } catch (notifError) {
@@ -373,34 +381,47 @@ router.get("/widget-status", auth, async (req, res) => {
 
     if (todayAppt) {
       const doc = todayAppt.doctorId;
+      const doctorId = doc && doc._id ? doc._id.toString() : null;
       let room = (doc && doc.allocatedRoom) ? doc.allocatedRoom : "";
+      let scheduledTime = (doc && doc.channelingTime) ? doc.channelingTime : "";
       
-      // If room not set on doctor model, check approved schedule
-      if (!room && doc && doc._id) {
+      // If room or time not set on doctor model, check approved schedule
+      if ((!room || !scheduledTime) && doc && doc._id) {
         try {
           const schedule = await ScheduleRequest.findOne({
             doctorId: doc._id,
             status: "approved",
             date: { $gte: startOfToday, $lte: endOfToday }
           });
-          if (schedule && schedule.allocatedRoom) {
-            room = schedule.allocatedRoom;
+          if (schedule) {
+            if (!room && schedule.allocatedRoom) {
+              room = schedule.allocatedRoom;
+            }
+            if (!scheduledTime && schedule.startTime) {
+              scheduledTime = new Date(schedule.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            }
           }
         } catch (scheduleErr) {
           console.error("Schedule room lookup error:", scheduleErr);
         }
       }
       if (!room) room = "Room TBA";
+      if (!scheduledTime) scheduledTime = "Scheduled Today";
 
       const hospitalName = (doc && doc.hospital) ? doc.hospital : "SUWASEWANA HOSPITAL";
       const doctorName = (doc && (doc.fullName || doc.name)) ? doc.name : todayAppt.doctorName;
       const myToken = todayAppt.queueNumber || 0;
       const ongoingToken = (doc && doc.currentQueueNumber) ? doc.currentQueueNumber : 0;
+      const isArrived = !!(doc && doc.isArrived);
       const isSessionStarted = !!(doc && doc.sessionStarted);
       const isSessionEnded = !!(doc && doc.sessionEndedToday) || todayAppt.status === "completed";
       const channelingStatus = (doc && doc.channelingStatus) ? doc.channelingStatus : "On Time";
-      const isDelayed = channelingStatus.toLowerCase() !== "on time";
-      const delayMessage = isDelayed ? `Doctor Delayed: ${channelingStatus}` : "Doctor On Time";
+      const isDelayed = channelingStatus.toLowerCase() !== "on time" && !isArrived;
+      const delayMessage = isArrived
+        ? `Doctor Arrived • Ready in ${room}`
+        : isDelayed
+          ? `Doctor Delayed: ${channelingStatus}`
+          : "Doctor On Time";
 
       // Case 1: Session has ended / completed
       if (isSessionEnded) {
@@ -437,28 +458,32 @@ router.get("/widget-status", auth, async (req, res) => {
         const peopleAhead = Math.max(0, myToken - ongoingToken);
         return res.json({
           state: "queue",
+          doctorId,
           hospitalName,
           doctorName,
           room,
           myToken,
           ongoingToken,
           peopleAhead,
-          isDelayed,
-          delayMessage: isDelayed ? `Delayed: ${channelingStatus}` : "Session in progress",
+          isArrived: true,
+          isDelayed: channelingStatus.toLowerCase() !== "on time",
+          delayMessage: channelingStatus.toLowerCase() !== "on time" ? `Delayed: ${channelingStatus}` : "Session in progress",
           channelingStatus,
           lastUpdated: new Date()
         });
       }
 
-      // Case 3: Before session starts -> Upcoming appointment with doctor delay message
+      // Case 3: Before session starts -> Upcoming appointment with doctor arrival / delay status
       return res.json({
         state: "upcoming",
+        doctorId,
         hospitalName,
         doctorName,
         room,
         myToken,
         formattedDate: "Today",
-        channelingTime: (doc && doc.channelingTime) ? doc.channelingTime : "Scheduled Today",
+        channelingTime: scheduledTime,
+        isArrived,
         isDelayed,
         delayMessage,
         channelingStatus,
@@ -475,20 +500,24 @@ router.get("/widget-status", auth, async (req, res) => {
 
     if (futureAppt) {
       const doc = futureAppt.doctorId;
+      const doctorId = doc && doc._id ? doc._id.toString() : null;
       const hospitalName = (doc && doc.hospital) ? doc.hospital : "SUWASEWANA HOSPITAL";
       const doctorName = (doc && (doc.fullName || doc.name)) ? doc.name : futureAppt.doctorName;
       const room = (doc && doc.allocatedRoom) ? doc.allocatedRoom : "Room TBA";
+      const isArrived = false;
       const channelingStatus = (doc && doc.channelingStatus) ? doc.channelingStatus : "On Time";
       const isDelayed = channelingStatus.toLowerCase() !== "on time";
 
       return res.json({
         state: "upcoming",
+        doctorId,
         hospitalName,
         doctorName,
         room,
         myToken: futureAppt.queueNumber || "--",
         formattedDate: new Date(futureAppt.date).toLocaleDateString("en-US", { month: "short", day: "numeric", weekday: "short" }),
         channelingTime: (doc && doc.channelingTime) ? doc.channelingTime : "Scheduled",
+        isArrived,
         isDelayed,
         delayMessage: isDelayed ? `Doctor Delayed: ${channelingStatus}` : "Doctor On Time",
         channelingStatus,
