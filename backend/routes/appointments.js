@@ -344,13 +344,36 @@ router.get("/upcoming", auth, async (req, res) => {
       patientId: req.user.id,
       date: { $gte: today },
       status: { $ne: 'cancelled' }
-    }).sort({ date: 1 });
+    }).sort({ date: 1 }).populate("doctorId");
 
     if (!upcoming) {
       return res.status(200).json({ appointment: null });
     }
 
-    res.json({ appointment: upcoming });
+    const doc = upcoming.doctorId && typeof upcoming.doctorId === "object" ? upcoming.doctorId : null;
+    const myToken = upcoming.queueNumber || 1;
+    const currentToken = doc && typeof doc.currentQueueNumber === "number" ? doc.currentQueueNumber : 0;
+    const peopleAhead = Math.max(0, myToken - currentToken);
+    const allocatedRoom = (doc && doc.allocatedRoom) ? doc.allocatedRoom : "Room TBA";
+    const sessionStarted = !!(doc && doc.sessionStarted);
+    const isArrived = !!(doc && doc.isArrived);
+    const channelingStatus = (doc && doc.channelingStatus) ? doc.channelingStatus : "On Time";
+
+    const appointmentObj = {
+      ...upcoming.toObject(),
+      doctorId: doc && doc._id ? doc._id : upcoming.doctorId,
+      doctorDetails: doc,
+      currentToken,
+      ongoingToken: currentToken,
+      currentServingNumber: currentToken,
+      peopleAhead,
+      allocatedRoom,
+      sessionStarted,
+      isArrived,
+      channelingStatus
+    };
+
+    res.json({ appointment: appointmentObj });
   } catch (err) {
     console.error("Upcoming Fetch Error:", err.message);
     res.status(500).send("Server Error");
@@ -454,8 +477,8 @@ router.get("/widget-status", auth, async (req, res) => {
       }
 
       // Case 2: Session has started -> Real-time live queue
+      const peopleAhead = Math.max(0, myToken - ongoingToken);
       if (isSessionStarted) {
-        const peopleAhead = Math.max(0, myToken - ongoingToken);
         return res.json({
           state: "queue",
           doctorId,
@@ -464,7 +487,9 @@ router.get("/widget-status", auth, async (req, res) => {
           room,
           myToken,
           ongoingToken,
+          currentToken: ongoingToken,
           peopleAhead,
+          sessionStarted: true,
           isArrived: true,
           isDelayed: channelingStatus.toLowerCase() !== "on time",
           delayMessage: channelingStatus.toLowerCase() !== "on time" ? `Delayed: ${channelingStatus}` : "Session in progress",
@@ -473,7 +498,7 @@ router.get("/widget-status", auth, async (req, res) => {
         });
       }
 
-      // Case 3: Before session starts -> Upcoming appointment with doctor arrival / delay status
+      // Case 3: Before session starts -> Upcoming appointment with doctor arrival / delay status + queue counts
       return res.json({
         state: "upcoming",
         doctorId,
@@ -481,6 +506,10 @@ router.get("/widget-status", auth, async (req, res) => {
         doctorName,
         room,
         myToken,
+        ongoingToken,
+        currentToken: ongoingToken,
+        peopleAhead,
+        sessionStarted: false,
         formattedDate: "Today",
         channelingTime: scheduledTime,
         isArrived,

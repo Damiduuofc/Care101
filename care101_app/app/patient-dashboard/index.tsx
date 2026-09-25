@@ -108,21 +108,37 @@ export default function PatientDashboardScreen() {
         socket.on("doctorStatusUpdated", (updatedDoc: any) => {
             if (user) WidgetService.syncWithServer(token, user._id || user.id);
             const currentAppt = upcomingAppointmentRef.current;
-            if (currentAppt) {
+            if (currentAppt && updatedDoc) {
                 const apptDocId = currentAppt.doctorId?._id || currentAppt.doctorId;
-                if (apptDocId === updatedDoc._id) {
-                    setQueueData((prev: any) => {
-                        if (!prev) return null;
-                        const myToken = prev.queueNumber || 0;
-                        const currentToken = updatedDoc.currentQueueNumber || 0;
-                        const peopleAhead = Math.max(0, myToken - currentToken);
-                        return {
-                            ...prev,
-                            currentToken,
-                            currentServingNumber: currentToken,
-                            peopleAhead
-                        };
-                    });
+                if (!apptDocId || String(apptDocId) === String(updatedDoc._id)) {
+                    const myToken = Number(currentAppt.queueNumber) || 1;
+                    const currentToken = Number(updatedDoc.currentQueueNumber ?? 0);
+                    const peopleAhead = Math.max(0, myToken - currentToken);
+                    const allocatedRoom = updatedDoc.allocatedRoom || currentAppt.allocatedRoom || "Room TBA";
+                    const sessionStarted = Boolean(updatedDoc.sessionStarted);
+
+                    setUpcomingAppointment((prev: any) => prev ? ({
+                        ...prev,
+                        currentToken,
+                        ongoingToken: currentToken,
+                        peopleAhead,
+                        allocatedRoom,
+                        sessionStarted
+                    }) : prev);
+
+                    setQueueData((prev: any) => ({
+                        ...(prev || {}),
+                        doctorName: prev?.doctorName || currentAppt.doctorName || updatedDoc.name || "Doctor",
+                        department: prev?.department || currentAppt.department || currentAppt.specialty || "General",
+                        appointmentStatus: prev?.appointmentStatus || currentAppt.status || "confirmed",
+                        queueNumber: prev?.queueNumber ?? myToken,
+                        currentToken,
+                        ongoingToken: currentToken,
+                        currentServingNumber: currentToken,
+                        peopleAhead,
+                        allocatedRoom,
+                        sessionStarted
+                    }));
                 }
             }
         });
@@ -131,19 +147,32 @@ export default function PatientDashboardScreen() {
         socket.on("queueUpdated", (payload: any) => {
             if (user) WidgetService.syncWithServer(token, user._id || user.id);
             const currentAppt = upcomingAppointmentRef.current;
-            if (currentAppt) {
+            if (currentAppt && payload) {
                 const apptDocId = currentAppt.doctorId?._id || currentAppt.doctorId;
-                if (apptDocId === payload.doctorId && payload.patientQueueNumber === currentAppt.queueNumber) {
-                    setQueueData((prev: any) => {
-                        if (!prev) return null;
-                        return {
-                            ...prev,
-                            currentToken: payload.currentToken,
-                            currentServingNumber: payload.currentServingNumber,
-                            lastUpdated: payload.lastUpdated,
-                            peopleAhead: Math.max(0, prev.queueNumber - payload.currentToken)
-                        };
-                    });
+                if (!apptDocId || !payload.doctorId || String(apptDocId) === String(payload.doctorId)) {
+                    const myToken = Number(currentAppt.queueNumber) || 1;
+                    const currentToken = Number(payload.currentToken ?? payload.currentServingNumber ?? 0);
+                    const peopleAhead = Math.max(0, myToken - currentToken);
+
+                    setUpcomingAppointment((prev: any) => prev ? ({
+                        ...prev,
+                        currentToken,
+                        ongoingToken: currentToken,
+                        peopleAhead
+                    }) : prev);
+
+                    setQueueData((prev: any) => ({
+                        ...(prev || {}),
+                        doctorName: prev?.doctorName || currentAppt.doctorName || "Doctor",
+                        department: prev?.department || currentAppt.department || currentAppt.specialty || "General",
+                        appointmentStatus: prev?.appointmentStatus || currentAppt.status || "confirmed",
+                        queueNumber: prev?.queueNumber ?? myToken,
+                        currentToken,
+                        ongoingToken: currentToken,
+                        currentServingNumber: payload.currentServingNumber ?? currentToken,
+                        lastUpdated: payload.lastUpdated,
+                        peopleAhead
+                    }));
                 }
             }
         });
@@ -194,20 +223,89 @@ export default function PatientDashboardScreen() {
     // --- FETCH DASHBOARD DATA ---
     const fetchDashboardData = async () => {
         try {
-            const response = await fetch(`${API_URL}/appointments/upcoming`, {
-                method: 'GET',
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json',
-                    'ngrok-skip-browser-warning': 'true'
-                }
-            });
+            const headers = {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json',
+                'ngrok-skip-browser-warning': 'true'
+            };
 
-            if (response.ok) {
-                const data = await response.json();
-                setUpcomingAppointment(data.appointment || null);
+            const [upcomingRes, widgetRes] = await Promise.all([
+                fetch(`${API_URL}/appointments/upcoming`, { method: 'GET', headers }).catch(() => null),
+                fetch(`${API_URL}/appointments/widget-status`, { method: 'GET', headers }).catch(() => null)
+            ]);
+
+            let appt: any = null;
+            if (upcomingRes && upcomingRes.ok) {
+                const data = await upcomingRes.json();
+                appt = data.appointment || null;
+            }
+
+            let widgetData: any = null;
+            if (widgetRes && widgetRes.ok) {
+                widgetData = await widgetRes.json();
+            }
+
+            // Also fetch /queue/patient/:patientId for authoritative live queue state
+            let liveQueue: any = null;
+            const patientId = user?._id || user?.id || appt?.patientId;
+            if (patientId && (appt || (widgetData && widgetData.state !== 'empty'))) {
+                const apptQuery = appt?._id ? `?appointmentId=${appt._id}` : '';
+                const queueRes = await fetch(`${API_URL}/queue/patient/${patientId}${apptQuery}`, {
+                    method: 'GET',
+                    headers
+                }).catch(() => null);
+                if (queueRes && queueRes.ok) {
+                    liveQueue = await queueRes.json();
+                }
+            }
+
+            if (appt) {
+                const myToken = Number(liveQueue?.queueNumber ?? widgetData?.myToken ?? appt.queueNumber ?? 1);
+                const currentToken = Number(
+                    liveQueue?.currentToken ??
+                    liveQueue?.currentServingNumber ??
+                    widgetData?.ongoingToken ??
+                    widgetData?.currentToken ??
+                    appt.currentToken ??
+                    appt.ongoingToken ??
+                    0
+                );
+                const peopleAhead = Math.max(0, myToken - currentToken);
+                const allocatedRoom = liveQueue?.allocatedRoom || widgetData?.room || appt.allocatedRoom || "Room TBA";
+                const sessionStarted = Boolean(
+                    liveQueue?.sessionStarted ||
+                    widgetData?.state === 'queue' ||
+                    appt.sessionStarted
+                );
+
+                const enrichedAppt = {
+                    ...appt,
+                    queueNumber: myToken,
+                    currentToken,
+                    ongoingToken: currentToken,
+                    peopleAhead,
+                    allocatedRoom,
+                    sessionStarted
+                };
+
+                setUpcomingAppointment(enrichedAppt);
+                setQueueData((prev: any) => ({
+                    ...(prev || {}),
+                    ...(liveQueue || {}),
+                    doctorName: liveQueue?.doctorName || widgetData?.doctorName || appt.doctorName || "Doctor",
+                    department: liveQueue?.department || appt.department || appt.specialty || "General",
+                    appointmentStatus: liveQueue?.appointmentStatus || appt.status || "confirmed",
+                    queueNumber: myToken,
+                    currentToken,
+                    ongoingToken: currentToken,
+                    currentServingNumber: currentToken,
+                    peopleAhead,
+                    allocatedRoom,
+                    sessionStarted
+                }));
             } else {
                 setUpcomingAppointment(null);
+                setQueueData(null);
             }
         } catch (error) {
             console.error("Dashboard Fetch Error:", error);
@@ -323,37 +421,89 @@ export default function PatientDashboardScreen() {
     const fetchQueueStatus = async () => {
         // Set immediate fallback from upcomingAppointment so modal always opens cleanly
         if (upcomingAppointment) {
+            const fallbackMyToken = Number(queueData?.queueNumber ?? upcomingAppointment.queueNumber ?? 1);
+            const fallbackCurrentToken = Number(
+                queueData?.currentToken ??
+                queueData?.ongoingToken ??
+                upcomingAppointment.currentToken ??
+                upcomingAppointment.ongoingToken ??
+                0
+            );
+            const fallbackPeopleAhead = Math.max(0, fallbackMyToken - fallbackCurrentToken);
+
             setQueueData((prev: any) => ({
-                doctorName: upcomingAppointment.doctorName || "Doctor",
-                department: upcomingAppointment.department || upcomingAppointment.specialty || "General",
-                appointmentStatus: upcomingAppointment.status || "confirmed",
-                queueNumber: upcomingAppointment.queueNumber || 1,
-                currentToken: prev?.currentToken ?? 0,
-                currentServingNumber: prev?.currentServingNumber ?? 0,
-                peopleAhead: prev?.peopleAhead ?? Math.max(0, (upcomingAppointment.queueNumber || 1) - (prev?.currentToken || 0)),
-                allocatedRoom: prev?.allocatedRoom || "Room TBA",
-                sessionStarted: prev?.sessionStarted || false,
-                ...prev
+                ...(prev || {}),
+                doctorName: prev?.doctorName || upcomingAppointment.doctorName || "Doctor",
+                department: prev?.department || upcomingAppointment.department || upcomingAppointment.specialty || "General",
+                appointmentStatus: prev?.appointmentStatus || upcomingAppointment.status || "confirmed",
+                queueNumber: fallbackMyToken,
+                currentToken: fallbackCurrentToken,
+                ongoingToken: fallbackCurrentToken,
+                currentServingNumber: fallbackCurrentToken,
+                peopleAhead: fallbackPeopleAhead,
+                allocatedRoom: prev?.allocatedRoom || upcomingAppointment.allocatedRoom || "Room TBA",
+                sessionStarted: Boolean(prev?.sessionStarted ?? upcomingAppointment.sessionStarted)
             }));
             setQueueVisible(true);
         }
 
         try {
+            const headers = {
+                'Authorization': `Bearer ${token}`,
+                'ngrok-skip-browser-warning': 'true'
+            };
             const patientId = user?._id || user?.id || upcomingAppointment?.patientId;
-            if (!patientId) return;
-
             const apptQuery = upcomingAppointment?._id ? `?appointmentId=${upcomingAppointment._id}` : '';
-            const response = await fetch(`${API_URL}/queue/patient/${patientId}${apptQuery}`, {
-                method: 'GET',
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'ngrok-skip-browser-warning': 'true'
-                }
-            });
 
-            if (response.ok) {
-                const data = await response.json();
-                setQueueData(data);
+            const [queueRes, widgetRes] = await Promise.all([
+                patientId
+                    ? fetch(`${API_URL}/queue/patient/${patientId}${apptQuery}`, { method: 'GET', headers }).catch(() => null)
+                    : Promise.resolve(null),
+                fetch(`${API_URL}/appointments/widget-status`, { method: 'GET', headers }).catch(() => null)
+            ]);
+
+            const qData = queueRes && queueRes.ok ? await queueRes.json() : null;
+            const wData = widgetRes && widgetRes.ok ? await widgetRes.json() : null;
+
+            if (qData || wData) {
+                const myToken = Number(qData?.queueNumber ?? wData?.myToken ?? upcomingAppointment?.queueNumber ?? 1);
+                const currentToken = Number(
+                    qData?.currentToken ??
+                    qData?.currentServingNumber ??
+                    wData?.ongoingToken ??
+                    wData?.currentToken ??
+                    upcomingAppointment?.currentToken ??
+                    0
+                );
+                const peopleAhead = Math.max(0, myToken - currentToken);
+                const allocatedRoom = qData?.allocatedRoom || wData?.room || upcomingAppointment?.allocatedRoom || "Room TBA";
+                const sessionStarted = Boolean(qData?.sessionStarted || wData?.state === 'queue' || upcomingAppointment?.sessionStarted);
+
+                setQueueData((prev: any) => ({
+                    ...(prev || {}),
+                    ...(qData || {}),
+                    doctorName: qData?.doctorName || wData?.doctorName || upcomingAppointment?.doctorName || "Doctor",
+                    department: qData?.department || upcomingAppointment?.department || upcomingAppointment?.specialty || "General",
+                    appointmentStatus: qData?.appointmentStatus || upcomingAppointment?.status || "confirmed",
+                    queueNumber: myToken,
+                    currentToken,
+                    ongoingToken: currentToken,
+                    currentServingNumber: currentToken,
+                    peopleAhead,
+                    allocatedRoom,
+                    sessionStarted
+                }));
+
+                setUpcomingAppointment((prev: any) => prev ? ({
+                    ...prev,
+                    queueNumber: myToken,
+                    currentToken,
+                    ongoingToken: currentToken,
+                    peopleAhead,
+                    allocatedRoom,
+                    sessionStarted
+                }) : prev);
+
                 setQueueVisible(true);
             } else if (!upcomingAppointment) {
                 Alert.alert("Error", "Unable to fetch live queue status.");
@@ -411,6 +561,18 @@ export default function PatientDashboardScreen() {
         { id: 5, title: 'Update Profile', subtitle: 'Manage info', icon: User, link: '/patient-dashboard/profile', color: '#f59e0b', bg: '#fffbeb' },
     ];
 
+    const liveMyToken = Number(queueData?.queueNumber ?? upcomingAppointment?.queueNumber ?? 1);
+    const liveOngoingToken = Number(
+        queueData?.currentToken ??
+        queueData?.ongoingToken ??
+        upcomingAppointment?.currentToken ??
+        upcomingAppointment?.ongoingToken ??
+        0
+    );
+    const livePeopleAhead = queueData?.peopleAhead !== undefined
+        ? Number(queueData.peopleAhead)
+        : Math.max(0, liveMyToken - liveOngoingToken);
+
     return (
         <View style={styles.container}>
             <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent />
@@ -455,58 +617,68 @@ export default function PatientDashboardScreen() {
                             onPress={() => fetchQueueStatus()}
                             activeOpacity={0.9}
                         >
-                            <View style={styles.appointLeft}>
-                                <View style={styles.dateBox}>
-                                    <Text style={styles.dateDay}>{formatDate(upcomingAppointment.date).day}</Text>
-                                    <Text style={styles.dateMonth}>{formatDate(upcomingAppointment.date).month}</Text>
-                                </View>
-                                <View style={styles.appointDetails}>
-                                    <Text style={styles.doctorName} numberOfLines={2} ellipsizeMode="tail">
-                                        {upcomingAppointment.doctorName || "Dr. Unknown"}
-                                    </Text>
-                                    <Text style={styles.specialty} numberOfLines={1}>
-                                        {upcomingAppointment.department || upcomingAppointment.specialty || "General"}
-                                    </Text>
-                                    <View style={styles.timeRow}>
-                                        <Clock size={14} color="#64748b" />
-                                        <Text style={styles.timeText}>
-                                            Queue Token: #{upcomingAppointment.queueNumber || 1}
-                                        </Text>
+                            <View style={styles.appointmentTopRow}>
+                                <View style={styles.appointLeft}>
+                                    <View style={styles.dateBox}>
+                                        <Text style={styles.dateDay}>{formatDate(upcomingAppointment.date).day}</Text>
+                                        <Text style={styles.dateMonth}>{formatDate(upcomingAppointment.date).month}</Text>
                                     </View>
-                                    <View
-                                        style={[
-                                            styles.statusBadge,
-                                            {
-                                                backgroundColor:
-                                                    (upcomingAppointment.status || '').toLowerCase() === 'confirmed'
-                                                        ? '#ecfeff'
-                                                        : '#fffbeb'
-                                            }
-                                        ]}
-                                    >
-                                        <Text
+                                    <View style={styles.appointDetails}>
+                                        <Text style={styles.doctorName} numberOfLines={2} ellipsizeMode="tail">
+                                            {upcomingAppointment.doctorName || "Dr. Unknown"}
+                                        </Text>
+                                        <Text style={styles.specialty} numberOfLines={1}>
+                                            {upcomingAppointment.department || upcomingAppointment.specialty || "General"} • {queueData?.allocatedRoom || upcomingAppointment.allocatedRoom || "Room TBA"}
+                                        </Text>
+                                        <View
                                             style={[
-                                                styles.statusText,
+                                                styles.statusBadge,
                                                 {
-                                                    color:
+                                                    backgroundColor:
                                                         (upcomingAppointment.status || '').toLowerCase() === 'confirmed'
-                                                            ? '#0891b2'
-                                                            : '#d97706'
+                                                            ? '#ecfeff'
+                                                            : '#fffbeb'
                                                 }
                                             ]}
                                         >
-                                            {(upcomingAppointment.status || 'Confirmed').toUpperCase()}
-                                        </Text>
+                                            <Text
+                                                style={[
+                                                    styles.statusText,
+                                                    {
+                                                        color:
+                                                            (upcomingAppointment.status || '').toLowerCase() === 'confirmed'
+                                                                ? '#0891b2'
+                                                                : '#d97706'
+                                                    }
+                                                ]}
+                                            >
+                                                {(upcomingAppointment.status || 'Confirmed').toUpperCase()}
+                                            </Text>
+                                        </View>
+                                    </View>
+                                </View>
+                                <View style={styles.appointRight}>
+                                    <View style={styles.viewButton}>
+                                        <Text style={styles.viewButtonText}>Check Status</Text>
                                     </View>
                                 </View>
                             </View>
-                            <View style={styles.appointRight}>
-                                <View style={styles.queueBadgeMini}>
-                                    <Text style={styles.queueBadgeMiniLabel}>QUEUE</Text>
-                                    <Text style={styles.queueBadgeMiniValue}>#{upcomingAppointment.queueNumber || 1}</Text>
+
+                            <View style={styles.cardQueueMetricsRow}>
+                                <View style={styles.cardMetricBox}>
+                                    <Text style={styles.cardMetricLabel}>YOUR TOKEN</Text>
+                                    <Text style={styles.cardMetricValue}>#{liveMyToken}</Text>
                                 </View>
-                                <View style={styles.viewButton}>
-                                    <Text style={styles.viewButtonText}>Check Status</Text>
+                                <View style={[styles.cardMetricBox, styles.cardMetricBoxActive]}>
+                                    <View style={styles.cardMetricLiveHeader}>
+                                        <View style={styles.cardMetricLiveDot} />
+                                        <Text style={styles.cardMetricLabelActive}>ONGOING TOKEN</Text>
+                                    </View>
+                                    <Text style={styles.cardMetricValueActive}>#{liveOngoingToken}</Text>
+                                </View>
+                                <View style={styles.cardMetricBox}>
+                                    <Text style={styles.cardMetricLabel}>PATIENTS AHEAD</Text>
+                                    <Text style={styles.cardMetricValue}>{livePeopleAhead}</Text>
                                 </View>
                             </View>
                         </TouchableOpacity>
@@ -555,7 +727,7 @@ export default function PatientDashboardScreen() {
                                         {queueData.doctorName || upcomingAppointment?.doctorName || "Doctor"}
                                     </Text>
                                     <Text style={styles.queueDoctorSub}>
-                                        {queueData.department || upcomingAppointment?.department || "General"} • {queueData.allocatedRoom || "Room TBA"}
+                                        {queueData.department || upcomingAppointment?.department || "General"} • {queueData.allocatedRoom || upcomingAppointment?.allocatedRoom || "Room TBA"}
                                     </Text>
                                     <View style={styles.queueStatusChipRow}>
                                         <View style={[styles.statusBadge, { backgroundColor: '#ecfeff', marginTop: 0 }]}>
@@ -575,13 +747,13 @@ export default function PatientDashboardScreen() {
                                     <View style={styles.tokenBox}>
                                         <Text style={styles.tokenLabel}>Your Queue #</Text>
                                         <Text style={styles.tokenNumber}>
-                                            #{queueData.queueNumber ?? upcomingAppointment?.queueNumber ?? "--"}
+                                            #{liveMyToken}
                                         </Text>
                                     </View>
                                     <View style={[styles.tokenBox, styles.activeTokenBox]}>
                                         <Text style={styles.activeTokenLabel}>Ongoing Token</Text>
                                         <Text style={styles.activeTokenNumber}>
-                                            #{queueData.currentToken !== undefined ? queueData.currentToken : 0}
+                                            #{liveOngoingToken}
                                         </Text>
                                         <View style={styles.liveIndicator}>
                                             <View style={styles.liveDot} />
@@ -593,9 +765,7 @@ export default function PatientDashboardScreen() {
                                 <View style={styles.queueSummaryFooter}>
                                     <Text style={styles.queueSummaryText}>
                                         Patients Ahead: <Text style={{ fontWeight: '800', color: '#0f172a' }}>
-                                            {queueData.peopleAhead !== undefined
-                                                ? queueData.peopleAhead
-                                                : Math.max(0, (queueData.queueNumber || upcomingAppointment?.queueNumber || 1) - (queueData.currentToken || 0))}
+                                            {livePeopleAhead}
                                         </Text>
                                     </Text>
                                 </View>
@@ -705,7 +875,8 @@ const styles = StyleSheet.create({
     actionSubtitle: { fontSize: 12, color: '#94a3b8' },
     
     // --- APPOINTMENT CARDS ---
-    appointmentCard: { backgroundColor: '#fff', borderRadius: 16, padding: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', elevation: 2, borderWidth: 1, borderColor: '#f1f5f9' },
+    appointmentCard: { backgroundColor: '#fff', borderRadius: 16, padding: 16, flexDirection: 'column', gap: 14, elevation: 2, borderWidth: 1, borderColor: '#f1f5f9' },
+    appointmentTopRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
     emptyCard: { backgroundColor: '#f8fafc', borderRadius: 16, padding: 24, alignItems: 'center', borderWidth: 1, borderColor: '#e2e8f0', borderStyle: 'dashed' },
     emptyText: { color: '#94a3b8', marginVertical: 8 },
     bookNowText: { color: '#06b6d4', fontWeight: '600' },
@@ -726,6 +897,15 @@ const styles = StyleSheet.create({
     queueBadgeMiniValue: { fontSize: 16, fontWeight: '800', color: '#0f766e' },
     viewButton: { backgroundColor: '#06b6d4', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12, flexShrink: 0 },
     viewButtonText: { fontSize: 12, fontWeight: '700', color: '#fff' },
+    cardQueueMetricsRow: { flexDirection: 'row', gap: 10, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#f1f5f9' },
+    cardMetricBox: { flex: 1, backgroundColor: '#f8fafc', borderRadius: 12, paddingVertical: 10, paddingHorizontal: 8, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#e2e8f0' },
+    cardMetricBoxActive: { backgroundColor: '#ecfeff', borderColor: '#06b6d4', borderWidth: 1.5 },
+    cardMetricLiveHeader: { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 2 },
+    cardMetricLiveDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#06b6d4' },
+    cardMetricLabel: { fontSize: 9, fontWeight: '700', color: '#64748b', letterSpacing: 0.4, marginBottom: 2 },
+    cardMetricLabelActive: { fontSize: 9, fontWeight: '800', color: '#0891b2', letterSpacing: 0.4 },
+    cardMetricValue: { fontSize: 18, fontWeight: '800', color: '#0f172a' },
+    cardMetricValueActive: { fontSize: 18, fontWeight: '800', color: '#06b6d4' },
     
     // --- INFO CARD ---
     infoCard: { backgroundColor: '#ecfdf5', borderRadius: 16, padding: 20 },

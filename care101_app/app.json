@@ -4,7 +4,7 @@
     "slug": "carelink_101",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon3.png",
+    "icon": "./assets/icon3.png",
     "scheme": "carelink",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
@@ -18,7 +18,7 @@
     "android": {
       "adaptiveIcon": {
         "backgroundColor": "#FFFFFF",
-        "foregroundImage": "./assets/images/icon3.png"
+        "foregroundImage": "./assets/icon3.png"
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
@@ -33,7 +33,7 @@
     },
     "web": {
       "output": "static",
-      "favicon": "./assets/images/icon3.png"
+      "favicon": "./assets/icon3.png"
     },
     "plugins": [
       [
@@ -46,7 +46,7 @@
       [
         "expo-splash-screen",
         {
-          "image": "./assets/images/icon3.png",
+          "image": "./assets/icon3.png",
           "imageWidth": 200,
           "resizeMode": "contain",
           "backgroundColor": "#ffffff",
