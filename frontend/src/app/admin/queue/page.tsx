@@ -30,7 +30,8 @@ export default function NurseQueueDashboard() {
     const [labRequests, setLabRequests] = useState<any[]>([]);
     const [loadingLabs, setLoadingLabs] = useState(false);
 
-    // Form States for Upload Record
+    // Form States for Upload / Update Record
+    const [editingRecordId, setEditingRecordId] = useState<string | null>(null);
     const [newRecordData, setNewRecordData] = useState({
         title: "OPD Consultation",
         type: "consultations",
@@ -164,6 +165,21 @@ export default function NurseQueueDashboard() {
         }
     };
 
+    const openEditRecordModal = (rec: any) => {
+        setEditingRecordId(rec._id);
+        setNewRecordData({
+            title: rec.title || "OPD Consultation",
+            type: rec.type || "consultations",
+            date: rec.date ? new Date(rec.date).toISOString().substring(0, 10) : new Date().toISOString().substring(0, 10),
+            description: rec.description || "",
+            diagnosis: rec.diagnosis || "",
+            medications: rec.medications || "",
+            fileData: "",
+            fileType: rec.fileType || ""
+        });
+        setIsNewRecordOpen(true);
+    };
+
     const handleUploadRecord = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!selectedPatient) return;
@@ -172,11 +188,17 @@ export default function NurseQueueDashboard() {
             const token = getAdminToken();
             const payload = {
                 patientId: selectedPatient.id,
+                doctorId: selectedPatient.doctorId,
                 doctorName: selectedPatient.doctorName,
                 ...newRecordData
             };
-            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/medical-records/upload`, {
-                method: "POST",
+            const url = editingRecordId
+                ? `${process.env.NEXT_PUBLIC_API_URL}/medical-records/${editingRecordId}`
+                : `${process.env.NEXT_PUBLIC_API_URL}/medical-records/upload`;
+            const method = editingRecordId ? "PUT" : "POST";
+
+            const res = await fetch(url, {
+                method,
                 headers: {
                     "Content-Type": "application/json",
                     "x-auth-token": token || "",
@@ -184,8 +206,9 @@ export default function NurseQueueDashboard() {
                 body: JSON.stringify(payload)
             });
             if (res.ok) {
-                alert("Medical Record Uploaded Successfully!");
+                alert(editingRecordId ? "Medical Record Updated Successfully!" : "Medical Record Uploaded Successfully!");
                 setIsNewRecordOpen(false);
+                setEditingRecordId(null);
                 setNewRecordData({
                     title: "OPD Consultation",
                     type: "consultations",
@@ -196,12 +219,13 @@ export default function NurseQueueDashboard() {
                     fileData: "",
                     fileType: ""
                 });
+                fetchMedicalRecords(selectedPatient.id);
             } else {
-                alert("Failed to upload medical record.");
+                alert("Failed to save medical record.");
             }
         } catch (err) {
             console.error("Upload error:", err);
-            alert("An error occurred during upload.");
+            alert("An error occurred during save.");
         } finally {
             setUploadingRecord(false);
         }
@@ -258,14 +282,29 @@ export default function NurseQueueDashboard() {
         }
     };
 
-    const getActiveAppointment = (doctorDocId: string, currentQueueNumber: number) => {
-        return appointments.find(appt => {
+    const getDoctorTodayAppointments = (doctorDocId: string) => {
+        const todayList = appointments.filter(appt => {
             const apptDocId = appt.doctorId?._id || appt.doctorId;
-            return apptDocId === doctorDocId && 
-                   appt.queueNumber === currentQueueNumber && 
-                   isToday(appt.date) && 
-                   appt.status !== 'cancelled';
+            return apptDocId === doctorDocId && isToday(appt.date) && appt.status !== 'cancelled';
+        }).sort((a, b) => {
+            if (a.queueNumber && b.queueNumber) return a.queueNumber - b.queueNumber;
+            return new Date(a.createdAt || a.date).getTime() - new Date(b.createdAt || b.date).getTime();
         });
+        return todayList.map((appt, idx) => ({
+            ...appt,
+            effectiveQueueNumber: appt.queueNumber || (idx + 1)
+        }));
+    };
+
+    const getActiveAppointment = (doctorDocId: string, currentQueueNumber: number) => {
+        const todayList = getDoctorTodayAppointments(doctorDocId);
+        if (todayList.length === 0) return undefined;
+        const exact = todayList.find(appt => appt.queueNumber === currentQueueNumber || appt.effectiveQueueNumber === currentQueueNumber);
+        if (exact) return exact;
+        if (currentQueueNumber > 0 && currentQueueNumber <= todayList.length) {
+            return todayList[currentQueueNumber - 1];
+        }
+        return todayList[0];
     };
 
     useEffect(() => {
@@ -574,19 +613,22 @@ export default function NurseQueueDashboard() {
                             </CardContent>
                             
                             {/* Currently Serving Patient & Clinical Action Panel */}
-                            {doc.sessionStarted && (() => {
+                            {(() => {
+                                const todayDoctorAppts = getDoctorTodayAppointments(doc._id);
                                 const activeAppt = getActiveAppointment(doc._id, doc.currentQueueNumber);
                                 return (
                                     <div className="border-t border-slate-100 bg-slate-50/50 p-6 md:p-8 space-y-6">
                                         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                                             <div>
-                                                <span className="text-xs font-bold text-cyan-600 uppercase tracking-widest">Currently Serving</span>
+                                                <span className="text-xs font-bold text-cyan-600 uppercase tracking-widest">
+                                                    {doc.sessionStarted ? "Currently Serving" : "Next / Selected Patient in Queue"}
+                                                </span>
                                                 {activeAppt ? (
                                                     <div className="mt-1">
                                                         <h4 className="text-xl font-bold text-slate-800 flex items-center gap-2">
                                                             {activeAppt.patientId?.fullName || "Walk-in Patient"}
                                                             <Badge className="bg-slate-200 text-slate-700 font-bold text-xs hover:bg-slate-200">
-                                                                Token #{activeAppt.queueNumber}
+                                                                Token #{activeAppt.queueNumber || activeAppt.effectiveQueueNumber}
                                                             </Badge>
                                                         </h4>
                                                         <p className="text-xs text-slate-500 mt-1">
@@ -595,8 +637,8 @@ export default function NurseQueueDashboard() {
                                                     </div>
                                                 ) : (
                                                     <div className="mt-1">
-                                                        <h4 className="text-lg font-bold text-slate-500 italic">No patient currently active for Token #{doc.currentQueueNumber || 0}</h4>
-                                                        <p className="text-xs text-slate-400 mt-0.5">Please update the counter to call the next patient.</p>
+                                                        <h4 className="text-lg font-bold text-slate-500 italic">No patient currently scheduled for today</h4>
+                                                        <p className="text-xs text-slate-400 mt-0.5">Patients with appointments today will appear below.</p>
                                                     </div>
                                                 )}
                                             </div>
@@ -608,13 +650,15 @@ export default function NurseQueueDashboard() {
                                                         size="sm"
                                                         className="bg-white border-slate-200 text-slate-700 font-semibold text-xs hover:bg-slate-50 flex items-center gap-1.5 h-9 rounded-lg"
                                                         onClick={() => {
+                                                            const patId = activeAppt.patientId?._id || activeAppt.patientId;
                                                             setSelectedPatient({
-                                                                id: activeAppt.patientId?._id || activeAppt.patientId,
+                                                                id: patId,
                                                                 fullName: activeAppt.patientId?.fullName || "Patient",
                                                                 doctorId: doc._id,
                                                                 doctorName: doc.name
                                                             });
-                                                            fetchMedicalRecords(activeAppt.patientId?._id || activeAppt.patientId);
+                                                            fetchMedicalRecords(patId);
+                                                            fetchLabRequests(patId);
                                                             setIsMedicalBookOpen(true);
                                                         }}
                                                     >
@@ -627,6 +671,17 @@ export default function NurseQueueDashboard() {
                                                         size="sm"
                                                         className="bg-white border-slate-200 text-slate-700 font-semibold text-xs hover:bg-slate-50 flex items-center gap-1.5 h-9 rounded-lg"
                                                         onClick={() => {
+                                                            setEditingRecordId(null);
+                                                            setNewRecordData({
+                                                                title: "OPD Consultation",
+                                                                type: "consultations",
+                                                                date: new Date().toISOString().substring(0, 10),
+                                                                description: "",
+                                                                diagnosis: "",
+                                                                medications: "",
+                                                                fileData: "",
+                                                                fileType: ""
+                                                            });
                                                             setSelectedPatient({
                                                                 id: activeAppt.patientId?._id || activeAppt.patientId,
                                                                 fullName: activeAppt.patientId?.fullName || "Patient",
@@ -637,7 +692,7 @@ export default function NurseQueueDashboard() {
                                                         }}
                                                     >
                                                         <Plus className="h-4 w-4 text-slate-500" />
-                                                        Add Medical Record
+                                                        Add / Update Record
                                                     </Button>
 
                                                     <Button 
@@ -645,13 +700,14 @@ export default function NurseQueueDashboard() {
                                                         size="sm"
                                                         className="bg-white border-slate-200 text-slate-700 font-semibold text-xs hover:bg-slate-50 flex items-center gap-1.5 h-9 rounded-lg"
                                                         onClick={() => {
+                                                            const patId = activeAppt.patientId?._id || activeAppt.patientId;
                                                             setSelectedPatient({
-                                                                id: activeAppt.patientId?._id || activeAppt.patientId,
+                                                                id: patId,
                                                                 fullName: activeAppt.patientId?.fullName || "Patient",
                                                                 doctorId: doc._id,
                                                                 doctorName: doc.name
                                                             });
-                                                            fetchLabRequests(activeAppt.patientId?._id || activeAppt.patientId);
+                                                            fetchLabRequests(patId);
                                                             setIsLabRequestOpen(true);
                                                         }}
                                                     >
@@ -662,38 +718,96 @@ export default function NurseQueueDashboard() {
                                             )}
                                         </div>
 
-                                        {/* Waiting List for this Doctor */}
+                                        {/* Full Today's Queue List for this Doctor with Quick Clinical Actions */}
                                         <div className="pt-4 border-t border-slate-100">
-                                            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-widest block mb-3 font-semibold">Patients Waiting in Queue</span>
-                                            {(() => {
-                                                const waitingAppts = appointments.filter(appt => {
-                                                    const apptDocId = appt.doctorId?._id || appt.doctorId;
-                                                    return apptDocId === doc._id && 
-                                                           isToday(appt.date) && 
-                                                           appt.status !== 'cancelled' &&
-                                                           (appt.queueNumber || 0) > (doc.currentQueueNumber || 0);
-                                                }).sort((a, b) => (a.queueNumber || 0) - (b.queueNumber || 0));
-
-                                                if (waitingAppts.length === 0) {
-                                                    return <p className="text-xs text-slate-400 italic">No more waiting patients today.</p>;
-                                                }
-
-                                                return (
-                                                    <div className="flex flex-wrap gap-2">
-                                                        {waitingAppts.map(appt => (
-                                                            <div key={appt._id} className="bg-white border border-slate-200/80 rounded-lg px-3 py-1.5 flex items-center gap-2 text-xs">
-                                                                <span className="font-black text-slate-700 bg-slate-100 h-5 w-5 rounded-full flex items-center justify-center text-[10px]">
-                                                                    {appt.queueNumber}
-                                                                </span>
-                                                                <div>
-                                                                    <p className="font-bold text-slate-800 leading-none">{appt.patientId?.fullName || "Walk-in"}</p>
-                                                                    <p className="text-[9px] text-slate-400 mt-0.5">ID: {appt.patientId?.patientId || appt.patientId?._id?.substring(0, 8) || "N/A"}</p>
+                                            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-widest block mb-3 font-semibold">Today&apos;s Patients in Queue</span>
+                                            {todayDoctorAppts.length === 0 ? (
+                                                <p className="text-xs text-slate-400 italic">No appointments scheduled for this doctor today.</p>
+                                            ) : (
+                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+                                                    {todayDoctorAppts.map(appt => {
+                                                        const patId = appt.patientId?._id || appt.patientId;
+                                                        const isCurrent = activeAppt && activeAppt._id === appt._id;
+                                                        return (
+                                                            <div key={appt._id} className={`bg-white border rounded-xl px-3.5 py-2.5 flex items-center justify-between gap-2 text-xs transition-all ${isCurrent ? 'border-cyan-400 ring-1 ring-cyan-100' : 'border-slate-200/80'}`}>
+                                                                <div className="flex items-center gap-2.5 min-w-0">
+                                                                    <span className={`font-black h-6 w-6 rounded-full flex items-center justify-center text-[11px] shrink-0 ${isCurrent ? 'bg-cyan-600 text-white' : 'bg-slate-100 text-slate-700'}`}>
+                                                                        {appt.queueNumber || appt.effectiveQueueNumber}
+                                                                    </span>
+                                                                    <div className="min-w-0">
+                                                                        <p className="font-bold text-slate-800 truncate">{appt.patientId?.fullName || "Walk-in"}</p>
+                                                                        <p className="text-[10px] text-slate-400 mt-0.5">ID: {appt.patientId?.patientId || appt.patientId?._id?.substring(0, 8) || "N/A"}</p>
+                                                                    </div>
+                                                                </div>
+                                                                <div className="flex items-center gap-1 shrink-0">
+                                                                    <Button
+                                                                        variant="ghost"
+                                                                        size="sm"
+                                                                        className="h-7 px-2 text-[11px] font-semibold text-slate-600 hover:text-cyan-700 hover:bg-cyan-50"
+                                                                        onClick={() => {
+                                                                            setSelectedPatient({
+                                                                                id: patId,
+                                                                                fullName: appt.patientId?.fullName || "Patient",
+                                                                                doctorId: doc._id,
+                                                                                doctorName: doc.name
+                                                                            });
+                                                                            fetchMedicalRecords(patId);
+                                                                            fetchLabRequests(patId);
+                                                                            setIsMedicalBookOpen(true);
+                                                                        }}
+                                                                    >
+                                                                        <BookOpen className="h-3.5 w-3.5 mr-1" /> Book
+                                                                    </Button>
+                                                                    <Button
+                                                                        variant="ghost"
+                                                                        size="sm"
+                                                                        className="h-7 px-2 text-[11px] font-semibold text-slate-600 hover:text-cyan-700 hover:bg-cyan-50"
+                                                                        onClick={() => {
+                                                                            setEditingRecordId(null);
+                                                                            setNewRecordData({
+                                                                                title: "OPD Consultation",
+                                                                                type: "consultations",
+                                                                                date: new Date().toISOString().substring(0, 10),
+                                                                                description: "",
+                                                                                diagnosis: "",
+                                                                                medications: "",
+                                                                                fileData: "",
+                                                                                fileType: ""
+                                                                            });
+                                                                            setSelectedPatient({
+                                                                                id: patId,
+                                                                                fullName: appt.patientId?.fullName || "Patient",
+                                                                                doctorId: doc._id,
+                                                                                doctorName: doc.name
+                                                                            });
+                                                                            setIsNewRecordOpen(true);
+                                                                        }}
+                                                                    >
+                                                                        <Plus className="h-3.5 w-3.5 mr-1" /> Record
+                                                                    </Button>
+                                                                    <Button
+                                                                        variant="ghost"
+                                                                        size="sm"
+                                                                        className="h-7 px-2 text-[11px] font-semibold text-slate-600 hover:text-cyan-700 hover:bg-cyan-50"
+                                                                        onClick={() => {
+                                                                            setSelectedPatient({
+                                                                                id: patId,
+                                                                                fullName: appt.patientId?.fullName || "Patient",
+                                                                                doctorId: doc._id,
+                                                                                doctorName: doc.name
+                                                                            });
+                                                                            fetchLabRequests(patId);
+                                                                            setIsLabRequestOpen(true);
+                                                                        }}
+                                                                    >
+                                                                        <Activity className="h-3.5 w-3.5 mr-1" /> Lab
+                                                                    </Button>
                                                                 </div>
                                                             </div>
-                                                        ))}
-                                                    </div>
-                                                );
-                                            })()}
+                                                        );
+                                                    })}
+                                                </div>
+                                            )}
                                         </div>
                                     </div>
                                 );
@@ -707,14 +821,47 @@ export default function NurseQueueDashboard() {
             {isMedicalBookOpen && selectedPatient && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
                     <div className="bg-white rounded-2xl shadow-xl w-full max-w-4xl max-h-[85vh] overflow-hidden flex flex-col">
-                        <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+                        <div className="p-6 border-b border-slate-100 flex flex-wrap justify-between items-center gap-3 bg-slate-50/50">
                             <div>
                                 <h3 className="text-xl font-bold text-slate-800">Patient Medical Book</h3>
-                                <p className="text-xs text-slate-500 mt-1">Viewing records for <span className="font-semibold text-slate-700">{selectedPatient.fullName}</span></p>
+                                <p className="text-xs text-slate-500 mt-1">Viewing records for <span className="font-semibold text-slate-700">{selectedPatient.fullName}</span> • On behalf of <span className="font-semibold text-cyan-700">{selectedPatient.doctorName}</span></p>
                             </div>
-                            <button onClick={() => setIsMedicalBookOpen(false)} className="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-100 transition-colors">
-                                <X className="h-5 w-5" />
-                            </button>
+                            <div className="flex items-center gap-2">
+                                <Button
+                                    size="sm"
+                                    className="bg-cyan-600 hover:bg-cyan-700 text-white text-xs font-bold h-8 px-3 rounded-lg"
+                                    onClick={() => {
+                                        setEditingRecordId(null);
+                                        setNewRecordData({
+                                            title: "OPD Consultation",
+                                            type: "consultations",
+                                            date: new Date().toISOString().substring(0, 10),
+                                            description: "",
+                                            diagnosis: "",
+                                            medications: "",
+                                            fileData: "",
+                                            fileType: ""
+                                        });
+                                        setIsNewRecordOpen(true);
+                                    }}
+                                >
+                                    <Plus className="h-3.5 w-3.5 mr-1" /> Add Record
+                                </Button>
+                                <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="border-slate-200 text-slate-700 text-xs font-bold h-8 px-3 rounded-lg"
+                                    onClick={() => {
+                                        fetchLabRequests(selectedPatient.id);
+                                        setIsLabRequestOpen(true);
+                                    }}
+                                >
+                                    <Activity className="h-3.5 w-3.5 mr-1" /> Request Lab
+                                </Button>
+                                <button onClick={() => setIsMedicalBookOpen(false)} className="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-100 transition-colors">
+                                    <X className="h-5 w-5" />
+                                </button>
+                            </div>
                         </div>
                         
                         <div className="flex-1 overflow-y-auto p-6 space-y-4">
@@ -740,9 +887,19 @@ export default function NurseQueueDashboard() {
                                                         </Badge>
                                                         <h4 className="font-bold text-slate-800 text-lg mt-1">{rec.title}</h4>
                                                     </div>
-                                                    <span className="text-xs font-semibold text-slate-400">
-                                                        {new Date(rec.date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
-                                                    </span>
+                                                    <div className="flex items-center gap-2">
+                                                        <Button
+                                                            variant="outline"
+                                                            size="sm"
+                                                            className="h-7 px-2.5 text-xs font-bold text-cyan-700 border-cyan-200 hover:bg-cyan-50"
+                                                            onClick={() => openEditRecordModal(rec)}
+                                                        >
+                                                            Update Record
+                                                        </Button>
+                                                        <span className="text-xs font-semibold text-slate-400">
+                                                            {new Date(rec.date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                                                        </span>
+                                                    </div>
                                                 </div>
                                                 
                                                 <div className="text-sm text-slate-600 whitespace-pre-line space-y-2">
@@ -844,16 +1001,21 @@ export default function NurseQueueDashboard() {
                 </div>
             )}
 
-            {/* ADD MEDICAL RECORD MODAL */}
+            {/* ADD / UPDATE MEDICAL RECORD MODAL */}
             {isNewRecordOpen && selectedPatient && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
                     <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
                         <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
                             <div>
-                                <h3 className="text-xl font-bold text-slate-800">Add Patient Medical Record</h3>
-                                <p className="text-xs text-slate-500 mt-1">Entering record for <span className="font-semibold text-slate-700">{selectedPatient.fullName}</span></p>
+                                <h3 className="text-xl font-bold text-slate-800">
+                                    {editingRecordId ? "Update Patient Medical Record" : "Add Patient Medical Record"}
+                                </h3>
+                                <p className="text-xs text-slate-500 mt-1">
+                                    {editingRecordId ? "Updating record for " : "Entering record for "}
+                                    <span className="font-semibold text-slate-700">{selectedPatient.fullName}</span> on behalf of <span className="font-semibold text-cyan-700">{selectedPatient.doctorName}</span>
+                                </p>
                             </div>
-                            <button onClick={() => setIsNewRecordOpen(false)} className="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-100 transition-colors">
+                            <button onClick={() => { setIsNewRecordOpen(false); setEditingRecordId(null); }} className="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-100 transition-colors">
                                 <X className="h-5 w-5" />
                             </button>
                         </div>
@@ -948,11 +1110,11 @@ export default function NurseQueueDashboard() {
                             </div>
 
                             <div className="p-4 border-t border-slate-100 flex justify-end gap-2 bg-slate-50/50 -mx-6 -mb-6 mt-6">
-                                <Button type="button" variant="outline" onClick={() => setIsNewRecordOpen(false)} className="border-slate-200 text-slate-700 font-bold px-5">
+                                <Button type="button" variant="outline" onClick={() => { setIsNewRecordOpen(false); setEditingRecordId(null); }} className="border-slate-200 text-slate-700 font-bold px-5">
                                     Cancel
                                 </Button>
                                 <Button type="submit" disabled={uploadingRecord} className="bg-cyan-600 hover:bg-cyan-700 text-white font-bold px-6 shadow-md shadow-cyan-100">
-                                    {uploadingRecord ? <Loader2 className="animate-spin h-5 w-5" /> : "Upload Record"}
+                                    {uploadingRecord ? <Loader2 className="animate-spin h-5 w-5" /> : (editingRecordId ? "Save Changes" : "Upload Record")}
                                 </Button>
                             </div>
                         </form>

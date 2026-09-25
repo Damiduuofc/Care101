@@ -1,10 +1,13 @@
 import express from "express";
+import mongoose from "mongoose";
 import LabRequest from "../models/LabRequest.js";
 import MedicalRecord from "../models/MedicalRecord.js";
 import Patient from "../models/Patient.js";
 import Bill from "../models/Bill.js";
 import Doctor from "../models/Doctor.js";
 import Appointment from "../models/Appointment.js";
+import Admin from "../models/Admin.js";
+import { syncPatientDoctorRecordBook } from "./medicalRecords.js";
 import { auth } from "../middleware/auth.js";
 
 const router = express.Router();
@@ -17,53 +20,104 @@ const resolveDoctorDisplay = (doc) => {
 };
 
 const resolveDoctorName = async (reqDocId, reqDocName, patientId, user) => {
-  // 1. If explicitly provided valid name
-  if (reqDocName && reqDocName.trim() !== "Doctor" && reqDocName.trim() !== "Nurse Requested") {
-    if (user?.role === "lab_assistant" || reqDocName.startsWith("Dr.") || reqDocName.startsWith("Nurse") || reqDocName.startsWith("Lab")) {
-      return { finalDoctorId: reqDocId, finalDoctorName: reqDocName };
+  // 1. If doctorId is provided, resolve from Doctor collection first
+  if (reqDocId && mongoose.Types.ObjectId.isValid(reqDocId)) {
+    const doc = await Doctor.findById(reqDocId);
+    if (doc) {
+      return {
+        finalDoctorId: doc._id,
+        finalDoctorName: resolveDoctorDisplay(doc) || reqDocName || doc.name,
+        doctorDoc: doc
+      };
     }
-    return { finalDoctorId: reqDocId, finalDoctorName: `Dr. ${reqDocName}` };
   }
 
-  // 2. If caller is doctor
+  // 2. If explicitly provided valid doctor name, try to also resolve Doctor document
+  if (reqDocName && reqDocName.trim() !== "Doctor" && reqDocName.trim() !== "Nurse Requested" && !reqDocName.toLowerCase().includes("lab assistant")) {
+    const clean = reqDocName.replace(/^(dr\.|dr)\s+/i, "").trim();
+    const escaped = clean.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const matchedDoc = await Doctor.findOne({
+      $or: [
+        { name: { $regex: new RegExp(escaped, "i") } },
+        { fullName: { $regex: new RegExp(escaped, "i") } }
+      ]
+    });
+    if (matchedDoc) {
+      return {
+        finalDoctorId: matchedDoc._id,
+        finalDoctorName: resolveDoctorDisplay(matchedDoc) || reqDocName,
+        doctorDoc: matchedDoc
+      };
+    }
+    if (reqDocName.startsWith("Dr.") || reqDocName.startsWith("Nurse") || reqDocName.startsWith("Lab")) {
+      return { finalDoctorId: reqDocId || null, finalDoctorName: reqDocName, doctorDoc: null };
+    }
+    return { finalDoctorId: reqDocId || null, finalDoctorName: `Dr. ${reqDocName}`, doctorDoc: null };
+  }
+
+  // 3. If caller is doctor
   if (user?.role === "doctor" && user.id) {
     const doc = await Doctor.findById(user.id);
     const resolvedName = resolveDoctorDisplay(doc);
     if (resolvedName) {
-      return { finalDoctorId: doc._id, finalDoctorName: resolvedName };
+      return { finalDoctorId: doc._id, finalDoctorName: resolvedName, doctorDoc: doc };
     }
   }
 
-  // 3. If doctorId is provided
-  if (reqDocId) {
-    const doc = await Doctor.findById(reqDocId);
-    const resolvedName = resolveDoctorDisplay(doc);
-    if (resolvedName) {
-      return { finalDoctorId: doc._id, finalDoctorName: resolvedName };
+  // 4. If caller is nurse, check allocated doctor
+  if (user?.role === "nurse" && user.id) {
+    const nurse = await Admin.findById(user.id);
+    if (nurse) {
+      const doc = await Doctor.findOne({ allocatedNurse: nurse.name });
+      if (doc) {
+        return {
+          finalDoctorId: doc._id,
+          finalDoctorName: resolveDoctorDisplay(doc) || doc.name,
+          doctorDoc: doc
+        };
+      }
     }
   }
 
-  // 4. Check patient's latest appointment
-  if (patientId) {
+  // 5. Check patient's latest appointment
+  if (patientId && mongoose.Types.ObjectId.isValid(patientId)) {
     const appt = await Appointment.findOne({ patientId }).sort({ createdAt: -1 });
-    if (appt && appt.doctorName && appt.doctorName.trim() !== "Doctor") {
-      const formattedApptDoc = appt.doctorName.startsWith("Dr.") ? appt.doctorName : `Dr. ${appt.doctorName}`;
-      return { finalDoctorId: appt.doctorId || null, finalDoctorName: formattedApptDoc };
+    if (appt) {
+      if (appt.doctorId) {
+        const doc = await Doctor.findById(appt.doctorId);
+        if (doc) {
+          return {
+            finalDoctorId: doc._id,
+            finalDoctorName: resolveDoctorDisplay(doc) || appt.doctorName,
+            doctorDoc: doc
+          };
+        }
+      }
+      if (appt.doctorName && appt.doctorName.trim() !== "Doctor") {
+        const formattedApptDoc = appt.doctorName.startsWith("Dr.") ? appt.doctorName : `Dr. ${appt.doctorName}`;
+        return { finalDoctorId: appt.doctorId || null, finalDoctorName: formattedApptDoc, doctorDoc: null };
+      }
     }
   }
 
-  // 5. Fallback to first doctor in system
+  // 6. If lab assistant explicitly requested
+  if (user?.role === "lab_assistant" && reqDocName && reqDocName.toLowerCase().includes("lab assistant")) {
+    return { finalDoctorId: null, finalDoctorName: "Lab Assistant", doctorDoc: null };
+  }
+
+  // 7. Fallback to first doctor in system
   const defaultDoc = await Doctor.findOne();
   if (defaultDoc) {
     const resolvedName = resolveDoctorDisplay(defaultDoc);
     if (resolvedName) {
-      return { finalDoctorId: defaultDoc._id, finalDoctorName: resolvedName };
+      return { finalDoctorId: defaultDoc._id, finalDoctorName: resolvedName, doctorDoc: defaultDoc };
     }
   }
 
   return {
     finalDoctorId: reqDocId || null,
-    finalDoctorName: user?.role === "lab_assistant" ? "Lab Assistant" : "Dr. Medical Officer"
+    finalDoctorName: user?.role === "lab_assistant" ? "Lab Assistant" : "Dr. Medical Officer",
+    doctorDoc: null
   };
 };
 
@@ -77,9 +131,15 @@ router.post("/create", auth, async (req, res) => {
       return res.status(403).json({ msg: "Only doctors, nurses, and lab assistants can create lab requests" });
     }
 
+    let actualPatientId = patientId;
+    if (actualPatientId && !mongoose.Types.ObjectId.isValid(actualPatientId)) {
+      const p = await Patient.findOne({ patientId: String(actualPatientId).trim().toUpperCase() });
+      if (p) actualPatientId = p._id;
+    }
+
     // Create associated Bill
     const newBill = new Bill({
-      patientId,
+      patientId: actualPatientId,
       title: `Lab Report - ${title}`,
       type: "Lab",
       amount: amount || 0, // Use set price if provided
@@ -87,10 +147,10 @@ router.post("/create", auth, async (req, res) => {
     });
     await newBill.save();
 
-    const { finalDoctorId, finalDoctorName } = await resolveDoctorName(doctorId, doctorName, patientId, req.user);
+    const { finalDoctorId, finalDoctorName, doctorDoc } = await resolveDoctorName(doctorId, doctorName, actualPatientId, req.user);
 
     const newRequest = new LabRequest({
-      patientId,
+      patientId: actualPatientId,
       doctorId: finalDoctorId,
       doctorName: finalDoctorName,
       title,
@@ -102,14 +162,25 @@ router.post("/create", auth, async (req, res) => {
 
     await newRequest.save();
 
-    // Create Notification for Lab Assistant (Optional)
+    // Ensure patient has a Medical Record Book (SurgeryRecord) for this doctor so the request is visible to the patient
+    if (finalDoctorId) {
+      await syncPatientDoctorRecordBook({
+        patientId: actualPatientId,
+        doctorId: finalDoctorId,
+        doctorDoc,
+        record: null,
+        isNew: false
+      });
+    }
+
+    // Create Notification for Patient & Lab Assistant
     try {
       const Notification = (await import("../models/Notification.js")).default;
-      const patient = await Patient.findById(patientId);
+      const patient = await Patient.findById(actualPatientId);
       await Notification.create({
-        userId: patientId,
+        userId: actualPatientId,
         type: "lab_report",
-        message: `New Lab Request: ${title} requested for ${patient?.fullName || 'a patient'} by ${req.user.name || finalDoctorName}.`,
+        message: `New Lab Request: ${title} requested for ${patient?.fullName || 'you'} by ${finalDoctorName}.`,
         metadata: { requestId: newRequest._id }
       });
     } catch (err) {
@@ -186,7 +257,12 @@ router.get("/all", auth, async (req, res) => {
 // 3. Get Lab Requests for a specific Patient
 router.get("/patient/:patientId", auth, async (req, res) => {
   try {
-    const requests = await LabRequest.find({ patientId: req.params.patientId })
+    let targetPatientId = req.params.patientId;
+    if (!mongoose.Types.ObjectId.isValid(targetPatientId)) {
+      const p = await Patient.findOne({ patientId: String(targetPatientId).trim().toUpperCase() });
+      if (p) targetPatientId = p._id;
+    }
+    const requests = await LabRequest.find({ patientId: targetPatientId })
       .populate("patientId", "patientId fullName nicNumber email mobileNumber gender dateOfBirth")
       .populate("doctorId", "name fullName nameWithInitials specialization")
       .populate("billId")
@@ -203,7 +279,7 @@ router.get("/patient/:patientId", auth, async (req, res) => {
         }
 
         if (!docName || docName.trim() === "Doctor") {
-          const appt = await Appointment.findOne({ patientId: req.params.patientId }).sort({ createdAt: -1 });
+          const appt = await Appointment.findOne({ patientId: targetPatientId }).sort({ createdAt: -1 });
           if (appt && appt.doctorName && appt.doctorName.trim() !== "Doctor") {
             docName = appt.doctorName.startsWith("Dr.") ? appt.doctorName : `Dr. ${appt.doctorName}`;
           }
@@ -271,6 +347,7 @@ router.post("/upload/:requestId", auth, async (req, res) => {
     // Create a new MedicalRecord using the request's type
     const newRecord = new MedicalRecord({
       patientId: labRequest.patientId,
+      doctorId: labRequest.doctorId || null,
       type: labRequest.type || "lab_tests",
       title: labRequest.title,
       doctorName: labRequest.doctorName, // the one who requested
@@ -281,6 +358,15 @@ router.post("/upload/:requestId", auth, async (req, res) => {
     });
 
     await newRecord.save();
+
+    if (labRequest.doctorId) {
+      await syncPatientDoctorRecordBook({
+        patientId: labRequest.patientId,
+        doctorId: labRequest.doctorId,
+        record: newRecord,
+        isNew: false
+      });
+    }
 
     // Mark as completed
     labRequest.status = "completed";

@@ -2,6 +2,7 @@ import mongoose from "mongoose";
 
 const MedicalRecordSchema = new mongoose.Schema({
   patientId: { type: mongoose.Schema.Types.ObjectId, ref: "Patient", required: true },
+  doctorId: { type: mongoose.Schema.Types.ObjectId, ref: "Doctor", default: null },
   
   type: { 
     type: String, 
@@ -21,7 +22,8 @@ const MedicalRecordSchema = new mongoose.Schema({
   fileData: { type: String }, 
   fileType: { type: String }, // e.g., "application/pdf" or "image/png"
 
-  createdAt: { type: Date, default: Date.now }
+  createdAt: { type: Date, default: Date.now },
+  updatedAt: { type: Date, default: Date.now }
 });
 
 export default mongoose.model("MedicalRecord", MedicalRecordSchema);

@@ -36,7 +36,9 @@ export default function RecordDetailsScreen() {
   const [labDescription, setLabDescription] = useState('');
   const [submittingLab, setSubmittingLab] = useState(false);
 
-  // --- LAB REPORTS STATE & HANDLERS ---
+  // --- LAB REPORTS & CLINICAL RECORDS STATE & HANDLERS ---
+  const [clinicalRecords, setClinicalRecords] = useState<any[]>([]);
+  const [labRequests, setLabRequests] = useState<any[]>([]);
   const [labReports, setLabReports] = useState<any[]>([]);
   const [selectedRecordData, setSelectedRecordData] = useState<any>(null);
   const [showViewRecordModal, setShowViewRecordModal] = useState(false);
@@ -117,27 +119,30 @@ export default function RecordDetailsScreen() {
       const token = await SecureStore.getItemAsync('token');
       const baseApi = process.env.EXPO_PUBLIC_API_URL;
 
-      // 1. Get patient Mongoose ID from their patientId (e.g. SHP001)
-      const searchRes = await fetch(`${baseApi}/patients/search-by-patientid/${record.patientId}`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-          'ngrok-skip-browser-warning': 'true'
-        }
-      });
+      let patientMongooseId = record.patientMongoId || null;
 
-      if (!searchRes.ok) {
-        throw new Error("Failed to find patient matching this record");
+      if (!patientMongooseId) {
+        const searchRes = await fetch(`${baseApi}/patients/search-by-patientid/${record.patientId}`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+            'ngrok-skip-browser-warning': 'true'
+          }
+        });
+
+        if (searchRes.ok) {
+          const searchData = await searchRes.json();
+          if (searchData.found && searchData.patient?._id) {
+            patientMongooseId = searchData.patient._id;
+          }
+        }
       }
 
-      const searchData = await searchRes.json();
-      if (!searchData.found || !searchData.patient?._id) {
+      if (!patientMongooseId) {
         Alert.alert("Error", "Associated patient not found in system.");
         setSubmittingLab(false);
         return;
       }
-
-      const patientMongooseId = searchData.patient._id;
 
       const userDataStr = await SecureStore.getItemAsync('user_data');
       let doctorName = '';
@@ -171,6 +176,7 @@ export default function RecordDetailsScreen() {
         setLabTitle('');
         setLabDescription('');
         setShowLabModal(false);
+        fetchRecordDetails();
       } else {
         const errData = await res.json();
         Alert.alert("Error", errData.msg || "Failed to create request");
@@ -194,36 +200,56 @@ export default function RecordDetailsScreen() {
         const data = await res.json();
         setRecord(data);
 
-        // Fetch patient lab reports
+        // Fetch patient clinical records, lab reports & lab requests
         try {
           const baseApi = process.env.EXPO_PUBLIC_API_URL;
-          const searchRes = await fetch(`${baseApi}/patients/search-by-patientid/${data.patientId}`, {
-            headers: {
-              Authorization: `Bearer ${token}`,
-              'Content-Type': 'application/json',
-              'ngrok-skip-browser-warning': 'true'
-            }
-          });
-          if (searchRes.ok) {
-            const searchData = await searchRes.json();
-            if (searchData.found && searchData.patient?._id) {
-              const patId = searchData.patient._id;
-              const recordsRes = await fetch(`${baseApi}/medical-records/patient/${patId}`, {
-                headers: {
-                  Authorization: `Bearer ${token}`,
-                  'Content-Type': 'application/json',
-                  'ngrok-skip-browser-warning': 'true'
-                }
-              });
-              if (recordsRes.ok) {
-                const recordsData = await recordsRes.json();
-                const labTests = recordsData.filter((r: any) => r.type === 'lab_tests');
-                setLabReports(labTests);
+          let patId = data.patientMongoId || null;
+
+          if (!patId && data.patientId) {
+            const searchRes = await fetch(`${baseApi}/patients/search-by-patientid/${data.patientId}`, {
+              headers: {
+                Authorization: `Bearer ${token}`,
+                'Content-Type': 'application/json',
+                'ngrok-skip-browser-warning': 'true'
+              }
+            });
+            if (searchRes.ok) {
+              const searchData = await searchRes.json();
+              if (searchData.found && searchData.patient?._id) {
+                patId = searchData.patient._id;
               }
             }
           }
+
+          if (patId) {
+            const recordsRes = await fetch(`${baseApi}/medical-records/patient/${patId}`, {
+              headers: {
+                Authorization: `Bearer ${token}`,
+                'Content-Type': 'application/json',
+                'ngrok-skip-browser-warning': 'true'
+              }
+            });
+            if (recordsRes.ok) {
+              const recordsData = await recordsRes.json();
+              const allRecords = Array.isArray(recordsData) ? recordsData : [];
+              setLabReports(allRecords.filter((r: any) => r.type === 'lab_tests'));
+              setClinicalRecords(allRecords.filter((r: any) => r.type !== 'lab_tests'));
+            }
+
+            const reqsRes = await fetch(`${baseApi}/lab-requests/patient/${patId}`, {
+              headers: {
+                Authorization: `Bearer ${token}`,
+                'Content-Type': 'application/json',
+                'ngrok-skip-browser-warning': 'true'
+              }
+            });
+            if (reqsRes.ok) {
+              const reqsData = await reqsRes.json();
+              setLabRequests(Array.isArray(reqsData) ? reqsData : []);
+            }
+          }
         } catch (err) {
-          console.error("Failed to load lab reports:", err);
+          console.error("Failed to load clinical/lab reports:", err);
         }
 
       } else {
@@ -249,12 +275,7 @@ export default function RecordDetailsScreen() {
 
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
-        // ❌ REMOVE THIS (It caused the crash):
-        // mediaTypes: ImagePicker.MediaType.Images, 
-
-        // ✅ USE THIS (It works, ignore the warning for now):
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
-
         allowsEditing: true,
         aspect: [4, 3],
         quality: 0.5,
@@ -270,6 +291,7 @@ export default function RecordDetailsScreen() {
       Alert.alert("Error", "Could not pick image. Check logs.");
     }
   };
+
   const handleAddEntry = async () => {
     if (!entryImage && !entryNotes) {
       Alert.alert("Empty Entry", "Please add an image or notes.");
@@ -279,9 +301,6 @@ export default function RecordDetailsScreen() {
     setSubmitting(true);
     try {
       const token = await SecureStore.getItemAsync('token');
-
-      // 1. Log what we are sending
-      console.log("Sending Entry to:", `${API_URL}/${id}/entry`);
 
       const res = await fetch(`${API_URL}/${id}/entry`, {
         method: 'POST',
@@ -295,9 +314,7 @@ export default function RecordDetailsScreen() {
         })
       });
 
-      // 2. See what the server replies
       const text = await res.text();
-      console.log("SERVER RESPONSE:", text);
 
       if (res.ok) {
         Alert.alert("Success", "Entry Added!");
@@ -306,7 +323,6 @@ export default function RecordDetailsScreen() {
         setEntryImage(null);
         fetchRecordDetails();
       } else {
-        // Show the real error message from the server
         Alert.alert("Error", `Server says: ${text}`);
       }
     } catch (error) {
@@ -385,47 +401,117 @@ export default function RecordDetailsScreen() {
           </View>
         </View>
 
-        {/* Card 2: Main Surgery Card */}
+        {/* Card 2: Clinical Records & Prescriptions (Nurse / Doctor OPD entries) */}
         <View style={styles.card}>
-          <Text style={styles.cardTitle}>Surgery Card (Original)</Text>
+          <Text style={styles.cardTitle}>Clinical Records & Prescriptions</Text>
           <View style={styles.divider} />
-          <TouchableOpacity
-            activeOpacity={0.9}
-            onPress={() => setImageExpanded(!imageExpanded)}
-            style={[styles.imageContainer, imageExpanded && styles.imageContainerExpanded]}
-          >
-            <Image source={{ uri: record.surgeryCardImage }} style={styles.cardImage} resizeMode="cover" />
-          </TouchableOpacity>
-        </View>
-
-        {/* Card 3: Lab Reports */}
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Completed Lab Reports</Text>
-          <View style={styles.divider} />
-          {labReports.length > 0 ? (
-            labReports.map((report) => (
-              <View key={report._id} style={styles.labReportRow}>
+          {clinicalRecords.length > 0 ? (
+            clinicalRecords.map((cRec) => (
+              <View key={cRec._id} style={styles.labReportRow}>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.labReportTitle}>{report.title}</Text>
+                  <Text style={styles.labReportTitle}>{cRec.title} ({cRec.type})</Text>
                   <Text style={styles.labReportDate}>
-                    {new Date(report.date).toLocaleDateString()}
+                    {new Date(cRec.date || cRec.createdAt).toLocaleDateString()} • {cRec.doctorName || 'OPD'}
                   </Text>
-                  {report.description && (
-                    <Text style={styles.labReportDesc}>{report.description}</Text>
-                  )}
+                  {cRec.diagnosis ? (
+                    <Text style={[styles.labReportDesc, { fontStyle: 'normal', fontWeight: '600', color: '#334155', marginTop: 2 }]}>
+                      Diagnosis: {cRec.diagnosis}
+                    </Text>
+                  ) : null}
+                  {cRec.medications ? (
+                    <Text style={[styles.labReportDesc, { fontStyle: 'normal', color: '#475569', marginTop: 2 }]}>
+                      Rx: {cRec.medications}
+                    </Text>
+                  ) : null}
+                  {cRec.description ? (
+                    <Text style={styles.labReportDesc}>{cRec.description}</Text>
+                  ) : null}
                 </View>
                 <TouchableOpacity
                   style={styles.viewReportBtn}
-                  onPress={() => handleViewRecord(report._id)}
+                  onPress={() => handleViewRecord(cRec._id)}
                 >
-                  <Text style={styles.viewReportBtnText}>View & Download</Text>
+                  <Text style={styles.viewReportBtnText}>View</Text>
                 </TouchableOpacity>
               </View>
             ))
           ) : (
-            <Text style={styles.noLabText}>No lab reports uploaded for this patient yet.</Text>
+            <Text style={styles.noLabText}>No clinical records or prescriptions added yet.</Text>
           )}
         </View>
+
+        {/* Card 3: Lab Requests & Completed Lab Reports */}
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Lab Requests & Reports</Text>
+          <View style={styles.divider} />
+          {labRequests.length > 0 && labRequests.map((req) => (
+            <View key={req._id} style={styles.labReportRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.labReportTitle}>{req.title}</Text>
+                <Text style={styles.labReportDate}>
+                  {new Date(req.createdAt).toLocaleDateString()} • Status: {req.status?.toUpperCase()}
+                </Text>
+                {req.description ? (
+                  <Text style={styles.labReportDesc}>{req.description}</Text>
+                ) : null}
+              </View>
+              {req.status === 'completed' && req.recordId ? (
+                <TouchableOpacity
+                  style={styles.viewReportBtn}
+                  onPress={() => handleViewRecord(req.recordId)}
+                >
+                  <Text style={styles.viewReportBtnText}>View Report</Text>
+                </TouchableOpacity>
+              ) : (
+                <View style={{ backgroundColor: '#fef3c7', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6 }}>
+                  <Text style={{ fontSize: 11, fontWeight: '700', color: '#d97706' }}>PENDING</Text>
+                </View>
+              )}
+            </View>
+          ))}
+          {labReports.length > 0 ? (
+            labReports
+              .filter((r) => !labRequests.some((req) => String(req.recordId) === String(r._id)))
+              .map((report) => (
+                <View key={report._id} style={styles.labReportRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.labReportTitle}>{report.title}</Text>
+                    <Text style={styles.labReportDate}>
+                      {new Date(report.date).toLocaleDateString()}
+                    </Text>
+                    {report.description && (
+                      <Text style={styles.labReportDesc}>{report.description}</Text>
+                    )}
+                  </View>
+                  <TouchableOpacity
+                    style={styles.viewReportBtn}
+                    onPress={() => handleViewRecord(report._id)}
+                  >
+                    <Text style={styles.viewReportBtnText}>View & Download</Text>
+                  </TouchableOpacity>
+                </View>
+              ))
+          ) : (
+            labRequests.length === 0 && (
+              <Text style={styles.noLabText}>No lab requests or reports for this patient yet.</Text>
+            )
+          )}
+        </View>
+
+        {/* Card 4: Main Surgery Card */}
+        {record.surgeryCardImage ? (
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>Surgery Card (Original)</Text>
+            <View style={styles.divider} />
+            <TouchableOpacity
+              activeOpacity={0.9}
+              onPress={() => setImageExpanded(!imageExpanded)}
+              style={[styles.imageContainer, imageExpanded && styles.imageContainerExpanded]}
+            >
+              <Image source={{ uri: record.surgeryCardImage }} style={styles.cardImage} resizeMode="cover" />
+            </TouchableOpacity>
+          </View>
+        ) : null}
 
         {/* SECTION: PROGRESS ENTRIES (Timeline) */}
         <View style={styles.timelineHeader}>
@@ -594,7 +680,7 @@ export default function RecordDetailsScreen() {
         <View style={styles.recordModalOverlay}>
           <View style={styles.recordModalContentCard}>
             <View style={styles.recordModalHeaderRow}>
-              <Text style={styles.recordModalTitle} numberOfLines={1}>{selectedRecordData?.fileName || 'Record Details'}</Text>
+              <Text style={styles.recordModalTitle} numberOfLines={1}>{selectedRecordData?.title || selectedRecordData?.fileName || 'Record Details'}</Text>
               <TouchableOpacity onPress={() => setShowViewRecordModal(false)}>
                 <X size={24} color="#64748b" />
               </TouchableOpacity>
@@ -603,10 +689,24 @@ export default function RecordDetailsScreen() {
             <ScrollView showsVerticalScrollIndicator={false}>
               <View style={styles.recordDetailContainer}>
                 <View style={styles.recordMetaRow}>
-                  <Text style={styles.recordMetaText}>Type: {selectedRecordData?.fileType || 'N/A'}</Text>
+                  <Text style={styles.recordMetaText}>Type: {selectedRecordData?.type || selectedRecordData?.fileType || 'N/A'}</Text>
                 </View>
                 
-                <Text style={styles.recordModalLabel}>Description</Text>
+                {selectedRecordData?.diagnosis ? (
+                  <>
+                    <Text style={styles.recordModalLabel}>Diagnosis</Text>
+                    <Text style={styles.recordDescriptionText}>{selectedRecordData.diagnosis}</Text>
+                  </>
+                ) : null}
+
+                {selectedRecordData?.medications ? (
+                  <>
+                    <Text style={styles.recordModalLabel}>Prescribed Medications</Text>
+                    <Text style={styles.recordDescriptionText}>{selectedRecordData.medications}</Text>
+                  </>
+                ) : null}
+
+                <Text style={styles.recordModalLabel}>Clinical Notes / Description</Text>
                 <Text style={styles.recordDescriptionText}>
                   {selectedRecordData?.description || 'No description provided.'}
                 </Text>

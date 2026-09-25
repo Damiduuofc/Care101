@@ -97,15 +97,12 @@ router.post("/update", auth, async (req, res) => {
       });
 
       for (const appt of activeAppointments) {
-        const pred = await calculatePrediction(doctor._id, doctor.currentQueueNumber, appt.queueNumber);
-        
         req.io.to(`doctor:${doctor._id}`).emit("queueUpdated", {
           doctorId: doctor._id,
           currentServingNumber: doctor.currentQueueNumber,
           currentToken: doctor.currentQueueNumber,
           patientQueueNumber: appt.queueNumber,
-          estimatedWaitingMinutes: pred.estimatedWaitingMinutes,
-          estimatedArrivalTime: pred.estimatedArrivalTime,
+          peopleAhead: Math.max(0, (appt.queueNumber || 1) - doctor.currentQueueNumber),
           lastUpdated: new Date()
         });
 
@@ -167,39 +164,54 @@ router.post("/update", auth, async (req, res) => {
 });
 
 // ==========================================
-// 2. GET PATIENT ESTIMATION (GET /api/queue/patient/:patientId)
+// 2. GET PATIENT QUEUE STATUS (GET /api/queue/patient/:patientId)
 // ==========================================
 router.get("/patient/:patientId", auth, async (req, res) => {
   try {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    const appt = await Appointment.findOne({
-      patientId: req.params.patientId,
-      date: { $gte: today },
-      status: { $in: ["confirmed", "Confirmed", "pending", "Pending", "Waiting"] }
-    });
-
-    if (!appt) {
-      return res.status(404).json({ msg: "No active appointment found for today" });
+    let appt = null;
+    if (req.query.appointmentId) {
+      appt = await Appointment.findById(req.query.appointmentId);
     }
 
-    const doctor = await Doctor.findById(appt.doctorId);
-    if (!doctor) return res.status(404).json({ msg: "Doctor not found" });
+    if (!appt) {
+      const candidatePatientIds = [req.params.patientId, req.user?.id].filter(Boolean);
+      appt = await Appointment.findOne({
+        patientId: { $in: candidatePatientIds },
+        date: { $gte: today },
+        status: { $ne: "cancelled" }
+      }).sort({ date: 1 });
+    }
 
-    const currentServing = doctor.currentQueueNumber || 0;
-    const pred = await calculatePrediction(doctor._id, currentServing, appt.queueNumber);
+    if (!appt) {
+      return res.status(404).json({ msg: "No active appointment found" });
+    }
+
+    const doctor = appt.doctorId ? await Doctor.findById(appt.doctorId) : null;
+    const currentServing = doctor?.currentQueueNumber || 0;
+    const myQueueNumber = appt.queueNumber || 1;
+    const peopleAhead = Math.max(0, myQueueNumber - currentServing);
 
     res.json({
-      doctorName: doctor.name,
-      queueNumber: appt.queueNumber,
+      appointmentId: appt._id,
+      doctorName: doctor?.name || appt.doctorName || "Doctor",
+      department: appt.department || doctor?.specialization || "General",
+      allocatedRoom: doctor?.allocatedRoom || "Room TBA",
+      appointmentStatus: appt.status || "confirmed",
+      paymentStatus: appt.paymentStatus || "pending",
+      appointmentDate: appt.date,
+      isArrived: Boolean(doctor?.isArrived),
+      sessionStarted: Boolean(doctor?.sessionStarted),
+      queueNumber: myQueueNumber,
       currentServingNumber: currentServing,
       currentToken: currentServing,
-      ...pred,
+      peopleAhead,
       lastUpdated: new Date()
     });
   } catch (err) {
-    console.error("Patient Prediction Error:", err);
+    console.error("Patient Queue Status Error:", err);
     res.status(500).send("Server Error");
   }
 });

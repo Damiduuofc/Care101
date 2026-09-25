@@ -15,13 +15,14 @@ const SurgeryRecordSchema = new mongoose.Schema({
   patientId: { type: String, required: true },
   hospital: { type: String },
   
-  // The main surgery card
-  surgeryCardImage: { type: String, required: true }, 
+  // The main surgery card (optional when created via OPD consultation / nurse record book update)
+  surgeryCardImage: { type: String, default: "" }, 
   
   // ✅ THIS IS MISSING IN YOUR FILE:
   entries: [EntrySchema], 
   
-  createdAt: { type: Date, default: Date.now }
+  createdAt: { type: Date, default: Date.now },
+  updatedAt: { type: Date, default: Date.now }
 });
 
 export default mongoose.model("SurgeryRecord", SurgeryRecordSchema);

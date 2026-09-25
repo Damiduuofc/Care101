@@ -14,7 +14,7 @@ import {
     ScrollView,
     Image
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Search, ChevronRight, FileText, Award, X, Download } from 'lucide-react-native';
 import * as SecureStore from 'expo-secure-store';
@@ -42,17 +42,27 @@ export default function PatientRecordsListScreen() {
         fetchRecords();
     }, [user]);
 
+    useFocusEffect(
+        React.useCallback(() => {
+            fetchRecords();
+        }, [user])
+    );
+
+    const cleanDocName = (name?: string) => {
+        if (!name) return '';
+        return name.toLowerCase().replace(/^(dr|dr\.)\s+/i, '').replace(/[^a-z0-9]/g, '').trim();
+    };
+
     const fetchRecords = async () => {
         try {
             const token = await SecureStore.getItemAsync('token');
-            const patientId = user?.patientId;
-            const patientNIC = user?.nicNumber || user?.nic;
-
-            if (!patientId && !patientNIC) {
-                console.warn('No Patient ID or NIC found in user profile');
+            if (!token) {
                 setLoading(false);
                 return;
             }
+
+            const patientId = user?.patientId || user?.id || (user as any)?._id;
+            const patientNIC = user?.nicNumber || (user as any)?.nic;
 
             let surgeryUrl = `${API_URL}/surgery-records/patient/my-records?`;
             if (patientId) {
@@ -78,12 +88,12 @@ export default function PatientRecordsListScreen() {
                 })
             ]);
 
-            let surgeryData = [];
+            let surgeryData: any[] = [];
             if (surgeryRes.ok) {
                 surgeryData = await surgeryRes.json();
             }
 
-            let medicalData = [];
+            let medicalData: any[] = [];
             if (medicalRes.ok) {
                 medicalData = await medicalRes.json();
             }
@@ -93,15 +103,34 @@ export default function PatientRecordsListScreen() {
                 isSurgery: true
             }));
 
-            // Filter for reports uploaded by Lab Assistant (or containing lab assistant)
-            const directLabReports = medicalData
-                .filter((m: any) => m.doctorName === "Lab Assistant" || m.doctorName?.toLowerCase().includes("lab assistant"))
+            const surgeryDocIds = new Set(
+                surgeryData
+                    .map((s: any) => String(s.doctorId?._id || s.doctorId || ''))
+                    .filter(Boolean)
+            );
+            const surgeryDocNames = new Set(
+                surgeryData
+                    .map((s: any) => cleanDocName(s.doctorName || s.doctorId?.name))
+                    .filter(Boolean)
+            );
+
+            // Include direct Lab Assistant uploads AND any medical records whose doctor doesn't already have a record book card
+            const standaloneMedicalRecords = medicalData
+                .filter((m: any) => {
+                    const isLabAssistant = m.doctorName === "Lab Assistant" || m.doctorName?.toLowerCase().includes("lab assistant");
+                    if (isLabAssistant) return true;
+                    const mDocId = String(m.doctorId?._id || m.doctorId || '');
+                    const mDocName = cleanDocName(m.doctorName);
+                    if (mDocId && surgeryDocIds.has(mDocId)) return false;
+                    if (mDocName && surgeryDocNames.has(mDocName)) return false;
+                    return true;
+                })
                 .map((m: any) => ({
                     ...m,
                     isSurgery: false
                 }));
 
-            const combined = [...formattedSurgery, ...directLabReports].sort((a, b) => {
+            const combined = [...formattedSurgery, ...standaloneMedicalRecords].sort((a, b) => {
                 const dateA = new Date(a.updatedAt || a.date || a.createdAt);
                 const dateB = new Date(b.updatedAt || b.date || b.createdAt);
                 return dateB.getTime() - dateA.getTime();
@@ -231,7 +260,7 @@ export default function PatientRecordsListScreen() {
                         </View>
                         <View style={styles.doctorInfo}>
                             <Text style={styles.doctorNameText}>{doctorName}</Text>
-                            <Text style={styles.specializationText}>SURGERY RECORD</Text>
+                            <Text style={styles.specializationText}>MEDICAL RECORD BOOK</Text>
                             
                             <View style={styles.detailRow}>
                                 <Award size={14} color="#64748b" style={styles.inlineIcon} />
@@ -246,14 +275,17 @@ export default function PatientRecordsListScreen() {
                     <View style={styles.doctorCardFooter}>
                         <View style={styles.badge}>
                             <FileText size={12} color="#0d9488" style={styles.badgeIcon} />
-                            <Text style={styles.badgeText}>Medical Report</Text>
+                            <Text style={styles.badgeText}>Open Medical Record Book</Text>
                         </View>
                     </View>
                 </TouchableOpacity>
             );
         } else {
-            const title = item.title || 'Lab Report';
+            const title = item.title || 'Medical Record';
             const lastUpdate = formatDate(item.updatedAt || item.date || item.createdAt);
+            const isLab = item.type === 'lab_tests' || item.doctorName === 'Lab Assistant';
+            const typeLabel = item.type === 'prescriptions' ? 'PRESCRIPTION' : item.type === 'consultations' ? 'CONSULTATION' : isLab ? 'LAB REPORT' : 'MEDICAL REPORT';
+            const uploadedBy = item.doctorName || 'Care101 Medical Staff';
 
             return (
                 <TouchableOpacity
@@ -263,18 +295,22 @@ export default function PatientRecordsListScreen() {
                 >
                     <View style={styles.doctorCardMain}>
                         <View style={[styles.doctorAvatarContainer, { backgroundColor: '#e0f2fe', borderColor: '#bae6fd' }]}>
-                            <Text style={[styles.avatarText, { color: '#0284c7' }]}>LAB</Text>
+                            <Text style={[styles.avatarText, { color: '#0284c7' }]}>{isLab ? 'LAB' : 'REC'}</Text>
                         </View>
                         <View style={styles.doctorInfo}>
                             <Text style={styles.doctorNameText}>{title}</Text>
-                            <Text style={[styles.specializationText, { color: '#0284c7' }]}>LAB REPORT</Text>
+                            <Text style={[styles.specializationText, { color: '#0284c7' }]}>{typeLabel}</Text>
                             
                             <View style={styles.detailRow}>
                                 <Award size={14} color="#64748b" style={styles.inlineIcon} />
-                                <Text style={styles.infoText}>Uploaded by: Lab Assistant</Text>
+                                <Text style={styles.infoText}>Doctor / Staff: {uploadedBy}</Text>
                             </View>
                             
-                            <Text style={styles.hospitalText}>Hospital: Care101 Lab</Text>
+                            {item.diagnosis ? (
+                                <Text style={styles.hospitalText} numberOfLines={1}>Diagnosis: {item.diagnosis}</Text>
+                            ) : (
+                                <Text style={styles.hospitalText}>Hospital: Care101 Medical Center</Text>
+                            )}
                             <Text style={styles.dateText}>Date: {lastUpdate}</Text>
                         </View>
                         <ChevronRight size={20} color="#94a3b8" />
@@ -282,7 +318,7 @@ export default function PatientRecordsListScreen() {
                     <View style={styles.doctorCardFooter}>
                         <View style={[styles.badge, { backgroundColor: '#f0f9ff' }]}>
                             <FileText size={12} color="#0284c7" style={styles.badgeIcon} />
-                            <Text style={[styles.badgeText, { color: '#0284c7' }]}>View / Download</Text>
+                            <Text style={[styles.badgeText, { color: '#0284c7' }]}>View Details / Attachment</Text>
                         </View>
                     </View>
                 </TouchableOpacity>
@@ -343,8 +379,8 @@ export default function PatientRecordsListScreen() {
                     <View style={styles.modalContentCard}>
                         <View style={styles.modalHeaderRow}>
                             <View style={{ flex: 1, marginRight: 16 }}>
-                                <Text style={styles.modalTitle} numberOfLines={1}>{selectedRecordData?.fileName || 'Document'}</Text>
-                                <Text style={styles.modalSubtitle}>{selectedRecordData?.fileType || 'Attachment'}</Text>
+                                <Text style={styles.modalTitle} numberOfLines={1}>{selectedRecordData?.title || selectedRecordData?.fileName || 'Document'}</Text>
+                                <Text style={styles.modalSubtitle}>{selectedRecordData?.doctorName || selectedRecordData?.fileType || 'Medical Record'}</Text>
                             </View>
                             <TouchableOpacity onPress={() => setShowViewRecordModal(false)} style={styles.closeBtn}>
                                 <X size={20} color="#64748b" />
@@ -353,12 +389,26 @@ export default function PatientRecordsListScreen() {
                         
                         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 20 }}>
                             <View style={styles.recordDetailContainer}>
-                                {selectedRecordData?.description && (
+                                {selectedRecordData?.diagnosis ? (
+                                    <View style={{ marginBottom: 16 }}>
+                                        <Text style={styles.modalLabel}>Diagnosis</Text>
+                                        <Text style={styles.recordDescriptionText}>{selectedRecordData.diagnosis}</Text>
+                                    </View>
+                                ) : null}
+
+                                {selectedRecordData?.medications ? (
+                                    <View style={{ marginBottom: 16 }}>
+                                        <Text style={styles.modalLabel}>Prescribed Medications</Text>
+                                        <Text style={styles.recordDescriptionText}>{selectedRecordData.medications}</Text>
+                                    </View>
+                                ) : null}
+
+                                {selectedRecordData?.description ? (
                                     <View style={{ marginBottom: 20 }}>
-                                        <Text style={styles.modalLabel}>Description</Text>
+                                        <Text style={styles.modalLabel}>Clinical Notes / Description</Text>
                                         <Text style={styles.recordDescriptionText}>{selectedRecordData.description}</Text>
                                     </View>
-                                )}
+                                ) : null}
 
                                 <Text style={styles.modalLabel}>Preview</Text>
                                 {selectedRecordData?.fileData ? (

@@ -321,11 +321,29 @@ export default function PatientDashboardScreen() {
 
     // --- FETCH LIVE QUEUE DATA ---
     const fetchQueueStatus = async () => {
+        // Set immediate fallback from upcomingAppointment so modal always opens cleanly
+        if (upcomingAppointment) {
+            setQueueData((prev: any) => ({
+                doctorName: upcomingAppointment.doctorName || "Doctor",
+                department: upcomingAppointment.department || upcomingAppointment.specialty || "General",
+                appointmentStatus: upcomingAppointment.status || "confirmed",
+                queueNumber: upcomingAppointment.queueNumber || 1,
+                currentToken: prev?.currentToken ?? 0,
+                currentServingNumber: prev?.currentServingNumber ?? 0,
+                peopleAhead: prev?.peopleAhead ?? Math.max(0, (upcomingAppointment.queueNumber || 1) - (prev?.currentToken || 0)),
+                allocatedRoom: prev?.allocatedRoom || "Room TBA",
+                sessionStarted: prev?.sessionStarted || false,
+                ...prev
+            }));
+            setQueueVisible(true);
+        }
+
         try {
-            const patientId = user?._id || user?.id;
+            const patientId = user?._id || user?.id || upcomingAppointment?.patientId;
             if (!patientId) return;
 
-            const response = await fetch(`${API_URL}/queue/patient/${patientId}`, {
+            const apptQuery = upcomingAppointment?._id ? `?appointmentId=${upcomingAppointment._id}` : '';
+            const response = await fetch(`${API_URL}/queue/patient/${patientId}${apptQuery}`, {
                 method: 'GET',
                 headers: {
                     'Authorization': `Bearer ${token}`,
@@ -337,10 +355,12 @@ export default function PatientDashboardScreen() {
                 const data = await response.json();
                 setQueueData(data);
                 setQueueVisible(true);
-            } else {
+            } else if (!upcomingAppointment) {
                 Alert.alert("Error", "Unable to fetch live queue status.");
             }
-        } catch (error) { console.error(error); }
+        } catch (error) {
+            console.error(error);
+        }
     };
 
     // --- REAL-TIME REFRESH LOGIC ---
@@ -441,18 +461,54 @@ export default function PatientDashboardScreen() {
                                     <Text style={styles.dateMonth}>{formatDate(upcomingAppointment.date).month}</Text>
                                 </View>
                                 <View style={styles.appointDetails}>
-                                    <Text style={styles.doctorName}>{upcomingAppointment.doctorName || "Dr. Unknown"}</Text>
-                                    <Text style={styles.specialty}>{upcomingAppointment.specialty || "General"}</Text>
+                                    <Text style={styles.doctorName} numberOfLines={2} ellipsizeMode="tail">
+                                        {upcomingAppointment.doctorName || "Dr. Unknown"}
+                                    </Text>
+                                    <Text style={styles.specialty} numberOfLines={1}>
+                                        {upcomingAppointment.department || upcomingAppointment.specialty || "General"}
+                                    </Text>
                                     <View style={styles.timeRow}>
                                         <Clock size={14} color="#64748b" />
-                                        <Text style={styles.timeText}>Token: #{upcomingAppointment.queueNumber || "TBA"}</Text>
+                                        <Text style={styles.timeText}>
+                                            Queue Token: #{upcomingAppointment.queueNumber || 1}
+                                        </Text>
                                     </View>
-                                    <View style={[styles.statusBadge, { backgroundColor: '#ecfeff' }]}>
-                                        <Text style={[styles.statusText, { color: '#0891b2' }]}>{upcomingAppointment.status || 'Confirmed'}</Text>
+                                    <View
+                                        style={[
+                                            styles.statusBadge,
+                                            {
+                                                backgroundColor:
+                                                    (upcomingAppointment.status || '').toLowerCase() === 'confirmed'
+                                                        ? '#ecfeff'
+                                                        : '#fffbeb'
+                                            }
+                                        ]}
+                                    >
+                                        <Text
+                                            style={[
+                                                styles.statusText,
+                                                {
+                                                    color:
+                                                        (upcomingAppointment.status || '').toLowerCase() === 'confirmed'
+                                                            ? '#0891b2'
+                                                            : '#d97706'
+                                                }
+                                            ]}
+                                        >
+                                            {(upcomingAppointment.status || 'Confirmed').toUpperCase()}
+                                        </Text>
                                     </View>
                                 </View>
                             </View>
-                            <View style={styles.viewButton}><Text style={styles.viewButtonText}>Status</Text></View>
+                            <View style={styles.appointRight}>
+                                <View style={styles.queueBadgeMini}>
+                                    <Text style={styles.queueBadgeMiniLabel}>QUEUE</Text>
+                                    <Text style={styles.queueBadgeMiniValue}>#{upcomingAppointment.queueNumber || 1}</Text>
+                                </View>
+                                <View style={styles.viewButton}>
+                                    <Text style={styles.viewButtonText}>Check Status</Text>
+                                </View>
+                            </View>
                         </TouchableOpacity>
                     ) : (
                         <View style={styles.emptyCard}>
@@ -494,12 +550,54 @@ export default function PatientDashboardScreen() {
                         </View>
                         {queueData ? (
                             <View style={styles.queueContainer}>
-                                <View style={styles.tokenRow}>
-                                    <View style={styles.tokenBox}><Text style={styles.tokenLabel}>Your Token</Text><Text style={styles.tokenNumber}>{queueData.queueNumber || "--"}</Text></View>
-                                    <View style={[styles.tokenBox, styles.activeTokenBox]}>
-                                        <Text style={styles.activeTokenLabel}>Ongoing</Text><Text style={styles.activeTokenNumber}>{queueData.currentToken || "--"}</Text>
-                                        <View style={styles.liveIndicator}><View style={styles.liveDot} /><Text style={styles.liveText}>Live</Text></View>
+                                <View style={styles.queueDoctorInfoBox}>
+                                    <Text style={styles.queueDoctorName} numberOfLines={2}>
+                                        {queueData.doctorName || upcomingAppointment?.doctorName || "Doctor"}
+                                    </Text>
+                                    <Text style={styles.queueDoctorSub}>
+                                        {queueData.department || upcomingAppointment?.department || "General"} • {queueData.allocatedRoom || "Room TBA"}
+                                    </Text>
+                                    <View style={styles.queueStatusChipRow}>
+                                        <View style={[styles.statusBadge, { backgroundColor: '#ecfeff', marginTop: 0 }]}>
+                                            <Text style={[styles.statusText, { color: '#0891b2' }]}>
+                                                STATUS: {(queueData.appointmentStatus || upcomingAppointment?.status || 'Confirmed').toUpperCase()}
+                                            </Text>
+                                        </View>
+                                        <View style={[styles.statusBadge, { backgroundColor: queueData.sessionStarted ? '#f0fdf4' : '#f1f5f9', marginTop: 0 }]}>
+                                            <Text style={[styles.statusText, { color: queueData.sessionStarted ? '#16a34a' : '#64748b' }]}>
+                                                {queueData.sessionStarted ? 'SESSION LIVE' : 'WAITING TO START'}
+                                            </Text>
+                                        </View>
                                     </View>
+                                </View>
+
+                                <View style={styles.tokenRow}>
+                                    <View style={styles.tokenBox}>
+                                        <Text style={styles.tokenLabel}>Your Queue #</Text>
+                                        <Text style={styles.tokenNumber}>
+                                            #{queueData.queueNumber ?? upcomingAppointment?.queueNumber ?? "--"}
+                                        </Text>
+                                    </View>
+                                    <View style={[styles.tokenBox, styles.activeTokenBox]}>
+                                        <Text style={styles.activeTokenLabel}>Ongoing Token</Text>
+                                        <Text style={styles.activeTokenNumber}>
+                                            #{queueData.currentToken !== undefined ? queueData.currentToken : 0}
+                                        </Text>
+                                        <View style={styles.liveIndicator}>
+                                            <View style={styles.liveDot} />
+                                            <Text style={styles.liveText}>Live</Text>
+                                        </View>
+                                    </View>
+                                </View>
+
+                                <View style={styles.queueSummaryFooter}>
+                                    <Text style={styles.queueSummaryText}>
+                                        Patients Ahead: <Text style={{ fontWeight: '800', color: '#0f172a' }}>
+                                            {queueData.peopleAhead !== undefined
+                                                ? queueData.peopleAhead
+                                                : Math.max(0, (queueData.queueNumber || upcomingAppointment?.queueNumber || 1) - (queueData.currentToken || 0))}
+                                        </Text>
+                                    </Text>
                                 </View>
                             </View>
                         ) : <ActivityIndicator color="#06b6d4" />}
@@ -607,23 +705,27 @@ const styles = StyleSheet.create({
     actionSubtitle: { fontSize: 12, color: '#94a3b8' },
     
     // --- APPOINTMENT CARDS ---
-    appointmentCard: { backgroundColor: '#fff', borderRadius: 16, padding: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', elevation: 2 },
+    appointmentCard: { backgroundColor: '#fff', borderRadius: 16, padding: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', elevation: 2, borderWidth: 1, borderColor: '#f1f5f9' },
     emptyCard: { backgroundColor: '#f8fafc', borderRadius: 16, padding: 24, alignItems: 'center', borderWidth: 1, borderColor: '#e2e8f0', borderStyle: 'dashed' },
     emptyText: { color: '#94a3b8', marginVertical: 8 },
     bookNowText: { color: '#06b6d4', fontWeight: '600' },
-    appointLeft: { flexDirection: 'row', alignItems: 'center' },
-    dateBox: { backgroundColor: '#eff6ff', borderRadius: 12, width: 50, height: 60, alignItems: 'center', justifyContent: 'center', marginRight: 16 },
+    appointLeft: { flex: 1, flexDirection: 'row', alignItems: 'center', marginRight: 12 },
+    dateBox: { backgroundColor: '#eff6ff', borderRadius: 12, width: 52, height: 64, alignItems: 'center', justifyContent: 'center', marginRight: 14, flexShrink: 0 },
     dateDay: { fontSize: 18, fontWeight: '700', color: '#06b6d4' },
     dateMonth: { fontSize: 12, fontWeight: '600', color: '#60a5fa' },
-    appointDetails: { justifyContent: 'center' },
-    doctorName: { fontSize: 16, fontWeight: '600' },
-    specialty: { fontSize: 13, color: '#64748b' },
+    appointDetails: { flex: 1, justifyContent: 'center' },
+    doctorName: { fontSize: 15, fontWeight: '700', color: '#0f172a', lineHeight: 20, marginBottom: 2 },
+    specialty: { fontSize: 13, color: '#64748b', marginBottom: 4 },
     timeRow: { flexDirection: 'row', alignItems: 'center' },
-    timeText: { fontSize: 12, color: '#64748b', marginLeft: 4 },
+    timeText: { fontSize: 12, color: '#475569', fontWeight: '600', marginLeft: 4 },
     statusBadge: { alignSelf: 'flex-start', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, marginTop: 6 },
-    statusText: { fontSize: 11, fontWeight: '700' },
-    viewButton: { backgroundColor: '#f1f5f9', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20 },
-    viewButtonText: { fontSize: 12, fontWeight: '600', color: '#475569' },
+    statusText: { fontSize: 10, fontWeight: '700', letterSpacing: 0.4 },
+    appointRight: { alignItems: 'flex-end', justifyContent: 'center', flexShrink: 0, gap: 8 },
+    queueBadgeMini: { backgroundColor: '#f0fdfa', borderWidth: 1, borderColor: '#ccfbf1', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 5, alignItems: 'center', minWidth: 64 },
+    queueBadgeMiniLabel: { fontSize: 9, fontWeight: '700', color: '#0d9488', letterSpacing: 0.5 },
+    queueBadgeMiniValue: { fontSize: 16, fontWeight: '800', color: '#0f766e' },
+    viewButton: { backgroundColor: '#06b6d4', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12, flexShrink: 0 },
+    viewButtonText: { fontSize: 12, fontWeight: '700', color: '#fff' },
     
     // --- INFO CARD ---
     infoCard: { backgroundColor: '#ecfdf5', borderRadius: 16, padding: 20 },
@@ -633,19 +735,25 @@ const styles = StyleSheet.create({
     // --- QUEUE MODAL ---
     modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' },
     modalContent: { backgroundColor: '#fff', width: '90%', borderRadius: 20, padding: 20 },
-    modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
-    modalTitle: { fontSize: 20, fontWeight: '800' },
-    queueContainer: { flexDirection: 'column', gap: 15 },
+    modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
+    modalTitle: { fontSize: 20, fontWeight: '800', color: '#0f172a' },
+    queueContainer: { flexDirection: 'column', gap: 14 },
+    queueDoctorInfoBox: { backgroundColor: '#f8fafc', padding: 14, borderRadius: 14, borderWidth: 1, borderColor: '#e2e8f0' },
+    queueDoctorName: { fontSize: 16, fontWeight: '700', color: '#0f172a', marginBottom: 4 },
+    queueDoctorSub: { fontSize: 13, color: '#64748b', marginBottom: 10 },
+    queueStatusChipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
     tokenRow: { flexDirection: 'row', gap: 15 },
-    tokenBox: { flex: 1, backgroundColor: '#f1f5f9', borderRadius: 16, padding: 15, alignItems: 'center' },
+    tokenBox: { flex: 1, backgroundColor: '#f1f5f9', borderRadius: 16, padding: 15, alignItems: 'center', justifyContent: 'center' },
     activeTokenBox: { backgroundColor: '#ecfeff', borderColor: '#06b6d4', borderWidth: 2 },
-    tokenLabel: { fontSize: 12, color: '#64748b' },
-    tokenNumber: { fontSize: 32, fontWeight: '800' },
-    activeTokenLabel: { fontSize: 12, color: '#0891b2' },
-    activeTokenNumber: { fontSize: 36, fontWeight: '800', color: '#06b6d4' },
-    liveIndicator: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#06b6d4', paddingHorizontal: 8, borderRadius: 10 },
+    tokenLabel: { fontSize: 12, color: '#64748b', fontWeight: '600', marginBottom: 4 },
+    tokenNumber: { fontSize: 32, fontWeight: '800', color: '#0f172a' },
+    activeTokenLabel: { fontSize: 12, color: '#0891b2', fontWeight: '600', marginBottom: 4 },
+    activeTokenNumber: { fontSize: 34, fontWeight: '800', color: '#06b6d4' },
+    liveIndicator: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#06b6d4', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10, marginTop: 6 },
     liveDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#fff', marginRight: 4 },
     liveText: { color: '#fff', fontSize: 10, fontWeight: '700' },
+    queueSummaryFooter: { backgroundColor: '#f8fafc', paddingVertical: 10, paddingHorizontal: 14, borderRadius: 12, alignItems: 'center', borderWidth: 1, borderColor: '#f1f5f9' },
+    queueSummaryText: { fontSize: 13, color: '#475569', fontWeight: '600' },
     closeButton: { marginTop: 15, backgroundColor: '#0f172a', paddingVertical: 14, borderRadius: 12, alignItems: 'center' },
     closeButtonText: { color: '#fff', fontWeight: '700' },
 

@@ -236,7 +236,7 @@ export default function BookAppointmentScreen() {
                 if (response.ok) {
                     Alert.alert(
                         paymentStatus === 'paid' ? 'Payment Successful!' : 'Booking Confirmed',
-                        `Your Token: #${data.tokenNumber || 'Pending'}.\nWait time approx 20 mins.`,
+                        `Your Queue Token: #${data.queueNumber || data.tokenNumber || '1'}.`,
                         [{ text: 'OK', onPress: () => router.replace('/patient-dashboard') }]
                     );
                 } else {

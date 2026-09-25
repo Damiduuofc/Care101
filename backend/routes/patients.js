@@ -1,4 +1,5 @@
 import express from "express";
+import mongoose from "mongoose";
 import bcrypt from "bcryptjs";
 import Patient from "../models/Patient.js";
 import { auth } from "../middleware/auth.js";
@@ -16,10 +17,20 @@ router.get("/search-by-patientid/:patientId", auth, async (req, res) => {
             return res.status(400).json({ msg: "Patient ID is required" });
         }
 
-        // Search for patient by PatientID
-        const patient = await Patient.findOne({ patientId: patientId.trim().toUpperCase() })
+        const trimmed = patientId.trim();
+        let patient = await Patient.findOne({ patientId: trimmed.toUpperCase() })
             .select("-password")
             .lean();
+
+        if (!patient && mongoose.Types.ObjectId.isValid(trimmed)) {
+            patient = await Patient.findById(trimmed).select("-password").lean();
+        }
+
+        if (!patient) {
+            patient = await Patient.findOne({ nicNumber: new RegExp(`^${trimmed}$`, "i") })
+                .select("-password")
+                .lean();
+        }
 
         if (!patient) {
             return res.status(404).json({ msg: "Patient not found", found: false });
