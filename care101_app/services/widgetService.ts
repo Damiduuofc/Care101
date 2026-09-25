@@ -30,7 +30,6 @@ let widgetSocket: Socket | null = null;
 let activeToken: string | null = null;
 let activePatientId: string | null = null;
 let lastWidgetPayload: WidgetData | null = null;
-let syncInterval: ReturnType<typeof setInterval> | null = null;
 let appStateSubscription: any = null;
 
 export const WidgetService = {
@@ -292,21 +291,17 @@ export const WidgetService = {
       WidgetService.syncWithServer(token, patientId);
     });
 
-    // Continuous 4-second sync interval for guaranteed real-time reconciliation
-    if (syncInterval) clearInterval(syncInterval);
-    syncInterval = setInterval(() => {
-      if (activeToken && activePatientId) {
-        WidgetService.syncWithServer(activeToken, activePatientId);
-      }
-    }, 4000);
-
-    // Also sync whenever app transitions between background and foreground
+    // Re-verify state when app transitions between background and foreground (Android Foreground Service keeps Socket.IO active)
     if (appStateSubscription) {
       appStateSubscription.remove();
     }
     appStateSubscription = AppState.addEventListener('change', (nextState) => {
       if ((nextState === 'active' || nextState === 'background') && activeToken && activePatientId) {
-        WidgetService.syncWithServer(activeToken, activePatientId);
+        WidgetService.setAuthContext(
+          activeToken,
+          process.env.EXPO_PUBLIC_API_URL || 'http://localhost:5002',
+          activePatientId
+        );
       }
     });
   },
@@ -315,10 +310,6 @@ export const WidgetService = {
     if (widgetSocket) {
       widgetSocket.disconnect();
       widgetSocket = null;
-    }
-    if (syncInterval) {
-      clearInterval(syncInterval);
-      syncInterval = null;
     }
     if (appStateSubscription) {
       appStateSubscription.remove();

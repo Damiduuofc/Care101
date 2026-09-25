@@ -54,8 +54,6 @@ class QueueWidgetProvider : AppWidgetProvider() {
 
         private val executor = Executors.newSingleThreadExecutor()
         private val mainHandler = Handler(Looper.getMainLooper())
-        private var isPollingActive = false
-        private var pollingRunnable: Runnable? = null
 
         fun ensureNotificationChannel(context: Context) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -225,96 +223,16 @@ class QueueWidgetProvider : AppWidgetProvider() {
             for (widgetId in allWidgetIds) {
                 updateAppWidget(context, appWidgetManager, widgetId)
             }
-            if (allWidgetIds.isNotEmpty()) {
-                schedulePeriodicRefresh(context)
-            }
-        }
-
-        fun schedulePeriodicRefresh(context: Context) {
-            try {
-                val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager ?: return
-                val intent = Intent(context, QueueWidgetProvider::class.java).apply {
-                    action = ACTION_REFRESH
-                }
-                val pendingIntent = PendingIntent.getBroadcast(
-                    context,
-                    1001,
-                    intent,
-                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-                )
-                val triggerAt = SystemClock.elapsedRealtime() + 20_000L
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                    alarmManager.setAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, triggerAt, pendingIntent)
-                } else {
-                    alarmManager.set(AlarmManager.ELAPSED_REALTIME_WAKEUP, triggerAt, pendingIntent)
-                }
-            } catch (e: Exception) {
-                Log.w(TAG, "Unable to schedule widget alarm", e)
-            }
-        }
-
-        fun cancelPeriodicRefresh(context: Context) {
-            try {
-                val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager ?: return
-                val intent = Intent(context, QueueWidgetProvider::class.java).apply {
-                    action = ACTION_REFRESH
-                }
-                val pendingIntent = PendingIntent.getBroadcast(
-                    context,
-                    1001,
-                    intent,
-                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-                )
-                alarmManager.cancel(pendingIntent)
-            } catch (e: Exception) {
-                Log.w(TAG, "Unable to cancel widget alarm", e)
-            }
         }
 
         /**
-         * Continuous real-time polling engine: refreshes widget & notifications every 3 seconds
-         * while device screen is on, and every 12 seconds when screen is off.
+         * Event-driven one-shot fetch of the authenticated patient's queue/widget status.
+         * Preserves last known queue data in SharedPreferences if the connection is temporarily lost.
          */
-        fun startRealtimePolling(context: Context) {
+        fun fetchRemoteDataOnce(context: Context, onDoctorResolved: ((String?) -> Unit)? = null) {
             val appContext = context.applicationContext
-            schedulePeriodicRefresh(appContext)
-            if (isPollingActive && pollingRunnable != null) {
-                return
-            }
-            isPollingActive = true
-            pollingRunnable?.let { mainHandler.removeCallbacks(it) }
-
-            val runnable = object : Runnable {
-                override fun run() {
-                    if (!isPollingActive) return
-                    val prefs = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-                    val hasAuth = !prefs.getString(KEY_AUTH_TOKEN, null).isNullOrEmpty()
-                    if (!hasAuth) {
-                        isPollingActive = false
-                        return
-                    }
-
-                    fetchRemoteDataSync(appContext)
-
-                    val powerManager = appContext.getSystemService(Context.POWER_SERVICE) as? PowerManager
-                    val isScreenInteractive = powerManager?.isInteractive ?: true
-                    val nextDelay = if (isScreenInteractive) 3_000L else 12_000L
-                    mainHandler.postDelayed(this, nextDelay)
-                }
-            }
-            pollingRunnable = runnable
-            mainHandler.post(runnable)
-        }
-
-        fun stopRealtimePolling() {
-            isPollingActive = false
-            pollingRunnable?.let { mainHandler.removeCallbacks(it) }
-            pollingRunnable = null
-        }
-
-        fun fetchRemoteDataSync(context: Context) {
             executor.execute {
-                val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                val prefs = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
                 val apiUrl = prefs.getString(KEY_API_URL, null)
                 val token = prefs.getString(KEY_AUTH_TOKEN, null)
 
@@ -323,8 +241,9 @@ class QueueWidgetProvider : AppWidgetProvider() {
                 }
 
                 val cleanUrl = if (apiUrl.endsWith("/")) apiUrl.dropLast(1) else apiUrl
+                var resolvedDoctorId: String? = null
 
-                // 1. Fetch Widget Status
+                // 1. Fetch Authenticated Patient Widget Status
                 try {
                     val targetUrl = "$cleanUrl/appointments/widget-status"
                     val conn = (URL(targetUrl).openConnection() as HttpURLConnection).apply {
@@ -348,14 +267,24 @@ class QueueWidgetProvider : AppWidgetProvider() {
                         val responseJson = sb.toString()
                         val prevJson = prefs.getString(KEY_WIDGET_DATA, null)
                         prefs.edit().putString(KEY_WIDGET_DATA, responseJson).apply()
-                        checkAndNotifyStateTransition(context, prevJson, responseJson)
+                        try {
+                            val parsed = JSONObject(responseJson)
+                            val docId = parsed.optString("doctorId", "")
+                            if (docId.isNotEmpty() && docId != "null") {
+                                resolvedDoctorId = docId
+                            }
+                        } catch (_: Exception) {}
+
+                        checkAndNotifyStateTransition(appContext, prevJson, responseJson)
                         mainHandler.post {
-                            updateAllWidgets(context)
+                            updateAllWidgets(appContext)
+                            onDoctorResolved?.invoke(resolvedDoctorId)
                         }
                     }
                     conn.disconnect()
                 } catch (e: Exception) {
-                    Log.w(TAG, "Widget status poll error: ${e.message}")
+                    // Do NOT clear or overwrite KEY_WIDGET_DATA when connection is lost
+                    Log.w(TAG, "Widget status fetch failed (preserving last known state): ${e.message}")
                 }
 
                 // 2. Fetch Latest Unread Notifications to Pop on Phone Notification Bar
@@ -654,12 +583,11 @@ class QueueWidgetProvider : AppWidgetProvider() {
     override fun onEnabled(context: Context) {
         super.onEnabled(context)
         ensureNotificationChannel(context)
-        startRealtimePolling(context)
+        QueueForegroundService.startOrUpdate(context)
     }
 
     override fun onDisabled(context: Context) {
         super.onDisabled(context)
-        cancelPeriodicRefresh(context)
     }
 
     override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
@@ -667,15 +595,17 @@ class QueueWidgetProvider : AppWidgetProvider() {
         for (appWidgetId in appWidgetIds) {
             updateAppWidget(context, appWidgetManager, appWidgetId)
         }
-        startRealtimePolling(context)
+        QueueForegroundService.startOrUpdate(context)
     }
 
     override fun onReceive(context: Context, intent: Intent) {
         super.onReceive(context, intent)
         when (intent.action) {
             ACTION_REFRESH, Intent.ACTION_USER_PRESENT -> {
-                fetchRemoteDataSync(context)
-                startRealtimePolling(context)
+                QueueForegroundService.startOrUpdate(context)
+                fetchRemoteDataOnce(context) {
+                    QueueForegroundService.refreshNotificationAndRoom(context)
+                }
             }
             ACTION_UPDATE_DATA -> {
                 updateAllWidgets(context)
