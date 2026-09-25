@@ -78,6 +78,13 @@ class QueueWidgetProvider : AppWidgetProvider() {
             }
         }
 
+        fun startRealtimePolling(context: Context) {
+            QueueForegroundService.startOrUpdate(context)
+            fetchRemoteDataOnce(context) {
+                QueueForegroundService.refreshNotificationAndRoom(context)
+            }
+        }
+
         fun showSystemNotification(context: Context, uniqueId: String, title: String, message: String) {
             try {
                 ensureNotificationChannel(context)
