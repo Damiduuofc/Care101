@@ -385,6 +385,14 @@ router.get("/upcoming", auth, async (req, res) => {
 // ==========================================
 router.get("/widget-status", auth, async (req, res) => {
   try {
+    const formatDoctorName = (raw) => {
+      const trimmed = String(raw || "").trim();
+      if (!trimmed || trimmed.toLowerCase() === "null") return "Doctor";
+      const withoutPrefix = trimmed.replace(/^dr\.?\s*/i, "").trim();
+      if (!withoutPrefix || withoutPrefix.toLowerCase() === "doctor") return "Doctor";
+      return `Dr. ${withoutPrefix}`;
+    };
+
     const patientId = req.user.id || req.query.patientId;
     if (!patientId) {
       return res.json({ state: "empty", message: "Patient not identified" });
@@ -432,7 +440,8 @@ router.get("/widget-status", auth, async (req, res) => {
       if (!scheduledTime) scheduledTime = "Scheduled Today";
 
       const hospitalName = (doc && doc.hospital) ? doc.hospital : "SUWASEWANA HOSPITAL";
-      const doctorName = (doc && (doc.fullName || doc.name)) ? doc.name : todayAppt.doctorName;
+      const rawDoctorName = (doc && (doc.fullName || doc.name)) ? (doc.fullName || doc.name) : todayAppt.doctorName;
+      const doctorName = formatDoctorName(rawDoctorName);
       const myToken = todayAppt.queueNumber || 0;
       const ongoingToken = (doc && doc.currentQueueNumber) ? doc.currentQueueNumber : 0;
       const isArrived = !!(doc && doc.isArrived);
@@ -457,11 +466,12 @@ router.get("/widget-status", auth, async (req, res) => {
         if (nextAppt) {
           const nextDoc = nextAppt.doctorId;
           let nextRoom = (nextDoc && nextDoc.allocatedRoom) ? nextDoc.allocatedRoom : "Room TBA";
+          const rawNextDocName = (nextDoc && (nextDoc.fullName || nextDoc.name)) ? (nextDoc.fullName || nextDoc.name) : nextAppt.doctorName;
           return res.json({
             state: "completed",
             hasUpcoming: true,
             completedDoctor: doctorName,
-            nextDoctorName: (nextDoc && (nextDoc.fullName || nextDoc.name)) ? nextDoc.name : nextAppt.doctorName,
+            nextDoctorName: formatDoctorName(rawNextDocName),
             nextHospitalName: (nextDoc && nextDoc.hospital) ? nextDoc.hospital : "SUWASEWANA HOSPITAL",
             nextRoom,
             nextToken: nextAppt.queueNumber || "--",
@@ -531,7 +541,8 @@ router.get("/widget-status", auth, async (req, res) => {
       const doc = futureAppt.doctorId;
       const doctorId = doc && doc._id ? doc._id.toString() : null;
       const hospitalName = (doc && doc.hospital) ? doc.hospital : "SUWASEWANA HOSPITAL";
-      const doctorName = (doc && (doc.fullName || doc.name)) ? doc.name : futureAppt.doctorName;
+      const rawFutureDocName = (doc && (doc.fullName || doc.name)) ? (doc.fullName || doc.name) : futureAppt.doctorName;
+      const doctorName = formatDoctorName(rawFutureDocName);
       const room = (doc && doc.allocatedRoom) ? doc.allocatedRoom : "Room TBA";
       const isArrived = false;
       const channelingStatus = (doc && doc.channelingStatus) ? doc.channelingStatus : "On Time";

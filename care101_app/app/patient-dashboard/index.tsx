@@ -625,7 +625,9 @@ export default function PatientDashboardScreen() {
                                     </View>
                                     <View style={styles.appointDetails}>
                                         <Text style={styles.doctorName} numberOfLines={2} ellipsizeMode="tail">
-                                            {upcomingAppointment.doctorName || "Dr. Unknown"}
+                                            {upcomingAppointment.doctorName
+                                                ? `Dr. ${String(upcomingAppointment.doctorName).replace(/^dr\.?\s*/i, '').trim()}`
+                                                : "Dr. Unknown"}
                                         </Text>
                                         <Text style={styles.specialty} numberOfLines={1}>
                                             {upcomingAppointment.department || upcomingAppointment.specialty || "General"} • {queueData?.allocatedRoom || upcomingAppointment.allocatedRoom || "Room TBA"}
@@ -724,7 +726,9 @@ export default function PatientDashboardScreen() {
                             <View style={styles.queueContainer}>
                                 <View style={styles.queueDoctorInfoBox}>
                                     <Text style={styles.queueDoctorName} numberOfLines={2}>
-                                        {queueData.doctorName || upcomingAppointment?.doctorName || "Doctor"}
+                                        {(queueData.doctorName || upcomingAppointment?.doctorName)
+                                            ? `Dr. ${String(queueData.doctorName || upcomingAppointment?.doctorName).replace(/^dr\.?\s*/i, '').trim()}`
+                                            : "Doctor"}
                                     </Text>
                                     <Text style={styles.queueDoctorSub}>
                                         {queueData.department || upcomingAppointment?.department || "General"} • {queueData.allocatedRoom || upcomingAppointment?.allocatedRoom || "Room TBA"}

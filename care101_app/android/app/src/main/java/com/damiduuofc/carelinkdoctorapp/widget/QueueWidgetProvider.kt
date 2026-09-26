@@ -153,7 +153,7 @@ class QueueWidgetProvider : AppWidgetProvider() {
                 val currState = curr.optString("state", "empty")
                 if (currState == "empty") return
 
-                val doctor = curr.optString("doctorName", "Doctor")
+                val doctor = formatDoctorName(curr.optString("doctorName", "Doctor"))
                 val room = curr.optString("room", "Room TBA")
                 val myToken = curr.optString("myToken", "--")
                 val currOngoing = curr.optInt("ongoingToken", 0)
@@ -437,7 +437,7 @@ class QueueWidgetProvider : AppWidgetProvider() {
 
             val hospital = data.optString("hospitalName", "SUWASEWANA HOSPITAL").uppercase()
             val room = data.optString("room", "Room TBA")
-            val doctor = data.optString("doctorName", "Doctor")
+            val doctor = formatDoctorName(data.optString("doctorName", "Doctor"))
             val myToken = formatTokenNumber(data.optString("myToken", "--"))
             val ongoingToken = formatTokenNumber(data.optString("ongoingToken", "--"))
             val peopleAhead = data.optInt("peopleAhead", 0)
@@ -477,7 +477,7 @@ class QueueWidgetProvider : AppWidgetProvider() {
             views.setViewVisibility(R.id.layout_upcoming, View.VISIBLE)
             views.setViewVisibility(R.id.layout_completed, View.GONE)
 
-            val doctor = data.optString("doctorName", "Doctor")
+            val doctor = formatDoctorName(data.optString("doctorName", "Doctor"))
             val myToken = formatTokenNumber(data.optString("myToken", "--"))
             val hospital = data.optString("hospitalName", "SUWASEWANA HOSPITAL").uppercase()
             val room = data.optString("room", "Room TBA")
@@ -565,7 +565,7 @@ class QueueWidgetProvider : AppWidgetProvider() {
             views.setViewVisibility(R.id.layout_upcoming, View.GONE)
             views.setViewVisibility(R.id.layout_completed, View.VISIBLE)
 
-            val nextDoctor = data.optString("nextDoctorName", "Doctor")
+            val nextDoctor = formatDoctorName(data.optString("nextDoctorName", "Doctor"))
             val nextToken = formatTokenNumber(data.optString("nextToken", "--"))
             val nextHospital = data.optString("nextHospitalName", "Suwasewana Hospital")
             val nextRoom = data.optString("nextRoom", "Room TBA")
@@ -575,6 +575,18 @@ class QueueWidgetProvider : AppWidgetProvider() {
             views.setTextViewText(R.id.tv_completed_next_token, "Token #$nextToken")
             views.setTextViewText(R.id.tv_completed_next_hospital_room, "$nextHospital • $nextRoom")
             views.setTextViewText(R.id.tv_completed_next_date, "Date: $nextDate")
+        }
+
+        fun formatDoctorName(raw: String?): String {
+            val trimmed = raw?.trim().orEmpty()
+            if (trimmed.isEmpty() || trimmed.equals("null", ignoreCase = true)) {
+                return "Doctor"
+            }
+            val withoutPrefix = trimmed.replaceFirst(Regex("^(?i)dr\\.?\\s*"), "").trim()
+            if (withoutPrefix.isEmpty() || withoutPrefix.equals("Doctor", ignoreCase = true)) {
+                return "Doctor"
+            }
+            return "Dr. $withoutPrefix"
         }
 
         private fun formatTokenNumber(raw: String): String {

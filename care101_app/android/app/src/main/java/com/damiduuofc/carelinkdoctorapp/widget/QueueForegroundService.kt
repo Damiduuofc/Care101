@@ -187,7 +187,7 @@ class QueueForegroundService : Service() {
             try {
                 val data = JSONObject(rawJson)
                 val state = data.optString("state", "empty")
-                val doctor = data.optString("doctorName", "Doctor")
+                val doctor = QueueWidgetProvider.formatDoctorName(data.optString("doctorName", "Doctor"))
                 val room = data.optString("room", "Room TBA")
                 val myToken = data.optString("myToken", "--")
                 val ongoingToken = data.optString("ongoingToken", "--")
@@ -223,7 +223,7 @@ class QueueForegroundService : Service() {
                     }
                     "completed" -> {
                         if (data.optBoolean("hasUpcoming", false)) {
-                            val nextDoc = data.optString("nextDoctorName", "Doctor")
+                            val nextDoc = QueueWidgetProvider.formatDoctorName(data.optString("nextDoctorName", "Doctor"))
                             val nextToken = data.optString("nextToken", "--")
                             title = "Next Appointment: $nextDoc"
                             contentText = "Token #$nextToken • Live updates active"

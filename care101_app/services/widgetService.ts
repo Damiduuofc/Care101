@@ -32,6 +32,14 @@ let activePatientId: string | null = null;
 let lastWidgetPayload: WidgetData | null = null;
 let appStateSubscription: any = null;
 
+const formatDoctorName = (raw?: string | null): string => {
+  const trimmed = (raw || '').trim();
+  if (!trimmed || trimmed.toLowerCase() === 'null') return 'Doctor';
+  const withoutPrefix = trimmed.replace(/^dr\.?\s*/i, '').trim();
+  if (!withoutPrefix || withoutPrefix.toLowerCase() === 'doctor') return 'Doctor';
+  return `Dr. ${withoutPrefix}`;
+};
+
 export const WidgetService = {
   /**
    * Save auth and server details so Android native widget can self-refresh via background network calls.
@@ -67,11 +75,16 @@ export const WidgetService = {
   updateWidgetData: async (data: WidgetData) => {
     if (Platform.OS !== 'android' || !QueueWidgetModule) return;
     try {
-      lastWidgetPayload = data;
-      if (data.doctorId && widgetSocket?.connected) {
-        widgetSocket.emit('joinDoctorRoom', data.doctorId);
+      const normalizedData: WidgetData = {
+        ...data,
+        ...(data.doctorName ? { doctorName: formatDoctorName(data.doctorName) } : {}),
+        ...(data.nextDoctorName ? { nextDoctorName: formatDoctorName(data.nextDoctorName) } : {}),
+      };
+      lastWidgetPayload = normalizedData;
+      if (normalizedData.doctorId && widgetSocket?.connected) {
+        widgetSocket.emit('joinDoctorRoom', normalizedData.doctorId);
       }
-      await QueueWidgetModule.updateWidgetData(JSON.stringify(data));
+      await QueueWidgetModule.updateWidgetData(JSON.stringify(normalizedData));
     } catch (error) {
       console.warn('QueueWidgetModule.updateWidgetData error:', error);
     }
@@ -199,10 +212,11 @@ export const WidgetService = {
           });
 
           if (isArrived) {
+            const docLabel = formatDoctorName(payload.doctorName || lastWidgetPayload.doctorName);
             await WidgetService.showLocalNotification(
               `arrival_${payload.doctorId}_${new Date().toDateString()}`,
               'Doctor Arrived at Clinic',
-              `Dr. ${payload.doctorName || lastWidgetPayload.doctorName || 'Doctor'} has arrived at ${room}. Your Token is #${lastWidgetPayload.myToken || '--'}.`
+              `${docLabel} has arrived at ${room}. Your Token is #${lastWidgetPayload.myToken || '--'}.`
             );
           }
         }
@@ -254,12 +268,13 @@ export const WidgetService = {
             delayMessage: isDelayed ? `Doctor Delayed: ${status}` : 'Doctor On Time',
           });
 
+          const docLabel = formatDoctorName(payload.doctorName || lastWidgetPayload.doctorName);
           await WidgetService.showLocalNotification(
             `delay_${payload.doctorId}_${status}`,
             isDelayed ? 'Doctor Delay Notice' : 'Doctor Back On Schedule',
             isDelayed
-              ? `Dr. ${payload.doctorName || lastWidgetPayload.doctorName || 'Doctor'} is ${status} (${room}).`
-              : `Good news! Dr. ${payload.doctorName || lastWidgetPayload.doctorName || 'Doctor'} is now on schedule.`
+              ? `${docLabel} is ${status} (${room}).`
+              : `Good news! ${docLabel} is now on schedule.`
           );
         }
       }
@@ -344,7 +359,12 @@ export const WidgetService = {
       });
 
       if (res.ok) {
-        const payload: WidgetData = await res.json();
+        const rawPayload: WidgetData = await res.json();
+        const payload: WidgetData = {
+          ...rawPayload,
+          ...(rawPayload.doctorName ? { doctorName: formatDoctorName(rawPayload.doctorName) } : {}),
+          ...(rawPayload.nextDoctorName ? { nextDoctorName: formatDoctorName(rawPayload.nextDoctorName) } : {}),
+        };
         lastWidgetPayload = payload;
         if (payload.doctorId && widgetSocket?.connected) {
           widgetSocket.emit('joinDoctorRoom', payload.doctorId);
