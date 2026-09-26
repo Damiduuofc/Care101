@@ -98,15 +98,21 @@ export default function PatientRecordDetailsScreen() {
                         return false;
                     };
 
-                    // Fetch completed medical records (patient's own endpoint)
-                    const recordsRes = await fetch(`${baseApi}/medical-records/my-records`, {
-                        headers: {
-                            Authorization: `Bearer ${token}`,
-                            'Content-Type': 'application/json',
-                            'ngrok-skip-browser-warning': 'true'
-                        }
-                    });
-                    if (recordsRes.ok) {
+                    const lookupPatientId = patId || data.patientId;
+                    const commonHeaders = {
+                        Authorization: `Bearer ${token}`,
+                        'Content-Type': 'application/json',
+                        'ngrok-skip-browser-warning': 'true'
+                    };
+
+                    const [recordsRes, reqsRes] = await Promise.all([
+                        fetch(`${baseApi}/medical-records/my-records`, { headers: commonHeaders }),
+                        lookupPatientId
+                            ? fetch(`${baseApi}/lab-requests/patient/${lookupPatientId}`, { headers: commonHeaders })
+                            : Promise.resolve(null)
+                    ]);
+
+                    if (recordsRes && recordsRes.ok) {
                         const recordsData = await recordsRes.json();
                         const doctorRecords = (Array.isArray(recordsData) ? recordsData : []).filter((r: any) =>
                             isSameDoctor(r.doctorId, r.doctorName)
@@ -115,23 +121,12 @@ export default function PatientRecordDetailsScreen() {
                         setClinicalRecords(doctorRecords.filter((r: any) => r.type !== 'lab_tests'));
                     }
 
-                    // Fetch lab requests (pending & completed)
-                    const lookupPatientId = patId || data.patientId;
-                    if (lookupPatientId) {
-                        const reqsRes = await fetch(`${baseApi}/lab-requests/patient/${lookupPatientId}`, {
-                            headers: {
-                                Authorization: `Bearer ${token}`,
-                                'Content-Type': 'application/json',
-                                'ngrok-skip-browser-warning': 'true'
-                            }
-                        });
-                        if (reqsRes.ok) {
-                            const reqsData = await reqsRes.json();
-                            const docReqs = (Array.isArray(reqsData) ? reqsData : []).filter((req: any) =>
-                                isSameDoctor(req.doctorId, req.doctorName)
-                            );
-                            setLabRequests(docReqs);
-                        }
+                    if (reqsRes && reqsRes.ok) {
+                        const reqsData = await reqsRes.json();
+                        const docReqs = (Array.isArray(reqsData) ? reqsData : []).filter((req: any) =>
+                            isSameDoctor(req.doctorId, req.doctorName)
+                        );
+                        setLabRequests(docReqs);
                     }
                 } catch (err) {
                     console.error("Failed to load clinical/lab records:", err);

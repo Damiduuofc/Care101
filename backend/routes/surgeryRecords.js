@@ -46,7 +46,10 @@ router.get("/", auth, async (req, res) => {
         }
       }
     }
-    const records = await SurgeryRecord.find({ doctorId: queryDoctorId }).sort({ updatedAt: -1, createdAt: -1 });
+    const records = await SurgeryRecord.find({ doctorId: queryDoctorId })
+      .select("-surgeryCardImage -entries.images")
+      .sort({ updatedAt: -1, createdAt: -1 })
+      .lean();
     res.json(records);
   } catch (err) {
     console.error(err.message);
@@ -214,12 +217,19 @@ router.get("/patient/my-records", auth, async (req, res) => {
     // 2. Auto-heal / ensure SurgeryRecord book exists for every doctor who has MedicalRecords or LabRequests for this patient
     if (patient) {
       try {
-        const [medRecords, labReqs] = await Promise.all([
-          MedicalRecord.find({ patientId: patient._id }).lean(),
-          LabRequest.find({ patientId: patient._id }).lean()
+        const patCode = (patient.patientId || String(patient._id)).trim().toUpperCase();
+        const existingMatchOr = [{ patientId: patCode }, { patientId: String(patient._id) }];
+        if (patient.nicNumber) {
+          existingMatchOr.push({ nic: new RegExp(`^${patient.nicNumber.trim()}$`, "i") });
+        }
+
+        const [medRecords, labReqs, existingBooks] = await Promise.all([
+          MedicalRecord.find({ patientId: patient._id }).select("-fileData").lean(),
+          LabRequest.find({ patientId: patient._id }).lean(),
+          SurgeryRecord.find({ $or: existingMatchOr }).select("doctorId").lean()
         ]);
 
-        const seenDoctorIds = new Set();
+        const seenDoctorIds = new Set(existingBooks.map((b) => String(b.doctorId)));
 
         for (const mr of medRecords) {
           if (mr.doctorName === "Self Uploaded" || mr.doctorName?.toLowerCase().includes("lab assistant")) continue;
@@ -277,10 +287,10 @@ router.get("/patient/my-records", auth, async (req, res) => {
       return res.status(400).json({ msg: "Patient ID or NIC is required" });
     }
 
-    // Find all surgery records matching query
+    // Find all surgery records matching query (excluding heavy Base64 images from list payload)
     const records = await SurgeryRecord.find({ $or: orConditions })
-      .populate('doctorId', 'name email specialization profileImage slmcReg hospital')
-      .select("name hospital surgeryCardImage entries createdAt updatedAt doctorId patientId nic")
+      .populate('doctorId', 'name email specialization slmcReg hospital')
+      .select("name hospital entries.date entries.notes createdAt updatedAt doctorId patientId nic")
       .sort({ updatedAt: -1, createdAt: -1 })
       .lean();
 

@@ -26,4 +26,7 @@ const MedicalRecordSchema = new mongoose.Schema({
   updatedAt: { type: Date, default: Date.now }
 });
 
+MedicalRecordSchema.index({ patientId: 1, date: -1, createdAt: -1 });
+MedicalRecordSchema.index({ doctorId: 1, date: -1 });
+
 export default mongoose.model("MedicalRecord", MedicalRecordSchema);

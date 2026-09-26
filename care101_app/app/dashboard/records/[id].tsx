@@ -222,13 +222,17 @@ export default function RecordDetailsScreen() {
           }
 
           if (patId) {
-            const recordsRes = await fetch(`${baseApi}/medical-records/patient/${patId}`, {
-              headers: {
-                Authorization: `Bearer ${token}`,
-                'Content-Type': 'application/json',
-                'ngrok-skip-browser-warning': 'true'
-              }
-            });
+            const commonHeaders = {
+              Authorization: `Bearer ${token}`,
+              'Content-Type': 'application/json',
+              'ngrok-skip-browser-warning': 'true'
+            };
+
+            const [recordsRes, reqsRes] = await Promise.all([
+              fetch(`${baseApi}/medical-records/patient/${patId}`, { headers: commonHeaders }),
+              fetch(`${baseApi}/lab-requests/patient/${patId}`, { headers: commonHeaders })
+            ]);
+
             if (recordsRes.ok) {
               const recordsData = await recordsRes.json();
               const allRecords = Array.isArray(recordsData) ? recordsData : [];
@@ -236,13 +240,6 @@ export default function RecordDetailsScreen() {
               setClinicalRecords(allRecords.filter((r: any) => r.type !== 'lab_tests'));
             }
 
-            const reqsRes = await fetch(`${baseApi}/lab-requests/patient/${patId}`, {
-              headers: {
-                Authorization: `Bearer ${token}`,
-                'Content-Type': 'application/json',
-                'ngrok-skip-browser-warning': 'true'
-              }
-            });
             if (reqsRes.ok) {
               const reqsData = await reqsRes.json();
               setLabRequests(Array.isArray(reqsData) ? reqsData : []);

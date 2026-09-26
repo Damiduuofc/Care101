@@ -13,4 +13,7 @@ const LabRequestSchema = new mongoose.Schema({
   createdAt: { type: Date, default: Date.now }
 });
 
+LabRequestSchema.index({ patientId: 1, createdAt: -1 });
+LabRequestSchema.index({ status: 1, createdAt: -1 });
+
 export default mongoose.model("LabRequest", LabRequestSchema);

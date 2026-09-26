@@ -38,10 +38,6 @@ export default function PatientRecordsListScreen() {
     const [showViewRecordModal, setShowViewRecordModal] = useState(false);
     const [fetchingRecord, setFetchingRecord] = useState(false);
 
-    useEffect(() => {
-        fetchRecords();
-    }, [user]);
-
     useFocusEffect(
         React.useCallback(() => {
             fetchRecords();

@@ -202,10 +202,13 @@ router.get("/all", auth, async (req, res) => {
       .populate("patientId", "patientId fullName nicNumber email mobileNumber gender dateOfBirth")
       .populate("doctorId", "name fullName nameWithInitials specialization")
       .populate("billId")
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .lean();
      
-     const enrichedRequests = await Promise.all(requests.map(async (r) => {
-       const obj = r.toObject();
+     const fallbackDoc = await Doctor.findOne().select("name fullName nameWithInitials").lean();
+     const fallbackDocName = resolveDoctorDisplay(fallbackDoc) || "Dr. Medical Officer";
+
+     const enrichedRequests = await Promise.all(requests.map(async (obj) => {
        let docName = obj.doctorName;
 
        // If docName is missing or generic "Doctor"
@@ -218,7 +221,7 @@ router.get("/all", auth, async (req, res) => {
          if (!docName || docName.trim() === "Doctor") {
            const patId = obj.patientId?._id || obj.patientId;
            if (patId) {
-             const appt = await Appointment.findOne({ patientId: patId }).sort({ createdAt: -1 });
+             const appt = await Appointment.findOne({ patientId: patId }).sort({ createdAt: -1 }).select("doctorName").lean();
              if (appt && appt.doctorName && appt.doctorName.trim() !== "Doctor") {
                docName = appt.doctorName.startsWith("Dr.") ? appt.doctorName : `Dr. ${appt.doctorName}`;
              }
@@ -226,19 +229,11 @@ router.get("/all", auth, async (req, res) => {
          }
 
          if (!docName || docName.trim() === "Doctor") {
-           const anyDoc = await Doctor.findOne();
-           if (anyDoc) {
-             const dName = resolveDoctorDisplay(anyDoc);
-             if (dName) docName = dName;
-           }
-         }
-
-         if (!docName || docName.trim() === "Doctor") {
-           docName = "Dr. Medical Officer";
+           docName = fallbackDocName;
          }
 
          // Heal DB record asynchronously
-         LabRequest.updateOne({ _id: r._id }, { doctorName: docName }).exec().catch(() => {});
+         LabRequest.updateOne({ _id: obj._id }, { doctorName: docName }).exec().catch(() => {});
        } else if (!docName.startsWith("Dr.") && !docName.startsWith("Nurse") && !docName.startsWith("Lab")) {
          docName = `Dr. ${docName}`;
        }
@@ -259,17 +254,20 @@ router.get("/patient/:patientId", auth, async (req, res) => {
   try {
     let targetPatientId = req.params.patientId;
     if (!mongoose.Types.ObjectId.isValid(targetPatientId)) {
-      const p = await Patient.findOne({ patientId: String(targetPatientId).trim().toUpperCase() });
+      const p = await Patient.findOne({ patientId: String(targetPatientId).trim().toUpperCase() }).select("_id").lean();
       if (p) targetPatientId = p._id;
     }
     const requests = await LabRequest.find({ patientId: targetPatientId })
       .populate("patientId", "patientId fullName nicNumber email mobileNumber gender dateOfBirth")
       .populate("doctorId", "name fullName nameWithInitials specialization")
       .populate("billId")
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .lean();
 
-    const enrichedRequests = await Promise.all(requests.map(async (r) => {
-      const obj = r.toObject();
+    const fallbackDoc = await Doctor.findOne().select("name fullName nameWithInitials").lean();
+    const fallbackDocName = resolveDoctorDisplay(fallbackDoc) || "Dr. Medical Officer";
+
+    const enrichedRequests = await Promise.all(requests.map(async (obj) => {
       let docName = obj.doctorName;
 
       if (!docName || docName.trim() === "Doctor" || docName.trim() === "Nurse Requested") {
@@ -279,25 +277,17 @@ router.get("/patient/:patientId", auth, async (req, res) => {
         }
 
         if (!docName || docName.trim() === "Doctor") {
-          const appt = await Appointment.findOne({ patientId: targetPatientId }).sort({ createdAt: -1 });
+          const appt = await Appointment.findOne({ patientId: targetPatientId }).sort({ createdAt: -1 }).select("doctorName").lean();
           if (appt && appt.doctorName && appt.doctorName.trim() !== "Doctor") {
             docName = appt.doctorName.startsWith("Dr.") ? appt.doctorName : `Dr. ${appt.doctorName}`;
           }
         }
 
         if (!docName || docName.trim() === "Doctor") {
-          const anyDoc = await Doctor.findOne();
-          if (anyDoc) {
-            const dName = resolveDoctorDisplay(anyDoc);
-            if (dName) docName = dName;
-          }
+          docName = fallbackDocName;
         }
 
-        if (!docName || docName.trim() === "Doctor") {
-          docName = "Dr. Medical Officer";
-        }
-
-        LabRequest.updateOne({ _id: r._id }, { doctorName: docName }).exec().catch(() => {});
+        LabRequest.updateOne({ _id: obj._id }, { doctorName: docName }).exec().catch(() => {});
       } else if (!docName.startsWith("Dr.") && !docName.startsWith("Nurse") && !docName.startsWith("Lab")) {
         docName = `Dr. ${docName}`;
       }

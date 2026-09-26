@@ -25,4 +25,8 @@ const SurgeryRecordSchema = new mongoose.Schema({
   updatedAt: { type: Date, default: Date.now }
 });
 
+SurgeryRecordSchema.index({ doctorId: 1, updatedAt: -1, createdAt: -1 });
+SurgeryRecordSchema.index({ patientId: 1, updatedAt: -1 });
+SurgeryRecordSchema.index({ nic: 1 });
+
 export default mongoose.model("SurgeryRecord", SurgeryRecordSchema);
