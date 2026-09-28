@@ -1,120 +1,204 @@
+<div align="center">
+
+[![License](https://img.shields.io/github/license/damiduuofc/Care101.svg)](./LICENSE)
+[![Node.js Version](https://img.shields.io/badge/node-%3E%3D18.0.0-brightgreen.svg)](https://nodejs.org/)
+[![Next.js](https://img.shields.io/badge/Next.js-15-black?logo=next.js&logoColor=white)](https://nextjs.org/)
+[![Expo](https://img.shields.io/badge/Expo-53-000020?logo=expo&logoColor=white)](https://expo.dev/)
+
+</div>
+
 # Care101
 
-**Care101** is a comprehensive healthcare platform designed to bridge the gap between patients, doctors, and administration. It features a modern web portal for patients and admins, a dedicated mobile application for doctors (and patients), and a robust backend system to manage data and interactions.
+<div align="center">
+  <img src="./Care101.jpeg" alt="Care101 banner" width="1200" />
+</div>
 
-## 📂 Project Structure
+Care101 is a healthcare platform built to connect patients, doctors, and administrators in one streamlined system. It brings together patient access, doctor workflows, AI-assisted assistance, billing, appointment tracking, and operational management in a modern digital experience.
 
-The project is organized into three main components:
+## Overview
 
-- **`frontend/`**: The web application built with Next.js, serving as the Patient Portal and Admin Dashboard.
-- **`backend/`**: The centralized server-side API managing data, authentication, AI integration, and logic.
-- **`care101_app/`**: The cross-platform mobile application built with Expo, primarily for Doctors but includes Patient features.
+The platform includes:
+
+- A web portal for patients and administrators
+- A mobile app for doctors and patients
+- A Node.js backend for business logic, APIs, authentication, AI features, and payment processing
+- MongoDB-powered data management for healthcare records and workflows
+
+## Core Features
+
+- Appointment scheduling and tracking
+- Patient and doctor profile management
+- AI-assisted support and healthcare workflow automation
+- Medical records and consultation history
+- Lab and surgery tracking
+- Notifications and updates
+- Finance and billing operations
+- Secure authentication and role-based access control
+
+## Project Structure
+
+- frontend/ — Patient portal and admin web app built with Next.js
+- backend/ — Express API, MongoDB models, services, and middleware
+- care101_app/ — Expo-based mobile application for doctors and patients
+
+## Tech Stack
+
+### Web Frontend
+- Next.js 15
+- TypeScript
+- Tailwind CSS
+- Radix UI
+- Framer Motion
+- Lucide React
+
+### Backend
+- Node.js
+- Express.js
+- MongoDB with Mongoose
+- JWT authentication
+- Bcrypt password hashing
+- Stripe payments
+- NVIDIA AI integration
+- Local uploads storage for generated files
+
+### Mobile App
+- Expo
+- React Native
+- TypeScript
+- NativeWind
+- Expo Router
+- AsyncStorage / Secure Store
+- Stripe React Native SDK
 
 ---
 
-## 🛠️ Tech Stack
+## Prerequisites
 
-### Frontend (Web)
-- **Framework**: [Next.js 15](https://nextjs.org/) (App Router)
-- **Language**: TypeScript / JavaScript
-- **Styling**: Tailwind CSS, Radix UI, Lucide React, Framer Motion
-- **AI Integration**: Google Genkit AI
-- **State Management**: React Hooks / Context
+Before starting the app, make sure you have:
 
-### Backend (API)
-- **Runtime**: Node.js
-- **Framework**: Express.js
-- **Database**: MongoDB (via Mongoose)
-- **Authentication**: JWT, Bcrypt
-- **AI/LLM**: NVIDIA_API_KEY
-- **Payments**: Stripe
-- **File Storage**: Local `uploads/` directory (served statically)
-
-### Mobile App (Doctor & Patient)
-- **Framework**: [Expo](https://expo.dev/) (React Native)
-- **Language**: TypeScript / JavaScript
-- **Styling**: NativeWind (Tailwind for React Native)
-- **Routing**: Expo Router
-- **Payments**: @stripe/stripe-react-native
-- **Storage**: AsyncStorage, Expo Secure Store
+- Node.js v18 or later
+- npm or yarn
+- MongoDB instance (local or Atlas)
+- Expo CLI for the mobile app
 
 ---
 
-## 🚀 Getting Started
+## 1. Backend Setup
 
-### Prerequisites
-- [Node.js](https://nodejs.org/) (v18 or higher recommended)
-- [npm](https://www.npmjs.com/) or yarn
-- [Expo CLI](https://docs.expo.dev/get-started/installation/) (for the mobile app)
-- MongoDB instance (Local or Atlas)
-
-### 1. Backend Setup
-The backend is the core of the application. Start it first.
+From the project root:
 
 ```bash
 cd backend
 npm install
+```
 
+Create a `.env` file inside `backend/` with the required variables:
 
-
-
-create a .env file with the following variables:
+```env
 PORT=5000
-MONGO_URI
-JWT_SECRET
-STRIPE_SECRET_KEY
-NVIDIA_API_KEY
+MONGO_URI=your_mongodb_connection_string
+JWT_SECRET=your_jwt_secret
+STRIPE_SECRET_KEY=your_stripe_secret_key
+NVIDIA_API_KEY=your_nvidia_api_key
+```
 
+Then start the server:
+
+```bash
 npm run dev
 ```
-The server will typically start on `http://localhost:5000`.
 
-### 2. Frontend Setup (Web App)
+The backend should run at:
+
+```text
+http://localhost:5000
+```
+
+---
+
+## 2. Frontend Setup
 
 ```bash
 cd frontend
 npm install
-
-create a .env file with the following variables:
-NEXT_PUBLIC_API_URL=http://localhost:5000/api
-
-npm run dev
 ```
-The web app will run on `http://localhost:3000`.
 
-### 3. Mobile App Setup
+Create a `.env` file inside `frontend/`:
+
+```env
+NEXT_PUBLIC_API_URL=http://localhost:5000/api
+```
+
+Start the app:
 
 ```bash
-cd care101_app
-
-create a .env file with the following variables:
-# ipconfig getifaddr en0
-EXPO_PUBLIC_API_URL
-EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY
-
-npm install
-npx expo start
+npm run dev
 ```
-Use the Expo Go app on your phone or an emulator to scan the QR code and run the app.
+
+The frontend should run at:
+
+```text
+http://localhost:3000
+```
 
 ---
 
-## 📄 Documentation
+## 3. Mobile App Setup
 
-For detailed instructions on building and deploying the application for production, please refer to the [Build Guide](./BUILD_GUIDE.md).
+```bash
+cd care101_app
+npm install
+```
 
-## 👥 Authors
+Create a `.env` file inside `care101_app/`:
 
-- **Damiduuofc** - *Initial work*
+```env
+EXPO_PUBLIC_API_URL=http://your_local_ip:5000/api
+EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY=your_stripe_publishable_key
+```
 
-## 📄 License
+To find your local IP on macOS:
+
+```bash
+ipconfig getifaddr en0
+```
+To find your local IP on Windows:
+
+```bash
+ipconfig
+```
+
+Then run the app:
+
+```bash
+npx expo start
+```
+
+Use Expo Go on your phone or an emulator to scan the QR code.
+
+---
+
+## Typical Local Development Flow
+
+1. Start MongoDB
+2. Start backend
+3. Start frontend
+4. Start mobile app
+5. Sign in with your configured users or create test accounts
+
+---
+
+## Documentation
+
+For production deployment and build guidance, see the build guide in the repository documentation.
+
+---
+
+## License
 
 This project is licensed under the ISC License.
 
+## Author
 
-git switch main
-git pull
-
-git switch Dev/Damidu
-git merge main
+- Damiduuofc
 
