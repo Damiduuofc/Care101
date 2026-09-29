@@ -8,7 +8,6 @@ import { Platform, View, ActivityIndicator, LogBox } from 'react-native';
 import * as NavigationBar from 'expo-navigation-bar';
 import { StripeProvider } from '@stripe/stripe-react-native';
 
-// ✅ Import your ChatProvider
 import { ChatProvider } from '@/context/ChatContext';
 
 // Suppress logs for a cleaner dev experience
