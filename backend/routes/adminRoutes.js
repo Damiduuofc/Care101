@@ -515,11 +515,16 @@ router.put("/appointments/:id", protect, async (req, res) => {
         (async () => {
           try {
             const patient = await Patient.findById(appointment.patientId);
-            if (patient && patient.email) {
+            if (patient) {
               const doctorInfo = await Doctor.findById(appointment.doctorId);
               const { generateReceiptPdf } = await import("../utils/pdfService.js");
               const { sendPaymentReceipt } = await import("../utils/emailService.js");
-              const pdfBuffer = await generateReceiptPdf(updatedBill || {}, appointment, doctorInfo, patient);
+              let pdfBuffer = null;
+              try {
+                pdfBuffer = await generateReceiptPdf(updatedBill || {}, appointment, doctorInfo, patient);
+              } catch (pdfErr) {
+                console.error("Failed to generate PDF receipt on admin update:", pdfErr);
+              }
               await sendPaymentReceipt(patient.email, updatedBill || { _id: appointment._id, amount: appointment.amount || 3500, title: `Consultation - ${appointment.doctorName}` }, pdfBuffer);
             }
           } catch (pdfEmailErr) {
@@ -686,14 +691,19 @@ router.post("/bills/create", protect, authorize(["system_admin", "receptionist"]
       (async () => {
         try {
           const patient = await Patient.findById(newBill.patientId);
-          if (patient && patient.email) {
+          if (patient) {
             let doctor = null;
             if (doctorId) {
               doctor = await Doctor.findById(doctorId);
             }
             const { generateReceiptPdf } = await import("../utils/pdfService.js");
             const { sendPaymentReceipt } = await import("../utils/emailService.js");
-            const pdfBuffer = await generateReceiptPdf(newBill, null, doctor, patient);
+            let pdfBuffer = null;
+            try {
+              pdfBuffer = await generateReceiptPdf(newBill, null, doctor, patient);
+            } catch (pdfErr) {
+              console.error("Failed to generate PDF for manual bill:", pdfErr);
+            }
             await sendPaymentReceipt(patient.email, newBill, pdfBuffer);
           }
         } catch (pdfEmailErr) {
@@ -778,14 +788,19 @@ router.put("/bills/pay/:billId", protect, authorize(["system_admin", "receptioni
     (async () => {
       try {
         const patient = await Patient.findById(bill.patientId);
-        if (patient && patient.email) {
+        if (patient) {
           let doctor = null;
           if (bill.doctorId) {
             doctor = await Doctor.findById(bill.doctorId);
           }
           const { generateReceiptPdf } = await import("../utils/pdfService.js");
           const { sendPaymentReceipt } = await import("../utils/emailService.js");
-          const pdfBuffer = await generateReceiptPdf(bill, null, doctor, patient);
+          let pdfBuffer = null;
+          try {
+            pdfBuffer = await generateReceiptPdf(bill, null, doctor, patient);
+          } catch (pdfErr) {
+            console.error("Failed to generate PDF for manual bill:", pdfErr);
+          }
           await sendPaymentReceipt(patient.email, bill, pdfBuffer);
         }
       } catch (pdfEmailErr) {
@@ -997,7 +1012,7 @@ const syncTodaySchedulesToDoctors = async () => {
 
       // Check if arrival status is from a previous day and reset if needed
       const arrivalDate = doc.lastArrivalDate ? new Date(doc.lastArrivalDate) : null;
-      const isNewDay = !arrivalDate || arrivalDate.toDateString() !== now.toDateString();
+      const isNewDay = arrivalDate && arrivalDate.toDateString() !== now.toDateString();
 
       if (isNewDay) {
         let changed = false;
@@ -1008,36 +1023,68 @@ const syncTodaySchedulesToDoctors = async () => {
         if (changed) await doc.save();
       }
 
+      // Filter out any schedules that have explicitly ended
+      const activeSchedules = schedules.filter(s => !s.sessionEnded);
+
+      // If doctor has an active or upcoming schedule today, reset sessionEndedToday
+      if (activeSchedules.length > 0) {
+        if (doc.sessionEndedToday) {
+          doc.sessionEndedToday = false;
+        }
+      } else if (doc.sessionEndedToday) {
+        // If doctor already ended their session today and has no more active schedules, ensure nurse is released
+        if (doc.allocatedNurse !== "") {
+          doc.allocatedNurse = "";
+          await doc.save();
+        }
+        continue;
+      }
+
       let selectedSchedule = null;
 
-      if (schedules.length > 0) {
+      if (activeSchedules.length > 0) {
         // 1. Find currently active schedule: startTime <= now && endTime > now
-        selectedSchedule = schedules.find(s => s.startTime <= now && s.endTime > now);
+        selectedSchedule = activeSchedules.find(s => s.startTime <= now && s.endTime > now);
 
         // 2. If no active schedule, find first upcoming schedule: startTime > now
         if (!selectedSchedule) {
-          selectedSchedule = schedules.find(s => s.startTime > now);
+          selectedSchedule = activeSchedules.find(s => s.startTime > now);
         }
 
-        // 3. If no active or upcoming schedule, check if there's any ended schedule today
-        // but keep the allocation only if the doctor's session has started and not ended yet
-        if (!selectedSchedule && doc.sessionStarted) {
-          selectedSchedule = schedules[schedules.length - 1]; // last ended schedule today
+        // 3. If doctor session has started or schedule is for today, keep the schedule
+        if (!selectedSchedule && (doc.sessionStarted || doc.isArrived)) {
+          selectedSchedule = activeSchedules[activeSchedules.length - 1]; // last unended schedule today
+        }
+
+        // 4. General fallback: if an approved schedule exists today and session hasn't ended, keep it
+        if (!selectedSchedule) {
+          selectedSchedule = activeSchedules[0];
         }
       }
 
       if (selectedSchedule) {
         const targetRoom = selectedSchedule.allocatedRoom || "";
         const targetNurse = selectedSchedule.allocatedNurse || "";
+        let changed = false;
 
-        if (doc.allocatedRoom !== targetRoom || doc.allocatedNurse !== targetNurse) {
+        if (doc.sessionEndedToday) {
+          doc.sessionEndedToday = false;
+          changed = true;
+        }
+        if (targetRoom && doc.allocatedRoom !== targetRoom) {
           doc.allocatedRoom = targetRoom;
+          changed = true;
+        }
+        if (targetNurse && doc.allocatedNurse !== targetNurse) {
           doc.allocatedNurse = targetNurse;
+          changed = true;
+        }
+        if (changed) {
           await doc.save();
         }
       } else {
-        // No valid active/upcoming/active-ended schedule for today, clear room and nurse if not active
-        if (!doc.sessionStarted && (doc.allocatedRoom !== "" || doc.allocatedNurse !== "")) {
+        // Only clear room and nurse if no active schedule exists and session is not started
+        if (!doc.sessionStarted && !doc.isArrived && (doc.allocatedRoom !== "" || doc.allocatedNurse !== "")) {
           doc.allocatedRoom = "";
           doc.allocatedNurse = "";
           await doc.save();
@@ -1113,6 +1160,7 @@ router.put("/doctors/:id/status", protect, authorize(["system_admin", "reception
       doctor.isArrived = isArrived;
       if (isArrived === true) {
         doctor.lastArrivalDate = new Date();
+        doctor.sessionEndedToday = false;
         // When doctor arrives, clear pre-arrival delay unless explicitly setting a new delay status
         if (channelingStatus === undefined && doctor.channelingStatus && doctor.channelingStatus.toLowerCase() !== "on time") {
           doctor.channelingStatus = "On Time";
@@ -1412,6 +1460,29 @@ router.put("/change-password", protect, async (req, res) => {
   } catch (err) {
     console.error("Change Password Error:", err.message);
     res.status(500).send("Server Error");
+  }
+});
+
+// ==========================================
+// TEST NOTIFICATIONS (Email & SMS Diagnostic)
+// ==========================================
+router.post("/test-notifications", async (req, res) => {
+  try {
+    const { email, phone } = req.body || {};
+    const targetEmail = email || process.env.EMAIL_USER;
+    const targetPhone = phone;
+
+    const { testNotifications } = await import("../utils/emailService.js");
+    const results = await testNotifications({ email: targetEmail, phone: targetPhone });
+
+    res.json({
+      msg: "Notification diagnostic test executed",
+      targets: { email: targetEmail, phone: targetPhone },
+      results
+    });
+  } catch (err) {
+    console.error("Test Notifications Error:", err);
+    res.status(500).json({ error: err.message });
   }
 });
 

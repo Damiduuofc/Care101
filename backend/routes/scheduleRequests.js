@@ -67,18 +67,32 @@ router.get('/all', auth, async (req, res) => {
 });
 
 // ==========================================
-// 5. RECEPTIONIST: Accept/Reject & Sync to Doctor Model
+// 5. RECEPTIONIST/ADMIN: Accept/Reject/Cancel & Sync to Doctor Model
 // ==========================================
 router.put('/:id/status', auth, async (req, res) => {
   try {
     const { status, allocatedRoom, allocatedNurse } = req.body; 
     
-    if (!['approved', 'rejected'].includes(status)) {
-      return res.status(400).json({ msg: 'Invalid status.' });
+    if (!['approved', 'rejected', 'cancelled'].includes(status)) {
+      return res.status(400).json({ msg: 'Invalid status. Must be approved, rejected, or cancelled.' });
     }
 
     const request = await ScheduleRequest.findById(req.params.id);
     if (!request) return res.status(404).json({ msg: 'Request not found' });
+
+    const userRole = req.user?.role;
+    const isOwner = req.user?.id === request.doctorId.toString();
+    const isAdmin = ['receptionist', 'system_admin', 'admin'].includes(userRole);
+
+    if (status === 'approved' && !isAdmin) {
+      return res.status(403).json({ msg: 'Only receptionists and administrators can approve schedule requests.' });
+    }
+
+    if (!isAdmin && !isOwner) {
+      return res.status(403).json({ msg: 'Not authorized to change this schedule.' });
+    }
+
+    const wasApproved = request.status === 'approved';
 
     if (status === 'approved') {
       // ✅ CONFLICT CHECK
@@ -86,6 +100,7 @@ router.put('/:id/status', auth, async (req, res) => {
         const conflict = await ScheduleRequest.findOne({
           _id: { $ne: request._id },
           status: 'approved',
+          sessionEnded: { $ne: true },
           date: request.date,
           $or: [
             { allocatedRoom: allocatedRoom || "NEVER_MATCH" },
@@ -104,29 +119,100 @@ router.put('/:id/status', auth, async (req, res) => {
       }
 
       // ✅ UPDATE SCHEDULE REQUEST OBJECT
-      if (allocatedRoom) request.allocatedRoom = allocatedRoom;
-      if (allocatedNurse) request.allocatedNurse = allocatedNurse;
+      if (allocatedRoom !== undefined) request.allocatedRoom = allocatedRoom;
+      if (allocatedNurse !== undefined) request.allocatedNurse = allocatedNurse;
 
       // ✅ SYNC TO DOCTOR MODEL
-      // This is the missing piece! Update the Doctor's own fields.
-      await Doctor.findByIdAndUpdate(request.doctorId, {
-        $set: {
-          allocatedRoom: allocatedRoom || request.allocatedRoom,
-          allocatedNurse: allocatedNurse || request.allocatedNurse
+      const now = new Date();
+      const isToday = new Date(request.date).toDateString() === now.toDateString();
+      if (isToday) {
+        await Doctor.findByIdAndUpdate(request.doctorId, {
+          $set: {
+            allocatedRoom: allocatedRoom || request.allocatedRoom,
+            allocatedNurse: allocatedNurse || request.allocatedNurse,
+            sessionEndedToday: false
+          }
+        });
+      }
+    } else {
+      // ✅ WHEN REJECTING OR CANCELLING
+      request.allocatedRoom = "";
+      request.allocatedNurse = "";
+
+      // Release Doctor's live room if no other approved schedule exists for today
+      const now = new Date();
+      const isToday = new Date(request.date).toDateString() === now.toDateString();
+      if (isToday || wasApproved) {
+        const otherApproved = await ScheduleRequest.findOne({
+          _id: { $ne: request._id },
+          doctorId: request.doctorId,
+          status: 'approved',
+          date: request.date
+        });
+
+        if (!otherApproved) {
+          await Doctor.findByIdAndUpdate(request.doctorId, {
+            $set: {
+              allocatedRoom: "",
+              allocatedNurse: "",
+              channelingTime: ""
+            }
+          });
+        } else {
+          await Doctor.findByIdAndUpdate(request.doctorId, {
+            $set: {
+              allocatedRoom: otherApproved.allocatedRoom || "",
+              allocatedNurse: otherApproved.allocatedNurse || ""
+            }
+          });
         }
-      });
+      }
+
+      // If this schedule was previously approved, cancel any booked appointments and notify patients
+      if (wasApproved) {
+        try {
+          const Appointment = (await import('../models/Appointment.js')).default;
+          const startOfDay = new Date(request.date);
+          startOfDay.setHours(0, 0, 0, 0);
+          const endOfDay = new Date(request.date);
+          endOfDay.setHours(23, 59, 59, 999);
+
+          const affectedAppointments = await Appointment.find({
+            doctorId: request.doctorId,
+            date: { $gte: startOfDay, $lte: endOfDay },
+            status: { $ne: 'cancelled' }
+          });
+
+          for (const appt of affectedAppointments) {
+            appt.status = 'cancelled';
+            await appt.save();
+            await Notification.create({
+              userId: appt.patientId,
+              type: 'cancellation',
+              message: `Your appointment #${appt.queueNumber || ''} with Dr. ${request.doctorName} on ${new Date(appt.date).toLocaleDateString()} has been cancelled because the doctor's schedule was cancelled.`,
+              data: { appointmentId: appt._id }
+            });
+            if (req.io) {
+              req.io.emit("appointmentUpdated", appt);
+            }
+          }
+        } catch (apptErr) {
+          console.error("Failed to cancel associated appointments on schedule cancellation:", apptErr);
+        }
+      }
     }
 
     request.status = status;
     await request.save();
 
     // ✅ NOTIFY DOCTOR
+    const actionLabel = status === 'approved' ? 'APPROVED' : status === 'cancelled' ? 'CANCELLED' : 'REJECTED';
     const doctorNotification = new Notification({
       userId: request.doctorId,
       type: 'schedule_request',
       message: status === 'approved' 
         ? `Your schedule for ${new Date(request.date).toDateString()} was APPROVED. Room: ${request.allocatedRoom || 'TBA'}`
-        : `Your schedule request for ${new Date(request.date).toDateString()} was REJECTED.`,
+        : `Your schedule for ${new Date(request.date).toDateString()} was ${actionLabel}.`,
       data: { 
         requestId: request._id,
         status: status,
@@ -136,6 +222,11 @@ router.put('/:id/status', auth, async (req, res) => {
     });
 
     await doctorNotification.save();
+
+    if (req.io) {
+      req.io.emit("scheduleUpdated", request);
+    }
+
     res.json({ msg: `Request has been ${status}`, request });
 
   } catch (err) {
@@ -232,6 +323,7 @@ router.put('/:id/allocate', auth, async (req, res) => {
       const conflict = await ScheduleRequest.findOne({
         _id: { $ne: request._id },
         status: 'approved',
+        sessionEnded: { $ne: true },
         date: request.date,
         $or: [
           { allocatedRoom: allocatedRoom || "NEVER_MATCH" },
@@ -260,7 +352,8 @@ router.put('/:id/allocate', auth, async (req, res) => {
       await Doctor.findByIdAndUpdate(request.doctorId, {
         $set: {
           allocatedRoom: allocatedRoom || "",
-          allocatedNurse: allocatedNurse || ""
+          allocatedNurse: allocatedNurse || "",
+          sessionEndedToday: false
         }
       });
     }
@@ -328,6 +421,125 @@ router.post('/admin/create', auth, async (req, res) => {
   } catch (err) {
     console.error('Admin Create Schedule Error:', err);
     res.status(500).json({ msg: 'Server error' });
+  }
+});
+
+// ==========================================
+// 9. DELETE SCHEDULE REQUEST (Full Deletion)
+// ==========================================
+router.delete('/:id', auth, async (req, res) => {
+  try {
+    const request = await ScheduleRequest.findById(req.params.id);
+    if (!request) {
+      return res.status(404).json({ msg: 'Schedule request not found' });
+    }
+
+    const userRole = req.user?.role;
+    const isOwner = req.user?.id === request.doctorId.toString();
+    const isAdmin = ['receptionist', 'system_admin', 'admin'].includes(userRole);
+
+    if (!isAdmin && !isOwner) {
+      return res.status(403).json({ msg: 'Not authorized to delete this schedule request.' });
+    }
+
+    const wasApproved = request.status === 'approved';
+
+    // 1. Release doctor's allocatedRoom and allocatedNurse if needed
+    const now = new Date();
+    const isToday = new Date(request.date).toDateString() === now.toDateString();
+    if (isToday || wasApproved) {
+      const otherApproved = await ScheduleRequest.findOne({
+        _id: { $ne: request._id },
+        doctorId: request.doctorId,
+        status: 'approved',
+        date: request.date
+      });
+
+      if (!otherApproved) {
+        await Doctor.findByIdAndUpdate(request.doctorId, {
+          $set: {
+            allocatedRoom: "",
+            allocatedNurse: "",
+            channelingTime: ""
+          }
+        });
+      } else {
+        await Doctor.findByIdAndUpdate(request.doctorId, {
+          $set: {
+            allocatedRoom: otherApproved.allocatedRoom || "",
+            allocatedNurse: otherApproved.allocatedNurse || ""
+          }
+        });
+      }
+    }
+
+    // 2. If was approved, cancel associated appointments and notify patients
+    let cancelledAppointmentsCount = 0;
+    if (wasApproved) {
+      try {
+        const Appointment = (await import('../models/Appointment.js')).default;
+        const startOfDay = new Date(request.date);
+        startOfDay.setHours(0, 0, 0, 0);
+        const endOfDay = new Date(request.date);
+        endOfDay.setHours(23, 59, 59, 999);
+
+        const affectedAppointments = await Appointment.find({
+          doctorId: request.doctorId,
+          date: { $gte: startOfDay, $lte: endOfDay },
+          status: { $ne: 'cancelled' }
+        });
+
+        cancelledAppointmentsCount = affectedAppointments.length;
+        for (const appt of affectedAppointments) {
+          appt.status = 'cancelled';
+          await appt.save();
+          await Notification.create({
+            userId: appt.patientId,
+            type: 'cancellation',
+            title: 'Appointment Cancelled',
+            message: `Your appointment with Dr. ${request.doctorName} on ${new Date(appt.date).toLocaleDateString()} has been cancelled because the doctor schedule was deleted.`,
+            data: { appointmentId: appt._id }
+          });
+          if (req.io) {
+            req.io.emit("appointmentUpdated", appt);
+          }
+        }
+      } catch (apptErr) {
+        console.error("Failed to cancel associated appointments on delete:", apptErr);
+      }
+    }
+
+    // 3. Delete the schedule request completely
+    await ScheduleRequest.findByIdAndDelete(req.params.id);
+
+    // 4. Notify doctor if deleted by admin
+    if (isAdmin && !isOwner) {
+      try {
+        await Notification.create({
+          userId: request.doctorId,
+          type: 'schedule_request',
+          message: `Your schedule for ${new Date(request.date).toDateString()} (${new Date(request.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}) was deleted by administration.`,
+          data: { requestId: request._id, status: 'deleted' }
+        });
+      } catch (notifErr) {
+        console.error("Notification Error on Delete:", notifErr);
+      }
+    }
+
+    // 5. Emit socket event
+    if (req.io) {
+      req.io.emit("scheduleDeleted", { id: req.params.id, doctorId: request.doctorId });
+    }
+
+    res.json({
+      msg: 'Schedule request deleted successfully',
+      id: req.params.id,
+      cancelledAppointmentsCount
+    });
+
+  } catch (err) {
+    console.error('Delete Schedule Request Error:', err);
+    res.status(500).json({ msg: 'Server error deleting schedule request' });
   }
 });
 

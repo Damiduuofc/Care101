@@ -2,6 +2,7 @@ import express from "express";
 import { auth } from "../middleware/auth.js";
 import Doctor from "../models/Doctor.js";
 import Appointment from "../models/Appointment.js";
+import ScheduleRequest from "../models/ScheduleRequest.js";
 import ConsultationHistory from "../models/ConsultationHistory.js";
 import Notification from "../models/Notification.js";
 import { calculatePrediction, updateDoctorAverageDuration } from "../services/predictionService.js";
@@ -19,6 +20,31 @@ router.post("/update", auth, async (req, res) => {
     if (!doctor) return res.status(404).json({ msg: "Doctor not found" });
 
     const prevServing = doctor.currentQueueNumber || 0;
+    let releasedNurse = "";
+
+    // Ensure doctor's allocated nurse and room are preserved from today's schedule if currently empty and session not ended
+    if ((!doctor.allocatedNurse || !doctor.allocatedRoom) && !doctor.sessionEndedToday) {
+      const startOfDay = new Date();
+      startOfDay.setHours(0, 0, 0, 0);
+      const endOfDay = new Date();
+      endOfDay.setHours(23, 59, 59, 999);
+
+      const activeSched = await ScheduleRequest.findOne({
+        doctorId: doctor._id,
+        status: "approved",
+        sessionEnded: { $ne: true },
+        date: { $gte: startOfDay, $lte: endOfDay }
+      });
+
+      if (activeSched) {
+        if (!doctor.allocatedNurse && activeSched.allocatedNurse) {
+          doctor.allocatedNurse = activeSched.allocatedNurse;
+        }
+        if (!doctor.allocatedRoom && activeSched.allocatedRoom) {
+          doctor.allocatedRoom = activeSched.allocatedRoom;
+        }
+      }
+    }
 
     if (action === "start") {
       if (!doctor.isArrived) {
@@ -29,10 +55,36 @@ router.post("/update", auth, async (req, res) => {
       }
       doctor.sessionStarted = true;
       doctor.currentQueueNumber = 1;
+      if (!doctor.lastArrivalDate) {
+        doctor.lastArrivalDate = new Date();
+      }
     } else if (action === "end") {
       doctor.sessionStarted = false;
       doctor.currentQueueNumber = 0;
       doctor.sessionEndedToday = true;
+      releasedNurse = doctor.allocatedNurse;
+      doctor.allocatedNurse = ""; // Nurse is released immediately!
+
+      // Mark today's approved schedule as sessionEnded: true and free the nurse allocation
+      const startOfDay = new Date();
+      startOfDay.setHours(0, 0, 0, 0);
+      const endOfDay = new Date();
+      endOfDay.setHours(23, 59, 59, 999);
+
+      const todaySchedules = await ScheduleRequest.find({
+        doctorId: doctor._id,
+        status: "approved",
+        date: { $gte: startOfDay, $lte: endOfDay }
+      });
+
+      for (const sched of todaySchedules) {
+        sched.sessionEnded = true;
+        sched.allocatedNurse = ""; // Release nurse so other doctor sessions can allocate this nurse
+        await sched.save();
+        if (req.io) {
+          req.io.emit("scheduleUpdated", sched);
+        }
+      }
     } else if (currentServingNumber !== undefined) {
       doctor.currentQueueNumber = currentServingNumber;
     }
@@ -52,6 +104,10 @@ router.post("/update", auth, async (req, res) => {
         appt.status = "completed";
         appt.consultationEndTime = new Date();
         await appt.save();
+
+        if (req.io) {
+          req.io.emit("appointmentUpdated", appt);
+        }
 
         const startTime = appt.consultationStartTime || appt.checkInTime || appt.date;
         const duration = Math.round((new Date().getTime() - startTime.getTime()) / (60 * 1000));
@@ -74,6 +130,14 @@ router.post("/update", auth, async (req, res) => {
     // Emit live updates to connected socket client rooms & globally for widgets
     if (req.io) {
       req.io.emit("doctorStatusUpdated", doctor);
+      if (action === "end" && releasedNurse) {
+        req.io.emit("nurseReleased", {
+          doctorId: doctor._id,
+          doctorName: doctor.name,
+          nurseName: releasedNurse,
+          timestamp: new Date()
+        });
+      }
       req.io.emit("queueUpdated", {
         doctorId: doctor._id,
         currentServingNumber: doctor.currentQueueNumber,
@@ -82,6 +146,7 @@ router.post("/update", auth, async (req, res) => {
         sessionStarted: doctor.sessionStarted,
         sessionEndedToday: doctor.sessionEndedToday,
         allocatedRoom: doctor.allocatedRoom,
+        allocatedNurse: doctor.allocatedNurse,
         lastUpdated: new Date()
       });
       

@@ -4,30 +4,50 @@ import Patient from '../models/Patient.js';
 import Doctor from '../models/Doctor.js';
 
 // Helper to format phone number to E.164
-const formatPhoneNumber = (phone) => {
+export const formatPhoneNumber = (phone) => {
   if (!phone) return null;
-  let cleaned = phone.trim().replace(/[\s\-\(\)]/g, '');
+  let cleaned = phone.toString().trim().replace(/[\s\-\(\)]/g, '');
+  if (cleaned.startsWith('+')) {
+    return cleaned;
+  }
+  if (cleaned.startsWith('00')) {
+    return '+' + cleaned.slice(2);
+  }
   if (cleaned.startsWith('0')) {
-    cleaned = '+94' + cleaned.slice(1);
+    return '+94' + cleaned.slice(1);
   }
-  if (!cleaned.startsWith('+')) {
-    cleaned = '+' + cleaned;
+  if (cleaned.startsWith('94')) {
+    return '+' + cleaned;
   }
-  return cleaned;
+  // Sri Lankan 9-digit mobile number without leading zero (e.g., 771234567)
+  if (cleaned.length === 9 && cleaned.startsWith('7')) {
+    return '+94' + cleaned;
+  }
+  return '+' + cleaned;
+};
+
+// Check if SMS gateway is configured
+export const isSmsConfigured = () => {
+  const password = process.env.SMS_GATEWAY_PASSWORD;
+  return Boolean(password && password !== 'your_password_here');
 };
 
 // Helper to send SMS via Android SMS Gateway
-const sendSms = async (to, content) => {
+export const sendSms = async (to, content) => {
   const login = process.env.SMS_GATEWAY_LOGIN || '';
   const password = process.env.SMS_GATEWAY_PASSWORD;
   let baseUrl = process.env.SMS_GATEWAY_BASE_URL;
-  if (baseUrl && !baseUrl.startsWith('http://') && !baseUrl.startsWith('https://')) {
-    baseUrl = 'http://' + baseUrl;
-  }
 
-  if (!password || password === 'your_password_here') {
+  if (!isSmsConfigured()) {
     console.log("⚠️ Android SMS Gateway configuration missing or placeholder detected, skipping SMS send.");
     return false;
+  }
+
+  if (baseUrl) {
+    baseUrl = baseUrl.trim().replace(/\/+$/, '');
+    if (!baseUrl.startsWith('http://') && !baseUrl.startsWith('https://')) {
+      baseUrl = 'http://' + baseUrl;
+    }
   }
 
   const formattedTo = formatPhoneNumber(to);
@@ -37,51 +57,74 @@ const sendSms = async (to, content) => {
   }
 
   const simNumberRaw = process.env.SMS_GATEWAY_SIM_NUMBER;
-  const simNumber = simNumberRaw ? parseInt(simNumberRaw, 10) : undefined;
+  const simNumber = simNumberRaw !== undefined && simNumberRaw !== '' ? parseInt(simNumberRaw, 10) : undefined;
 
   try {
     const client = new Client(login, password, undefined, baseUrl || undefined);
-    console.log(`✉️ Sending SMS to ${formattedTo}...`);
+    console.log(`✉️ Sending SMS to ${formattedTo} via ${baseUrl || 'default gateway'} (SIM: ${simNumber ?? 'auto'})...`);
     const messageState = await client.send({
       message: content,
       phoneNumbers: [formattedTo],
-      ...(simNumber !== undefined ? { simNumber } : {})
+      ...(simNumber !== undefined && !isNaN(simNumber) ? { simNumber } : {})
     });
-    console.log(`✅ SMS sent successfully: ${messageState.id}`);
+    console.log(`✅ SMS sent successfully to ${formattedTo}: Message ID ${messageState.id}`);
     return true;
   } catch (err) {
-    console.error(`❌ Error sending SMS via Android SMS Gateway:`, err.message || err);
+    console.error(`❌ Error sending SMS via Android SMS Gateway to ${formattedTo}:`, err.message || err);
     return false;
   }
 };
 
+// Helper to get formatted From header
+export const getFromAddress = (senderName = "Suwasevana Hospital") => {
+  const emailUser = process.env.EMAIL_USER;
+  if (emailUser) {
+    return `"${senderName}" <${emailUser}>`;
+  }
+  return `"${senderName}" <no-reply@suwasevana.com>`;
+};
 
-// Helper to get transporter
+// Helper to get transporter with dynamic cache invalidation
 let cachedTransporter = null;
-const getTransporter = async () => {
-  if (cachedTransporter) return cachedTransporter;
+let cachedConfigKey = null;
 
-  const host = process.env.EMAIL_HOST;
-  const port = parseInt(process.env.EMAIL_PORT);
+export const getTransporter = async () => {
+  const host = process.env.EMAIL_HOST || 'smtp.gmail.com';
+  const port = parseInt(process.env.EMAIL_PORT, 10) || 587;
   const user = process.env.EMAIL_USER;
   const pass = process.env.EMAIL_PASS;
+  const cleanPass = pass ? pass.trim().replace(/\s+/g, '') : '';
 
-  if (user && pass) {
-    const cleanPass = pass.trim().replace(/\s+/g, '');
-    cachedTransporter = nodemailer.createTransport({
-      host,
-      port,
-      secure: port === 465, // true for 465, false for other ports
-      auth: { user, pass: cleanPass },
-      tls: {
-        rejectUnauthorized: false
-      }
-    });
+  const currentConfigKey = `${host}:${port}:${user}:${cleanPass}`;
+
+  if (cachedTransporter && cachedConfigKey === currentConfigKey && cleanPass) {
     return cachedTransporter;
   }
 
-  // Fallback: If no SMTP credentials provided in env, use a mock/ethereal account or local transporter
-  console.log("⚠️ No SMTP credentials configured. Generating Ethereal test account...");
+  if (user && cleanPass) {
+    const isGmail = host.includes('gmail') || user.endsWith('@gmail.com');
+    const transportConfig = isGmail
+      ? {
+          service: 'gmail',
+          auth: { user, pass: cleanPass },
+          tls: { rejectUnauthorized: false }
+        }
+      : {
+          host,
+          port,
+          secure: port === 465,
+          auth: { user, pass: cleanPass },
+          tls: { rejectUnauthorized: false }
+        };
+
+    cachedTransporter = nodemailer.createTransport(transportConfig);
+    cachedConfigKey = currentConfigKey;
+    console.log(`📧 Configured email transporter for ${user} (${isGmail ? 'Gmail Service' : `${host}:${port}`})`);
+    return cachedTransporter;
+  }
+
+  // Fallback: If no SMTP credentials provided in env, use Ethereal or console logger
+  console.log("⚠️ No SMTP credentials configured. Generating test account...");
   try {
     const testAccount = await nodemailer.createTestAccount();
     cachedTransporter = nodemailer.createTransport({
@@ -93,6 +136,7 @@ const getTransporter = async () => {
         pass: testAccount.pass
       }
     });
+    cachedConfigKey = 'ethereal';
     return cachedTransporter;
   } catch (err) {
     console.error("❌ Failed to create Ethereal account, falling back to console logger transporter", err);
@@ -105,6 +149,7 @@ const getTransporter = async () => {
         return { messageId: 'mock-message-id', mock: true };
       }
     };
+    cachedConfigKey = 'mock';
     return cachedTransporter;
   }
 };
@@ -238,7 +283,7 @@ const detailCard = (rowsHtml) => `
  * @param {Buffer} pdfBuffer - Optional PDF receipt attachment
  */
 export const sendBookingConfirmation = async (email, appointment, doctorRoom = "TBA", pdfBuffer = null) => {
-  const hasSmsConfig = process.env.SMS_GATEWAY_PASSWORD && process.env.SMS_GATEWAY_PASSWORD !== 'your_password_here';
+  const hasSmsConfig = isSmsConfigured();
 
   const isPaid = (appointment?.paymentStatus || '').toLowerCase() === 'paid';
   const amountFormatted = appointment?.amount ? Number(appointment.amount).toLocaleString() : '3,500';
@@ -254,6 +299,13 @@ export const sendBookingConfirmation = async (email, appointment, doctorRoom = "
           if (patientObj) {
             phone = patientObj.mobileNumber;
           }
+        }
+      }
+
+      if (!phone && email) {
+        const patientObj = await Patient.findOne({ email });
+        if (patientObj) {
+          phone = patientObj.mobileNumber;
         }
       }
 
@@ -422,7 +474,7 @@ Kindly limit visitors to the hospital for your own safety. Patients are advised 
     });
 
     const mailOptions = {
-      from: process.env.EMAIL_USER || '"Suwasevana Hospital" <no-reply@suwasevana.com>',
+      from: getFromAddress("Suwasevana Hospital"),
       to: email,
       subject: isPaid
         ? `Suwasevana Hospital - Booking & Payment Confirmation (Ref: ${appointment.queueNumber || appointment._id})`
@@ -465,7 +517,7 @@ Kindly limit visitors to the hospital for your own safety. Patients are advised 
  * @param {Buffer} pdfBuffer - PDF receipt buffer
  */
 export const sendPaymentReceipt = async (email, bill, pdfBuffer) => {
-  const hasSmsConfig = process.env.SMS_GATEWAY_PASSWORD && process.env.SMS_GATEWAY_PASSWORD !== 'your_password_here';
+  const hasSmsConfig = isSmsConfigured();
 
   const dateStr = new Date(bill.date || new Date()).toLocaleDateString('en-US', {
     year: 'numeric',
@@ -496,6 +548,13 @@ Kindly limit visitors to the hospital for your own safety. Patients are advised 
           if (patientObj) {
             phone = patientObj.mobileNumber;
           }
+        }
+      }
+
+      if (!phone && email) {
+        const patientObj = await Patient.findOne({ email });
+        if (patientObj) {
+          phone = patientObj.mobileNumber;
         }
       }
 
@@ -550,7 +609,7 @@ Kindly limit visitors to the hospital for your own safety. Patients are advised 
     });
 
     const mailOptions = {
-      from: process.env.EMAIL_USER || '"Suwasevana Hospital" <no-reply@suwasevana.com>',
+      from: getFromAddress("Suwasevana Hospital"),
       to: email,
       subject: `Suwasevana Hospital - Payment Receipt (Ref: ${bill._id})`,
       text: textBody,
@@ -579,7 +638,7 @@ Kindly limit visitors to the hospital for your own safety. Patients are advised 
  * @param {string} password - Doctor's temporary password
  */
 export const sendDoctorWelcomeEmail = async (email, doctorName, password, slmcReg) => {
-  const hasSmsConfig = process.env.SMS_GATEWAY_PASSWORD && process.env.SMS_GATEWAY_PASSWORD !== 'your_password_here';
+  const hasSmsConfig = isSmsConfigured();
 
   const textBody = `Dear Dr. ${doctorName},
 
@@ -662,7 +721,7 @@ Phone: +94 81 222 3223`;
     });
 
     const mailOptions = {
-      from: process.env.EMAIL_USER || '"Suwasewana Kandy Hospital" <no-reply@suwasevana.com>',
+      from: getFromAddress("Suwasevana Hospital"),
       to: email,
       subject: 'Welcome to Suwasewana Kandy Hospital - Doctor Account Created',
       text: textBody,
@@ -683,7 +742,7 @@ Phone: +94 81 222 3223`;
  * @param {string} doctorName - Doctor's full name
  */
 export const sendDoctorApprovalEmail = async (email, doctorName) => {
-  const hasSmsConfig = process.env.SMS_GATEWAY_PASSWORD && process.env.SMS_GATEWAY_PASSWORD !== 'your_password_here';
+  const hasSmsConfig = isSmsConfigured();
 
   const textBody = `Dear Dr. ${doctorName},
 
@@ -747,7 +806,7 @@ Phone: +94 81 222 3223`;
     });
 
     const mailOptions = {
-      from: process.env.EMAIL_USER || '"Suwasewana Kandy Hospital" <no-reply@suwasevana.com>',
+      from: getFromAddress("Suwasevana Hospital"),
       to: email,
       subject: 'Care101 - Doctor Account Approved & Activated',
       text: textBody,
@@ -767,7 +826,7 @@ Phone: +94 81 222 3223`;
  * @param {object} patient - Patient document
  */
 export const sendPatientWelcomeEmail = async (patient) => {
-  const hasSmsConfig = process.env.SMS_GATEWAY_PASSWORD && process.env.SMS_GATEWAY_PASSWORD !== 'your_password_here';
+  const hasSmsConfig = isSmsConfigured();
 
   const textBody = `Hello ${patient.fullName},
 
@@ -818,7 +877,7 @@ The Care101 Team`;
     });
 
     const mailOptions = {
-      from: process.env.EMAIL_USER || '"Care101" <no-reply@care101.com>',
+      from: getFromAddress("Care101"),
       to: patient.email,
       subject: "Welcome to Care101 - Your Patient ID Details",
       text: textBody,
@@ -839,7 +898,7 @@ The Care101 Team`;
  * @param {string} otp - The 6-digit OTP code
  */
 export const sendPasswordResetOtp = async (user, otp) => {
-  const hasSmsConfig = process.env.SMS_GATEWAY_PASSWORD && process.env.SMS_GATEWAY_PASSWORD !== 'your_password_here';
+  const hasSmsConfig = isSmsConfigured();
 
   const textBody = `Your password reset code is: ${otp}\n\nThis code will expire in 10 minutes.`;
 
@@ -885,7 +944,7 @@ export const sendPasswordResetOtp = async (user, otp) => {
     });
 
     const mailOptions = {
-      from: process.env.EMAIL_USER || '"Care101" <no-reply@care101.com>',
+      from: getFromAddress("Care101"),
       to: user.email,
       subject: "Your Password Reset Code",
       text: textBody,
@@ -935,7 +994,7 @@ export const sendAdminPasswordReset = async (admin, resetUrl) => {
     });
 
     const mailOptions = {
-      from: process.env.EMAIL_USER || '"Care101 IT" <no-reply@care101.com>',
+      from: getFromAddress("Care101 Administration"),
       to: admin.email,
       subject: "Admin Password Reset Request",
       text: textBody,
@@ -956,7 +1015,7 @@ export const sendAdminPasswordReset = async (admin, resetUrl) => {
  * @param {string} plainPassword - Plain-text password
  */
 export const sendWalkinPatientCredentials = async (patient, plainPassword) => {
-  const hasSmsConfig = process.env.SMS_GATEWAY_PASSWORD && process.env.SMS_GATEWAY_PASSWORD !== 'your_password_here';
+  const hasSmsConfig = isSmsConfigured();
 
   const textBody = `Hello ${patient.fullName},\n\nWelcome to Care101! Your patient account has been created successfully.\n\nYour Patient ID (SHP) is: ${patient.patientId}\nYour Password is: ${plainPassword}\n\nPlease use these credentials to log in to the Care101 mobile app.`;
 
@@ -995,7 +1054,7 @@ export const sendWalkinPatientCredentials = async (patient, plainPassword) => {
       });
 
       const mailOptions = {
-        from: process.env.EMAIL_USER || '"Care101" <no-reply@care101.com>',
+        from: getFromAddress("Care101"),
         to: patient.email,
         subject: "Welcome to Care101 - Patient Credentials",
         text: textBody,
@@ -1008,5 +1067,48 @@ export const sendWalkinPatientCredentials = async (patient, plainPassword) => {
       console.error("❌ Error sending patient credentials email:", err);
     }
   }
+};
+
+/**
+ * Diagnostic helper to test email and SMS connectivity on demand.
+ */
+export const testNotifications = async ({ email, phone }) => {
+  const results = {
+    email: { attempted: false, success: false },
+    sms: { attempted: false, success: false }
+  };
+
+  if (email) {
+    results.email.attempted = true;
+    try {
+      const transporter = await getTransporter();
+      const mailOptions = {
+        from: getFromAddress("Care101 Diagnostic"),
+        to: email,
+        subject: "Care101 - Notification Service Diagnostic Test",
+        text: `This is a test email sent from Care101 at ${new Date().toISOString()}.\n\nIf you are reading this, your email configuration (Gmail SMTP) is working perfectly!`
+      };
+      const info = await transporter.sendMail(mailOptions);
+      results.email.success = true;
+      results.email.messageId = info.messageId;
+    } catch (err) {
+      results.email.error = err.message || String(err);
+    }
+  }
+
+  if (phone) {
+    results.sms.attempted = true;
+    try {
+      const success = await sendSms(phone, `Care101 Diagnostic: SMS gateway is working! Time: ${new Date().toLocaleTimeString()}`);
+      results.sms.success = success;
+      if (!success) {
+        results.sms.error = "SMS gateway failed to process the request. Check gateway logs.";
+      }
+    } catch (err) {
+      results.sms.error = err.message || String(err);
+    }
+  }
+
+  return results;
 };
 

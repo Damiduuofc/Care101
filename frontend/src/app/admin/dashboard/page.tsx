@@ -10,6 +10,7 @@ import Sidebar from "@/components/admin/Sidebar";
 import { useRouter } from "next/navigation";
 import { clearAdminSession, getAdminToken, getAdminUser } from "@/lib/adminSession";
 import { io } from "socket.io-client";
+import { playDingSound } from "@/lib/soundUtils";
 
 export default function Dashboard() {
   const router = useRouter();
@@ -98,6 +99,12 @@ export default function Dashboard() {
     });
 
     socket.on("doctorStatusUpdated", () => {
+      fetchStats();
+    });
+
+    socket.on("doctorDelayAlert", (alertData: any) => {
+      console.log("🚨 Received doctor delay alert in admin dashboard:", alertData);
+      playDingSound();
       fetchStats();
     });
 

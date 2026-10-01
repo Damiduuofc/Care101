@@ -13,11 +13,12 @@ const ScheduleRequestSchema = new mongoose.Schema({
   
   status: {
     type: String,
-    enum: ['pending', 'approved', 'rejected'],
+    enum: ['pending', 'approved', 'rejected', 'cancelled'],
     default: 'pending'
   },
   allocatedRoom: { type: String, default: "" },
   allocatedNurse: { type: String, default: "" },
+  sessionEnded: { type: Boolean, default: false },
   createdAt: { type: Date, default: Date.now },
 });
 

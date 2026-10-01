@@ -5,10 +5,11 @@ import Sidebar from "@/components/admin/Sidebar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge"; // Ensure you have this UI component
-import { Loader2, Play, Square, Users, Plus, Minus, AlertCircle, BookOpen, Activity, Download, X, UploadCloud } from "lucide-react";
+import { Loader2, Play, Square, Users, Plus, Minus, AlertCircle, BookOpen, Activity, Download, X, UploadCloud, Volume2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { clearAdminSession, getAdminToken, getAdminUser } from "@/lib/adminSession";
 import { io } from "socket.io-client";
+import { playDingSound } from "@/lib/soundUtils";
 
 export default function NurseQueueDashboard() {
     const router = useRouter();
@@ -296,17 +297,6 @@ export default function NurseQueueDashboard() {
         }));
     };
 
-    const getActiveAppointment = (doctorDocId: string, currentQueueNumber: number) => {
-        const todayList = getDoctorTodayAppointments(doctorDocId);
-        if (todayList.length === 0) return undefined;
-        const exact = todayList.find(appt => appt.queueNumber === currentQueueNumber || appt.effectiveQueueNumber === currentQueueNumber);
-        if (exact) return exact;
-        if (currentQueueNumber > 0 && currentQueueNumber <= todayList.length) {
-            return todayList[currentQueueNumber - 1];
-        }
-        return todayList[0];
-    };
-
     useEffect(() => {
         const storedUser = getAdminUser();
         if (storedUser) {
@@ -385,7 +375,60 @@ export default function NurseQueueDashboard() {
         });
 
         socket.on("doctorStatusUpdated", (updatedDoc: any) => {
-            setDoctors(prev => prev.map(d => d._id === updatedDoc._id ? updatedDoc : d));
+            setDoctors(prev => prev.map(d => {
+                if (d._id !== updatedDoc._id) return d;
+                return {
+                    ...d,
+                    ...updatedDoc,
+                    allocatedNurse: updatedDoc.allocatedNurse !== undefined ? updatedDoc.allocatedNurse : d.allocatedNurse,
+                    allocatedRoom: updatedDoc.allocatedRoom !== undefined ? updatedDoc.allocatedRoom : d.allocatedRoom
+                };
+            }));
+        });
+
+        socket.on("doctorDelayAlert", (alertData: any) => {
+            console.log("🚨 Received doctor delay alert in queue dashboard:", alertData);
+            playDingSound();
+            if (alertData?.doctorId) {
+                setDoctors(prev => prev.map(d => {
+                    if (d._id !== alertData.doctorId) return d;
+                    return {
+                        ...d,
+                        channelingStatus: alertData.channelingStatus || alertData.status || d.channelingStatus,
+                        allocatedNurse: alertData.allocatedNurse !== undefined ? alertData.allocatedNurse : d.allocatedNurse,
+                        allocatedRoom: alertData.allocatedRoom !== undefined ? alertData.allocatedRoom : d.allocatedRoom
+                    };
+                }));
+            }
+        });
+
+        socket.on("queueUpdated", (payload: any) => {
+            if (!payload?.doctorId) return;
+            setDoctors(prev => prev.map(d => {
+                if (d._id !== payload.doctorId) return d;
+                return {
+                    ...d,
+                    currentQueueNumber: payload.currentServingNumber ?? payload.currentToken ?? d.currentQueueNumber,
+                    sessionStarted: payload.sessionStarted !== undefined ? payload.sessionStarted : d.sessionStarted,
+                    sessionEndedToday: payload.sessionEndedToday !== undefined ? payload.sessionEndedToday : d.sessionEndedToday,
+                    allocatedNurse: payload.allocatedNurse !== undefined ? payload.allocatedNurse : d.allocatedNurse,
+                    allocatedRoom: payload.allocatedRoom !== undefined ? payload.allocatedRoom : d.allocatedRoom
+                };
+            }));
+        });
+
+        socket.on("appointmentUpdated", (updatedAppt: any) => {
+            if (updatedAppt?._id) {
+                setAppointments(prev => prev.map(a => a._id === updatedAppt._id ? { ...a, ...updatedAppt } : a));
+            } else {
+                fetchData();
+            }
+        });
+
+        socket.on("nurseReleased", (payload: any) => {
+            if (payload?.doctorId) {
+                setDoctors(prev => prev.map(d => d._id === payload.doctorId ? { ...d, allocatedNurse: "" } : d));
+            }
         });
 
         socket.on("disconnect", () => {
@@ -399,11 +442,18 @@ export default function NurseQueueDashboard() {
 
     const isToday = (dateStr: string) => {
         if (!dateStr) return false;
-        const d = new Date(dateStr);
-        const today = new Date();
-        return d.getDate() === today.getDate() &&
-               d.getMonth() === today.getMonth() &&
-               d.getFullYear() === today.getFullYear();
+        try {
+            const d = new Date(dateStr);
+            const today = new Date();
+            const isLocalSame = d.getDate() === today.getDate() &&
+                                d.getMonth() === today.getMonth() &&
+                                d.getFullYear() === today.getFullYear();
+            const dateOnlyStr = dateStr.substring(0, 10);
+            const todayOnlyStr = today.toISOString().substring(0, 10);
+            return isLocalSame || dateOnlyStr === todayOnlyStr;
+        } catch {
+            return false;
+        }
     };
 
     const getMaxQueueNumber = (doctorDocId: string) => {
@@ -418,6 +468,17 @@ export default function NurseQueueDashboard() {
         }, doctorTodayAppts.length);
 
         return maxQ;
+    };
+
+    const getActiveAppointment = (doctorDocId: string, currentQueueNumber: number) => {
+        const todayList = getDoctorTodayAppointments(doctorDocId);
+        if (todayList.length === 0) return undefined;
+        const exact = todayList.find(appt => appt.queueNumber === currentQueueNumber || appt.effectiveQueueNumber === currentQueueNumber);
+        if (exact) return exact;
+        if (currentQueueNumber > 0 && currentQueueNumber <= todayList.length) {
+            return todayList[currentQueueNumber - 1];
+        }
+        return undefined;
     };
 
     const getActiveAppointmentId = (doctorDocId: string, currentQueueNumber: number) => {
@@ -458,13 +519,52 @@ export default function NurseQueueDashboard() {
                     ...d,
                     sessionStarted: updatedDoc.sessionStarted,
                     sessionEndedToday: updatedDoc.sessionEndedToday,
-                    currentQueueNumber: updatedDoc.currentQueueNumber
+                    currentQueueNumber: updatedDoc.currentQueueNumber,
+                    allocatedNurse: updatedDoc.allocatedNurse !== undefined ? updatedDoc.allocatedNurse : d.allocatedNurse,
+                    allocatedRoom: updatedDoc.allocatedRoom !== undefined ? updatedDoc.allocatedRoom : d.allocatedRoom
                 } : d));
+
+                if (appointmentId && action === "complete") {
+                    setAppointments(prev => prev.map(a => a._id === appointmentId ? { ...a, status: "completed" } : a));
+                }
             }
         } catch (err) {
             console.error("Failed to update doctor", err);
         } finally {
-            setSaving({ ...saving, [doc._id]: false });
+            setSaving(prev => ({ ...prev, [doc._id]: false }));
+        }
+    };
+
+    const handleToggleDoctorArrival = async (doctor: any) => {
+        const newStatus = !doctor.isArrived;
+        setSaving(prev => ({ ...prev, [doctor._id]: true }));
+        try {
+            const token = getAdminToken();
+            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/admin/doctors/${doctor._id}/status`, {
+                method: "PUT",
+                headers: {
+                    "Content-Type": "application/json",
+                    "x-auth-token": token || "",
+                },
+                body: JSON.stringify({ isArrived: newStatus })
+            });
+            if (res.ok) {
+                const updatedDoc = await res.json();
+                setDoctors(prev => prev.map(d => d._id === doctor._id ? {
+                    ...d,
+                    ...updatedDoc,
+                    isArrived: newStatus,
+                    allocatedNurse: updatedDoc.allocatedNurse !== undefined ? updatedDoc.allocatedNurse : d.allocatedNurse,
+                    allocatedRoom: updatedDoc.allocatedRoom !== undefined ? updatedDoc.allocatedRoom : d.allocatedRoom
+                } : d));
+            } else {
+                alert("Failed to update doctor arrival status.");
+            }
+        } catch (err) {
+            console.error("Arrival update error:", err);
+            alert("Error updating arrival status.");
+        } finally {
+            setSaving(prev => ({ ...prev, [doctor._id]: false }));
         }
     };
 
@@ -472,7 +572,12 @@ export default function NurseQueueDashboard() {
         return <div className="p-10 flex justify-center"><Loader2 className="animate-spin text-cyan-600 h-8 w-8" /></div>;
     }
 
-    const assignedDoctors = doctors.filter(doc => doc.allocatedNurse === user.name);
+    const assignedDoctors = doctors.filter(doc => {
+        if (!doc.allocatedNurse) return false;
+        const nurseName = String(doc.allocatedNurse).trim().toLowerCase();
+        const userName = String(user?.name || "").trim().toLowerCase();
+        return nurseName === userName;
+    });
 
     return (
         <div className="space-y-6 max-w-7xl mx-auto p-4 md:p-8 ml-0 md:ml-64">
@@ -483,9 +588,21 @@ export default function NurseQueueDashboard() {
                     <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">Nurse OPD Queue</h1>
                     <p className="text-slate-500 mt-1">Manage doctor sessions and update patient queue numbers.</p>
                 </div>
-                <div className="bg-blue-50 text-blue-700 px-4 py-2 rounded-lg font-semibold flex items-center gap-2">
-                    <Users className="h-5 w-5" />
-                    Nurse: {user.name}
+                <div className="flex items-center gap-3">
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => playDingSound()}
+                        title="Test Alert Chime (plays sound and unlocks browser audio)"
+                        className="bg-white border-slate-200 text-slate-700 hover:text-cyan-700 shadow-sm rounded-xl h-10 px-3 flex items-center gap-1.5 font-bold text-xs"
+                    >
+                        <Volume2 className="h-4 w-4 text-cyan-600" />
+                        <span>Test Alert Sound</span>
+                    </Button>
+                    <div className="bg-blue-50 text-blue-700 px-4 py-2 rounded-xl font-semibold flex items-center gap-2 text-sm">
+                        <Users className="h-5 w-5" />
+                        Nurse: {user.name}
+                    </div>
                 </div>
             </div>
 
@@ -515,11 +632,21 @@ export default function NurseQueueDashboard() {
                                     </div>
                                 </div>
 
-                                <div className="text-right flex flex-col items-end gap-2">
+                                <div className="text-right flex flex-col sm:flex-row items-end sm:items-center gap-2">
                                     {!doc.isArrived ? (
-                                        <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200 flex gap-1">
-                                            <AlertCircle className="h-3.5 w-3.5" /> Doctor Not Arrived
-                                        </Badge>
+                                        <div className="flex items-center gap-2">
+                                            <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200 flex gap-1">
+                                                <AlertCircle className="h-3.5 w-3.5" /> Doctor Not Arrived
+                                            </Badge>
+                                            <Button
+                                                size="sm"
+                                                disabled={saving[doc._id]}
+                                                onClick={() => handleToggleDoctorArrival(doc)}
+                                                className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold h-8 px-3 rounded-lg text-xs shadow-sm flex items-center gap-1"
+                                            >
+                                                {saving[doc._id] ? <Loader2 className="h-3 w-3 animate-spin" /> : "Check In"}
+                                            </Button>
+                                        </div>
                                     ) : doc.sessionStarted ? (
                                         <div className="bg-emerald-50 text-emerald-700 px-4 py-1.5 rounded-full text-sm font-bold border border-emerald-200 animate-pulse">
                                             Session Active
@@ -529,8 +656,19 @@ export default function NurseQueueDashboard() {
                                             Session Ended
                                         </div>
                                     ) : (
-                                        <div className="bg-slate-100 text-slate-500 px-4 py-1.5 rounded-full text-sm font-bold border border-slate-200">
-                                            Ready to Start
+                                        <div className="flex items-center gap-2">
+                                            <div className="bg-emerald-50 text-emerald-700 px-3 py-1 rounded-full text-xs font-bold border border-emerald-200 flex items-center gap-1">
+                                                <span className="h-2 w-2 rounded-full bg-emerald-500"></span> Arrived
+                                            </div>
+                                            <Button
+                                                size="sm"
+                                                variant="ghost"
+                                                disabled={saving[doc._id]}
+                                                onClick={() => handleToggleDoctorArrival(doc)}
+                                                className="text-slate-400 hover:text-rose-600 h-7 px-2 text-[11px]"
+                                            >
+                                                Mark Away
+                                            </Button>
                                         </div>
                                     )}
                                 </div>
@@ -565,7 +703,16 @@ export default function NurseQueueDashboard() {
                                             {doc.sessionEndedToday ? (
                                                 <p className="text-[11px] text-rose-600 font-bold italic">Session has already been completed today and cannot be restarted.</p>
                                             ) : !doc.isArrived ? (
-                                                <p className="text-[11px] text-amber-600 font-bold italic">Waiting for receptionist confirmation...</p>
+                                                <div className="flex items-center gap-2">
+                                                    <p className="text-[11px] text-amber-600 font-bold italic">Doctor must be checked in to start session.</p>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleToggleDoctorArrival(doc)}
+                                                        className="text-[11px] text-cyan-700 font-bold underline hover:text-cyan-800"
+                                                    >
+                                                        Check In Doctor Now
+                                                    </button>
+                                                </div>
                                             ) : null}
                                         </div>
                                     )}
@@ -594,21 +741,20 @@ export default function NurseQueueDashboard() {
 
                                         <Button
                                             onClick={() => {
-                                                const maxQ = getMaxQueueNumber(doc._id);
                                                 const nextQ = (doc.currentQueueNumber || 0) + 1;
-                                                if (nextQ <= maxQ) {
-                                                    const currentApptId = getActiveAppointmentId(doc._id, doc.currentQueueNumber);
-                                                    handleUpdateDoctor(doc, { currentQueueNumber: nextQ }, "complete", currentApptId);
-                                                }
+                                                const currentApptId = getActiveAppointmentId(doc._id, doc.currentQueueNumber);
+                                                handleUpdateDoctor(doc, { currentQueueNumber: nextQ }, "complete", currentApptId);
                                             }}
                                             className="h-14 w-14 rounded-full bg-slate-900 hover:bg-slate-800 text-white shadow-lg shadow-slate-200"
                                             size="icon"
-                                            disabled={!doc.sessionStarted || saving[doc._id] || (doc.currentQueueNumber || 0) >= getMaxQueueNumber(doc._id)}
+                                            disabled={!doc.sessionStarted || saving[doc._id]}
                                         >
                                             <Plus className="h-6 w-6" />
                                         </Button>
                                     </div>
-                                    <p className="text-xs font-semibold text-slate-400 mt-4">Update Number for Next Patient (Max: {getMaxQueueNumber(doc._id)})</p>
+                                    <p className="text-xs font-semibold text-slate-400 mt-4">
+                                      Update Number for Next Patient {getMaxQueueNumber(doc._id) > 0 ? `(Scheduled: ${getMaxQueueNumber(doc._id)})` : ''}
+                                    </p>
                                 </div>
                             </CardContent>
                             

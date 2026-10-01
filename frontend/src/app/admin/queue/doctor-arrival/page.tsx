@@ -19,6 +19,7 @@ import {
 import { useRouter } from "next/navigation";
 import { clearAdminSession, getAdminToken, getAdminUser } from "@/lib/adminSession";
 import { io, Socket } from "socket.io-client";
+import { playDingSound } from "@/lib/soundUtils";
 
 interface DelayAlert {
     id: string;
@@ -51,41 +52,10 @@ export default function NurseDoctorArrivals() {
 
     const dropdownRef = useRef<HTMLDivElement>(null);
 
-    // Audio chime player using Web Audio API
+    // Audio chime player using Ding.mp3
     const playAlertChime = () => {
-        if (!soundEnabled || typeof window === "undefined") return;
-        try {
-            const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
-            if (!AudioCtx) return;
-            const ctx = new AudioCtx();
-            const now = ctx.currentTime;
-
-            // Note 1 (D5 - 587.33Hz)
-            const osc1 = ctx.createOscillator();
-            const gain1 = ctx.createGain();
-            osc1.type = "sine";
-            osc1.frequency.setValueAtTime(587.33, now);
-            gain1.gain.setValueAtTime(0.18, now);
-            gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
-            osc1.connect(gain1);
-            gain1.connect(ctx.destination);
-            osc1.start(now);
-            osc1.stop(now + 0.35);
-
-            // Note 2 (A5 - 880Hz)
-            const osc2 = ctx.createOscillator();
-            const gain2 = ctx.createGain();
-            osc2.type = "sine";
-            osc2.frequency.setValueAtTime(880, now + 0.15);
-            gain2.gain.setValueAtTime(0.22, now + 0.15);
-            gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.6);
-            osc2.connect(gain2);
-            gain2.connect(ctx.destination);
-            osc2.start(now + 0.15);
-            osc2.stop(now + 0.6);
-        } catch (e) {
-            console.warn("Audio chime prevented or unsupported:", e);
-        }
+        if (!soundEnabled) return;
+        playDingSound();
     };
 
     useEffect(() => {
@@ -228,23 +198,29 @@ export default function NurseDoctorArrivals() {
         }
     };
 
-    const assignedDoctorsCount = doctors.filter(d => d.allocatedNurse === user?.name).length;
-    const arrivedCount = doctors.filter(d => d.allocatedNurse === user?.name && d.isArrived).length;
+    const isNurseMatch = (docNurse?: string, currentUserName?: string) => {
+        if (!docNurse || !currentUserName) return false;
+        return docNurse.trim().toLowerCase() === currentUserName.trim().toLowerCase();
+    };
 
-    // Filter doctors assigned to this nurse and search
-    const filteredDoctors = doctors.filter(doc => {
-        const matchesNurse = doc.allocatedNurse === user?.name;
-        const matchesSearch = doc.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                              doc.specialization?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                              (doc.allocatedRoom && doc.allocatedRoom.toLowerCase().includes(searchQuery.toLowerCase()));
-        return matchesNurse && matchesSearch;
+    const assignedDoctors = doctors.filter(d => isNurseMatch(d.allocatedNurse, user?.name));
+    const assignedDoctorsCount = assignedDoctors.length;
+    const arrivedCount = assignedDoctors.filter(d => d.isArrived).length;
+
+    // Filter assigned doctors by search
+    const filteredDoctors = assignedDoctors.filter(doc => {
+        const query = searchQuery.trim().toLowerCase();
+        if (!query) return true;
+
+        const matchesSearch = doc.name.toLowerCase().includes(query) ||
+                              doc.specialization?.toLowerCase().includes(query) ||
+                              (doc.allocatedRoom && doc.allocatedRoom.toLowerCase().includes(query));
+        return matchesSearch;
     });
 
     // Detect delayed doctors
-    const delayedDoctors = doctors.filter(doc => 
-        doc.allocatedNurse === user?.name &&
-        doc.channelingStatus && 
-        doc.channelingStatus !== "On Time"
+    const delayedDoctors = assignedDoctors.filter(doc => 
+        doc.channelingStatus && doc.channelingStatus !== "On Time"
     );
 
     const unreadCount = notifications.filter(n => !n.read).length;
@@ -284,19 +260,23 @@ export default function NurseDoctorArrivals() {
                     </div>
                     
                     <div className="flex items-center gap-3">
-                        {/* Sound Toggle */}
+                        {/* Sound Toggle & Test */}
                         <Button
                             variant="outline"
                             size="sm"
-                            onClick={() => setSoundEnabled(!soundEnabled)}
-                            title={soundEnabled ? "Mute notification sounds" : "Unmute notification sounds"}
-                            className="bg-white border-slate-200 text-slate-600 hover:text-slate-900 shadow-sm rounded-xl h-10 px-3"
+                            onClick={() => {
+                                if (!soundEnabled) setSoundEnabled(true);
+                                playDingSound();
+                            }}
+                            title="Test alert sound chime (unlocks audio in your browser)"
+                            className="bg-white border-slate-200 text-slate-700 hover:text-cyan-700 shadow-sm rounded-xl h-10 px-3 flex items-center gap-1.5"
                         >
                             {soundEnabled ? (
                                 <Volume2 className="h-4 w-4 text-cyan-600" />
                             ) : (
                                 <VolumeX className="h-4 w-4 text-slate-400" />
                             )}
+                            <span className="text-xs font-semibold hidden sm:inline">Test Sound</span>
                         </Button>
 
                         {/* Notification Bell with Dropdown */}
@@ -385,7 +365,9 @@ export default function NurseDoctorArrivals() {
                             <Users className="text-cyan-600 h-5 w-5" />
                             <div>
                                 <p className="text-[10px] uppercase font-bold text-slate-400 leading-none">Attendance</p>
-                                <p className="text-sm font-bold text-slate-700">{arrivedCount} / {assignedDoctorsCount} Present</p>
+                                <p className="text-sm font-bold text-slate-700">
+                                    {arrivedCount} / {assignedDoctorsCount} Present
+                                </p>
                             </div>
                         </Card>
                     </div>
@@ -412,7 +394,7 @@ export default function NurseDoctorArrivals() {
                 <div className="relative mb-6 max-w-md">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
                     <Input 
-                        placeholder="Search by doctor name, specialty, room..." 
+                        placeholder="Search assigned doctors by name, specialty, room..." 
                         className="pl-10 bg-white border-slate-200 focus-visible:ring-cyan-500 shadow-sm rounded-xl"
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
@@ -497,11 +479,21 @@ export default function NurseDoctorArrivals() {
                                                 </div>
 
                                                 {/* Room & Time Details */}
-                                                <div className="mt-3 text-[11px] text-slate-500 flex items-center gap-3">
-                                                    <span className="flex items-center gap-1">
-                                                        <DoorOpen className="h-3 w-3 text-slate-400" />
+                                                <div className="mt-3 text-[11px] text-slate-500 flex flex-wrap items-center gap-3">
+                                                    <span className="flex items-center gap-1 font-medium text-slate-700">
+                                                        <DoorOpen className="h-3 w-3 text-cyan-600" />
                                                         {doc.allocatedRoom ? `Room ${doc.allocatedRoom}` : "No Room"}
                                                     </span>
+                                                    {doc.allocatedNurse && (
+                                                        <span className="flex items-center gap-1 text-slate-600">
+                                                            <Users className="h-3 w-3 text-slate-400" />
+                                                            {isNurseMatch(doc.allocatedNurse, user?.name) ? (
+                                                                <span className="text-cyan-700 font-bold bg-cyan-50 px-1.5 py-0.5 rounded border border-cyan-100">Assigned to You</span>
+                                                            ) : (
+                                                                <span>Nurse: {doc.allocatedNurse}</span>
+                                                            )}
+                                                        </span>
+                                                    )}
                                                     {doc.channelingTime && (
                                                         <span className="flex items-center gap-1">
                                                             <Calendar className="h-3 w-3 text-slate-400" />
@@ -516,9 +508,9 @@ export default function NurseDoctorArrivals() {
                                                         size="sm"
                                                         disabled={updatingId === doc._id}
                                                         onClick={() => toggleStatus(doc._id, doc.isArrived)}
-                                                        className={`rounded-xl px-4 transition-all ${
+                                                        className={`rounded-xl px-4 font-bold transition-all ${
                                                             doc.isArrived 
-                                                            ? "bg-rose-50 text-rose-600 hover:bg-rose-100 hover:text-rose-700 shadow-none border border-rose-100" 
+                                                            ? "bg-rose-50 text-rose-600 hover:bg-rose-100 hover:text-rose-700 shadow-none border border-rose-200" 
                                                             : "bg-cyan-600 text-white hover:bg-cyan-700 shadow-md shadow-cyan-100"
                                                         }`}
                                                     >
@@ -542,10 +534,14 @@ export default function NurseDoctorArrivals() {
 
                 {/* Empty State */}
                 {!loading && filteredDoctors.length === 0 && (
-                    <div className="text-center py-20 bg-white rounded-3xl border-2 border-dashed border-slate-200">
+                    <div className="text-center py-20 bg-white rounded-3xl border-2 border-dashed border-slate-200 p-6">
                         <CircleOff className="h-12 w-12 text-slate-300 mx-auto mb-3" />
-                        <h3 className="text-lg font-bold text-slate-700">No doctors found</h3>
-                        <p className="text-slate-500 text-sm mt-1">Try adjusting your search query.</p>
+                        <h3 className="text-lg font-bold text-slate-700">No assigned doctors found</h3>
+                        <p className="text-slate-500 text-sm mt-1 max-w-md mx-auto">
+                            {searchQuery 
+                                ? "No assigned doctors match your search query." 
+                                : `There are currently no doctor sessions assigned to your nurse account (${user?.name || "Nurse"}).`}
+                        </p>
                     </div>
                 )}
 

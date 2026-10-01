@@ -267,7 +267,7 @@ router.post("/book", auth, async (req, res) => {
     (async () => {
       try {
         const patient = await Patient.findById(req.user.id);
-        if (patient && patient.email) {
+        if (patient) {
           const doctorInfo = await Doctor.findById(doctorId);
           let doctorRoom = doctorInfo ? doctorInfo.allocatedRoom : "TBA";
           if (savedAppointment && savedAppointment.date && doctorInfo) {

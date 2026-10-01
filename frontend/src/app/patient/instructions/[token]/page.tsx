@@ -50,7 +50,9 @@ export default function PatientInstructionPage() {
     
     try {
       if (!url.startsWith("http://") && !url.startsWith("https://")) {
-        return url;
+        const apiRoot = resolvedApiBase.replace(/\/api\/?$/, "");
+        const cleanPath = url.startsWith("/") ? url : `/${url}`;
+        return `${apiRoot}${cleanPath}`;
       }
       const parsedUrl = new URL(url);
       const pathname = parsedUrl.pathname;
@@ -68,22 +70,28 @@ export default function PatientInstructionPage() {
       try {
         let apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5002/api";
         
-        // Only replace localhost with the page's hostname if it is a local network IP
         if (typeof window !== "undefined") {
           const hostname = window.location.hostname;
-          const isLocalIP = 
-            hostname.startsWith("192.168.") ||
-            hostname.startsWith("10.") ||
-            hostname.startsWith("172.") ||
-            hostname === "localhost" ||
-            hostname === "127.0.0.1";
-
-          if (isLocalIP && (apiBase.includes("localhost") || apiBase.includes("127.0.0.1"))) {
-            apiBase = apiBase.replace("localhost", hostname).replace("127.0.0.1", hostname);
-          }
+          try {
+            const parsed = new URL(apiBase);
+            const isLocalHost = 
+              parsed.hostname === "localhost" ||
+              parsed.hostname === "127.0.0.1" ||
+              parsed.hostname.startsWith("10.") ||
+              parsed.hostname.startsWith("192.168.") ||
+              parsed.hostname.startsWith("172.");
+            if (isLocalHost && hostname) {
+              parsed.hostname = hostname;
+              apiBase = parsed.toString().replace(/\/$/, "");
+            }
+          } catch (e) {}
         }
 
-        const res = await fetch(`${apiBase}/instructions/share/${token}`);
+        const res = await fetch(`${apiBase}/instructions/share/${token}`, {
+          headers: {
+            "ngrok-skip-browser-warning": "true"
+          }
+        });
         if (!res.ok) {
           if (res.status === 410 || res.status === 404) {
             const errData = await res.json().catch(() => ({}));
@@ -92,6 +100,9 @@ export default function PatientInstructionPage() {
           throw new Error("Failed to load instructions. Please try again later.");
         }
         const responseData = await res.json();
+        if (!responseData.instruction) {
+          throw new Error("This instruction record is no longer available.");
+        }
         setData(responseData.instruction);
         setShareSection(responseData.section);
         setResolvedApiBase(apiBase);

@@ -12,6 +12,8 @@ import {
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { clearAdminSession, getAdminToken, getAdminUser } from "@/lib/adminSession";
+import { io } from "socket.io-client";
+import { playDingSound } from "@/lib/soundUtils";
 
 export default function NursePatientArrivals() {
     const router = useRouter();
@@ -41,6 +43,61 @@ export default function NursePatientArrivals() {
         setUser(storedUser);
         fetchInitialData();
     }, [router]);
+
+    useEffect(() => {
+        const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5002";
+        let socketUrl = apiUrl;
+        try {
+            const urlObj = new URL(apiUrl);
+            socketUrl = urlObj.origin;
+        } catch (e) {
+            console.error("Invalid API URL for socket:", e);
+        }
+
+        const socket = io(socketUrl);
+
+        socket.on("connect", () => {
+            console.log("🔌 Connected to Socket.IO Server (Patient Arrivals)");
+        });
+
+        socket.on("doctorDelayAlert", (alertData: any) => {
+            console.log("🚨 Received doctor delay alert in patient arrivals:", alertData);
+            playDingSound();
+            if (alertData?.doctorId) {
+                setDoctors(prev => prev.map(d => {
+                    if (d._id !== alertData.doctorId) return d;
+                    return {
+                        ...d,
+                        channelingStatus: alertData.channelingStatus || alertData.status || d.channelingStatus,
+                        allocatedNurse: alertData.allocatedNurse !== undefined ? alertData.allocatedNurse : d.allocatedNurse,
+                        allocatedRoom: alertData.allocatedRoom !== undefined ? alertData.allocatedRoom : d.allocatedRoom
+                    };
+                }));
+            }
+        });
+
+        socket.on("doctorStatusUpdated", (updatedDoc: any) => {
+            setDoctors(prev => prev.map(d => d._id === updatedDoc._id ? { ...d, ...updatedDoc } : d));
+        });
+
+        socket.on("appointmentUpdated", (updatedAppt: any) => {
+            if (updatedAppt?._id) {
+                setAppointments(prev => prev.map(a => a._id === updatedAppt._id ? { ...a, ...updatedAppt } : a));
+            } else {
+                fetchInitialData();
+            }
+        });
+
+        socket.on("nurseReleased", (payload: any) => {
+            if (payload?.doctorId) {
+                setDoctors(prev => prev.map(d => d._id === payload.doctorId ? { ...d, allocatedNurse: "" } : d));
+            }
+        });
+
+        return () => {
+            socket.disconnect();
+        };
+    }, []);
 
     const fetchInitialData = async () => {
         try {
@@ -141,7 +198,10 @@ export default function NursePatientArrivals() {
 
     // Filter and Search Logic
     const assignedDoctorIds = doctors
-        .filter(doc => doc.allocatedNurse === user?.name)
+        .filter(doc => {
+            if (!doc.allocatedNurse || !user?.name) return false;
+            return doc.allocatedNurse.trim().toLowerCase() === user.name.trim().toLowerCase();
+        })
         .map(doc => doc._id);
 
     const filteredAppointments = appointments

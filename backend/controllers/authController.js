@@ -347,8 +347,9 @@ export const forgotPassword = async (req, res) => {
 
     const { user } = result;
 
-    if (!user.email) {
-      return res.status(400).json({ msg: "This account has no associated email address for password reset. Please contact administration." });
+    const phone = user.mobileNumber || user.phone;
+    if (!user.email && !phone) {
+      return res.status(400).json({ msg: "This account has no associated email or phone number for password reset. Please contact administration." });
     }
 
     // 2. Generate a 6-digit OTP
@@ -359,15 +360,15 @@ export const forgotPassword = async (req, res) => {
     user.resetPasswordExpire = Date.now() + 10 * 60 * 1000;
     await user.save();
 
-    // 4. Send Password Reset Code using our service
+    // 4. Send Password Reset Code using our service (both SMS and email if available)
     await sendPasswordResetOtp(user, otp);
 
-    const maskedEmail = maskEmail(user.email);
+    const maskedEmail = user.email ? maskEmail(user.email) : null;
 
     res.json({ 
       msg: "If the account is registered, an OTP has been sent.", 
       maskedEmail,
-      email: user.email
+      email: user.email || null
     });
 
   } catch (err) {

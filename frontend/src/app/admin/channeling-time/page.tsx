@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { 
-    Loader2, Clock, CalendarDays, Check, User, ChevronDown, Search, X, AlertTriangle 
+    Loader2, Clock, CalendarDays, Check, User, ChevronDown, Search, X, AlertTriangle, Trash2 
 } from "lucide-react";
 import { getAdminToken } from "@/lib/adminSession";
 import { 
@@ -75,6 +75,7 @@ const isRoomBookedForTime = (roomName: string, req: any, allRequests: any[]) => 
   return allRequests.some(other => {
     if (other._id === req._id) return false;
     if (other.status !== 'approved') return false;
+    if (other.sessionEnded) return false;
     if (other.allocatedRoom !== roomName) return false;
     
     const dateA = new Date(req.date).toDateString();
@@ -90,6 +91,7 @@ const isNurseBookedForTime = (nurseName: string, req: any, allRequests: any[]) =
   return allRequests.some(other => {
     if (other._id === req._id) return false;
     if (other.status !== 'approved') return false;
+    if (other.sessionEnded) return false;
     if (other.allocatedNurse !== nurseName) return false;
 
     const dateA = new Date(req.date).toDateString();
@@ -288,7 +290,14 @@ const [doctorSearchQuery, setDoctorSearchQuery] = useState("");
         }
     };
 
-    const handleAction = async (id: string, newStatus: "approved" | "rejected") => {
+    const handleAction = async (id: string, newStatus: "approved" | "rejected" | "cancelled") => {
+        if (newStatus === "cancelled") {
+            const confirmed = window.confirm(
+                "Are you sure you want to cancel this schedule? Any booked appointments will be cancelled and allocated room/nurse resources will be released."
+            );
+            if (!confirmed) return;
+        }
+
         setLoadingAction(id);
         try {
             const token = getAdminToken() || "";
@@ -304,7 +313,12 @@ const [doctorSearchQuery, setDoctorSearchQuery] = useState("");
             
             if (response.ok) {
                 setRequests(prev => 
-                    prev.map(req => req._id === id ? { ...req, status: newStatus } : req)
+                    prev.map(req => req._id === id ? { 
+                        ...req, 
+                        status: newStatus,
+                        allocatedRoom: newStatus === "approved" ? req.allocatedRoom : "",
+                        allocatedNurse: newStatus === "approved" ? req.allocatedNurse : ""
+                    } : req)
                 );
             } else {
                 const errData = await response.json();
@@ -312,6 +326,41 @@ const [doctorSearchQuery, setDoctorSearchQuery] = useState("");
             }
         } catch (error) {
             console.error("Action Error:", error);
+            alert("An error occurred. Please try again.");
+        } finally {
+            setLoadingAction(null);
+        }
+    };
+
+    const handleDelete = async (id: string) => {
+        const confirmed = window.confirm(
+            "Are you sure you want to permanently delete this schedule request? Any booked appointments will be cancelled and resources will be released."
+        );
+        if (!confirmed) return;
+
+        setLoadingAction(id);
+        try {
+            const token = getAdminToken() || "";
+            const response = await fetch(`${API_URL}/schedule-requests/${id}`, {
+                method: "DELETE",
+                headers: { 
+                    "Authorization": `Bearer ${token}`,
+                    "x-auth-token": token
+                }
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                setRequests(prev => prev.filter(req => req._id !== id));
+                if (data.cancelledAppointmentsCount > 0) {
+                    alert(`Schedule deleted successfully. ${data.cancelledAppointmentsCount} associated booked appointment(s) were cancelled.`);
+                }
+            } else {
+                const errData = await response.json();
+                alert(errData.msg || "Failed to delete schedule");
+            }
+        } catch (error) {
+            console.error("Delete Error:", error);
             alert("An error occurred. Please try again.");
         } finally {
             setLoadingAction(null);
@@ -456,13 +505,7 @@ const filteredHistoryRequests = historyRequests.filter((req: any) => {
   <label className="block text-xs font-semibold text-slate-700 mb-1">
     Select Doctor
   </label>
-  {/* ADD THIS LINE AT LINE 454 */}
   <div className="relative" ref={dropdownRef}>
-    <button
-      type="button"
-      onClick={() => setIsOpen(!isOpen)}
-      className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-4 focus:ring-cyan-500/10"
-    ></button>
 
                                                 <button
                                                     type="button"
@@ -672,6 +715,7 @@ const filteredHistoryRequests = historyRequests.filter((req: any) => {
                                         key={req._id} 
                                         req={req} 
                                         onAction={handleAction} 
+                                        onDelete={handleDelete}
                                         onApproveClick={(selectedReq: any) => {
                                             setApprovalDialogReq(selectedReq);
                                             setApprovalRoom("");
@@ -706,6 +750,8 @@ const filteredHistoryRequests = historyRequests.filter((req: any) => {
         key={req._id}
         req={req}
         isHistory
+        onAction={handleAction}
+        onDelete={handleDelete}
         loadingId={loadingAction}
         formatDate={formatDate}
         formatTime={formatTime}
@@ -832,10 +878,18 @@ const filteredHistoryRequests = historyRequests.filter((req: any) => {
 // --- SUB COMPONENTS ---
 
 
-function RequestCard({ req, onAction, onApproveClick, loadingId, isHistory, formatDate, formatTime }: any) {
+function RequestCard({ req, onAction, onDelete, onApproveClick, loadingId, isHistory, formatDate, formatTime }: any) {
     const isLoading = loadingId === req._id;
 
-    
+    const getStatusBadge = (status: string) => {
+        if (status === "approved") {
+            return "bg-emerald-100 text-emerald-700";
+        }
+        if (status === "cancelled") {
+            return "bg-amber-100 text-amber-700";
+        }
+        return "bg-rose-100 text-rose-700";
+    };
 
     return (
         <Card className={`group border-slate-200 shadow-sm overflow-hidden transition-all duration-300 ${isHistory ? 'bg-slate-50/50' : 'hover:shadow-md hover:border-cyan-500/30 bg-white'}`}>
@@ -872,14 +926,14 @@ function RequestCard({ req, onAction, onApproveClick, loadingId, isHistory, form
                     <div className="flex items-center gap-3 w-full lg:w-auto justify-end">
                         {isHistory ? (
                             <div className="flex items-center gap-2">
-                                <Badge className={`${req.status === "approved" ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-700"} border-none px-3 py-1 uppercase text-[10px]`}>
+                                <Badge className={`${getStatusBadge(req.status)} border-none px-3 py-1 uppercase text-[10px]`}>
                                     {req.status}
                                 </Badge>
                                 {req.status === "approved" && (
                                     <Button 
                                         variant="outline"
                                         size="sm"
-                                        onClick={() => onAction(req._id, "rejected")}
+                                        onClick={() => onAction(req._id, "cancelled")}
                                         disabled={isLoading}
                                         className="text-[10px] h-7 px-2 border-slate-200 text-rose-600 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-100 rounded-lg font-bold"
                                     >

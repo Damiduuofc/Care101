@@ -21,7 +21,7 @@ import surgeryRecordRoutes from "./routes/surgeryRecords.js";
 import chatRoutes from "./routes/chatRoutes.js";
 import adminRoutes from "./routes/adminRoutes.js";
 import paymentRoutes from "./routes/payments.js"; // <--- Import this
-import instructionRoutes from "./routes/instructionRoutes.js";
+import instructionRoutes, { handlePatientInstructionsView } from "./routes/instructionRoutes.js";
 import patientsRoutes from "./routes/patients.js"; // <--- NEW: Patients management
 import scheduleRequestRoutes from "./routes/scheduleRequests.js"; // <--- NEW: Schedule Requests
 import labRequestRoutes from "./routes/labRequests.js"; // <--- NEW: Lab Requests
@@ -30,6 +30,7 @@ import Doctor from "./models/Doctor.js";
 import ScheduleRequest from "./models/ScheduleRequest.js";
 
 const app = express();
+app.set("trust proxy", true);
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
   cors: {
@@ -106,8 +107,8 @@ app.use("/api/finance", financeRoutes);
 app.use("/api/surgery-records", surgeryRecordRoutes);
 app.use("/api/chat", chatRoutes);
 app.use("/api/admin", adminRoutes);
-app.use("/api/doctors", doctorRoutes);
 app.use("/api/instructions", instructionRoutes);
+app.get("/patient/instructions/:token", handlePatientInstructionsView);
 app.use("/api/payments", paymentRoutes);
 app.use("/api/patients", patientsRoutes); // <--- NEW: Patients management
 app.use("/api/schedule-requests", scheduleRequestRoutes); // <--- NEW: Schedule requests

@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { 
   Loader2, DoorOpen, Save, Clock, CheckCircle2, AlertTriangle, 
-  X, Pencil, Search, Calendar as CalendarIcon, Grid, List, UserCheck, ShieldAlert, Plus, CalendarPlus, UserX 
+  X, Pencil, Search, Calendar as CalendarIcon, Grid, List, UserCheck, ShieldAlert, Plus, CalendarPlus, UserX, Trash2 
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { clearAdminSession, getAdminToken, getAdminUser } from "@/lib/adminSession";
@@ -78,6 +78,7 @@ const isRoomBooked = (roomName: string, currentSched: any, allSchedules: any[]) 
   if (!roomName) return false;
   return allSchedules.some(other => {
     if (other._id === currentSched._id) return false;
+    if (other.sessionEnded) return false;
     if (other.allocatedRoom !== roomName) return false;
     
     // only check overlaps on the same day
@@ -94,6 +95,7 @@ const isNurseBooked = (nurseName: string, currentSched: any, allSchedules: any[]
   if (!nurseName) return false;
   return allSchedules.some(other => {
     if (other._id === currentSched._id) return false;
+    if (other.sessionEnded) return false;
     if (other.allocatedNurse !== nurseName) return false;
 
     // only check overlaps on the same day
@@ -181,13 +183,17 @@ function AllocationCard({
   allSchedules, 
   nurses, 
   showToast,
-  onLocalUpdate 
+  onLocalUpdate,
+  onDeleteSchedule,
+  onCancelSchedule
 }: { 
   sched: ScheduleRequest; 
   allSchedules: ScheduleRequest[];
   nurses: Nurse[]; 
   showToast: (msg: string, type?: ToastType) => void;
   onLocalUpdate: (id: string, field: "allocatedRoom" | "allocatedNurse", value: string) => void;
+  onDeleteSchedule?: (id: string) => void;
+  onCancelSchedule?: (id: string) => void;
 }) {
   const [isSaving, setIsSaving] = useState(false);
   const [isConfirming, setIsConfirming] = useState(false);
@@ -279,10 +285,34 @@ function AllocationCard({
         </div>
         <div className="flex-1">
           <div className="flex items-center justify-between">
-            <CardTitle className="text-base text-slate-800 font-bold">{sched.doctorName}</CardTitle>
-            <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded bg-cyan-50 text-cyan-700 border border-cyan-100">
-              {deptLabel}
-            </span>
+            <div className="flex items-center gap-2">
+              <CardTitle className="text-base text-slate-800 font-bold">{sched.doctorName}</CardTitle>
+              <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded bg-cyan-50 text-cyan-700 border border-cyan-100">
+                {deptLabel}
+              </span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              {onCancelSchedule && (
+                <button
+                  type="button"
+                  onClick={() => onCancelSchedule(sched._id)}
+                  title="Cancel this doctor's schedule"
+                  className="text-[11px] font-bold text-amber-600 hover:text-amber-800 hover:bg-amber-50 px-2 py-1 rounded transition-colors"
+                >
+                  Cancel Slot
+                </button>
+              )}
+              {onDeleteSchedule && (
+                <button
+                  type="button"
+                  onClick={() => onDeleteSchedule(sched._id)}
+                  title="Permanently Delete Schedule"
+                  className="text-slate-400 hover:text-rose-600 hover:bg-rose-50 p-1 rounded transition-colors"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
           </div>
           <CardDescription className="text-xs text-slate-500 font-medium mt-0.5">{doctorSpec}</CardDescription>
           <div className="flex items-center flex-wrap gap-x-3 gap-y-1 mt-1 text-xs text-[#06b6d4] font-bold">
@@ -506,6 +536,68 @@ export default function RoomAllocation() {
     setSchedules(prev => prev.map(s => 
       s._id === id ? { ...s, [field]: value } : s
     ));
+  };
+
+  const handleDeleteSchedule = async (id: string) => {
+    if (!window.confirm("Are you sure you want to permanently delete this schedule? Any booked appointments will be cancelled and resources will be released.")) {
+      return;
+    }
+    try {
+      const token = getAdminToken();
+      const baseUrl = process.env.NEXT_PUBLIC_API_URL;
+      const res = await fetch(`${baseUrl}/schedule-requests/${id}`, {
+        method: "DELETE",
+        headers: {
+          "Authorization": `Bearer ${token}`,
+          "x-auth-token": token || "",
+          "ngrok-skip-browser-warning": "true"
+        }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setSchedules(prev => prev.filter(s => s._id !== id));
+        showToast(
+          data.cancelledAppointmentsCount > 0 
+            ? `Schedule deleted. ${data.cancelledAppointmentsCount} appointment(s) cancelled.` 
+            : "Schedule deleted successfully", 
+          "success"
+        );
+      } else {
+        const err = await res.json();
+        showToast(err.msg || "Failed to delete schedule", "error");
+      }
+    } catch {
+      showToast("Error deleting schedule", "error");
+    }
+  };
+
+  const handleCancelSchedule = async (id: string) => {
+    if (!window.confirm("Are you sure you want to cancel this schedule? Any booked appointments will be cancelled and room/nurse resources will be released.")) {
+      return;
+    }
+    try {
+      const token = getAdminToken();
+      const baseUrl = process.env.NEXT_PUBLIC_API_URL;
+      const res = await fetch(`${baseUrl}/schedule-requests/${id}/status`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`,
+          "x-auth-token": token || "",
+          "ngrok-skip-browser-warning": "true"
+        },
+        body: JSON.stringify({ status: "cancelled" })
+      });
+      if (res.ok) {
+        setSchedules(prev => prev.filter(s => s._id !== id));
+        showToast("Schedule cancelled and resources released", "warning");
+      } else {
+        const err = await res.json();
+        showToast(err.msg || "Failed to cancel schedule", "error");
+      }
+    } catch {
+      showToast("Error cancelling schedule", "error");
+    }
   };
 
   // Find loose specialization for chosen manual doctor
@@ -946,6 +1038,8 @@ export default function RoomAllocation() {
                     nurses={nurses} 
                     showToast={showToast} 
                     onLocalUpdate={handleUpdateAllocation}
+                    onDeleteSchedule={handleDeleteSchedule}
+                    onCancelSchedule={handleCancelSchedule}
                   />
                 ))
               )}
@@ -1013,8 +1107,8 @@ export default function RoomAllocation() {
                         </span>
                       </div>
 
-                      {/* Approval Action */}
-                      <div className="flex items-center gap-3 w-full md:w-auto justify-end">
+                      {/* Approval & Delete Action */}
+                      <div className="flex items-center gap-2 w-full md:w-auto justify-end">
                         <Button
                           onClick={() => {
                             setApprovalDialogReq(req);
@@ -1024,6 +1118,15 @@ export default function RoomAllocation() {
                           className="bg-cyan-600 hover:bg-cyan-700 text-white text-xs font-bold shadow"
                         >
                           Allocate Room & Nurse
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleDeleteSchedule(req._id)}
+                          className="text-slate-400 hover:text-rose-600 hover:bg-rose-50 h-9 w-9 p-0 rounded-lg"
+                          title="Permanently Delete Schedule"
+                        >
+                          <Trash2 className="h-4 w-4" />
                         </Button>
                       </div>
                     </CardContent>

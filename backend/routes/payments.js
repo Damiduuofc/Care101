@@ -85,7 +85,7 @@ router.put("/pay-bill/:billId", auth, async (req, res) => {
     (async () => {
       try {
         const patient = await Patient.findById(req.user.id);
-        if (patient && patient.email) {
+        if (patient) {
           let appointment = null;
           let doctor = null;
           if (bill.appointmentId) {
@@ -94,7 +94,12 @@ router.put("/pay-bill/:billId", auth, async (req, res) => {
               doctor = await Doctor.findById(appointment.doctorId);
             }
           }
-          const pdfBuffer = await generateReceiptPdf(bill, appointment, doctor, patient);
+          let pdfBuffer = null;
+          try {
+            pdfBuffer = await generateReceiptPdf(bill, appointment, doctor, patient);
+          } catch (pdfErr) {
+            console.error("Failed to generate PDF receipt:", pdfErr);
+          }
           await sendPaymentReceipt(patient.email, bill, pdfBuffer);
         }
       } catch (pdfEmailErr) {
