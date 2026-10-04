@@ -1,28 +1,31 @@
 import Doctor from "../models/Doctor.js";
 import Patient from "../models/Patient.js";
-import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import Notification from "../models/Notification.js";
+import bcrypt from "bcryptjs";
+import { sendPatientWelcomeEmail, sendPasswordResetOtp } from "../utils/emailService.js";
+
 // 1. REGISTER SINGLE DOCTOR
 export const registerDoctor = async (req, res) => {
   try {
     const { fullName, email, password, specialization, nicNumber, phoneNumber, slmcRegistrationNumber, nameWithInitials } = req.body;
 
-    const existingDoctor = await Doctor.findOne({ email });
-    if (existingDoctor) return res.status(400).json({ message: "Doctor already exists." });
+    // Email uniqueness check removed to allow duplicate emails
 
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
     const newDoctor = new Doctor({
       name: fullName,
+      fullName,
       email,
       password: hashedPassword,
       specialization,
       nic: nicNumber,
       phone: phoneNumber,
       slmcReg: slmcRegistrationNumber,
-      nameWithInitials
+      nameWithInitials,
+      isApproved: false
     });
 
     await newDoctor.save();
@@ -43,51 +46,56 @@ export const registerPatient = async (req, res) => {
   try {
     const {
       fullName, dateOfBirth, gender, nicNumber,
-      mobileNumber, email, district, username, password
+      mobileNumber, email, district, password
     } = req.body;
 
-    // 1. Check uniqueness across BOTH collections
-    const existingPatient = await Patient.findOne({ email });
-    const existingDoctor = await Doctor.findOne({ email });
-
-    if (existingPatient || existingDoctor) {
-      return res.status(400).json({ message: "User with this email already exists" });
+    if (!email || email.trim() === "") {
+      return res.status(400).json({ message: "Email is required" });
     }
+
+    // Email uniqueness check removed to allow duplicate emails
 
     // 2. Hash Password
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
-    // 3. Create Patient
+    // 3. Create new Patient
     const newPatient = new Patient({
       fullName,
-      dateOfBirth,
+      dateOfBirth: new Date(dateOfBirth),
       gender,
-      nicNumber,
+      nicNumber: nicNumber || undefined,
       mobileNumber,
-      email,
+      email: email.toLowerCase(),
       district,
-      username,
-      password: hashedPassword
+      password: hashedPassword,
+      isRegistered: true
     });
 
     await newPatient.save();
+    const finalPatient = newPatient;
 
     // 4. Create Token
     const token = jwt.sign(
-      { id: newPatient._id, role: 'patient' },
+      { id: finalPatient._id, role: 'patient' },
       process.env.JWT_SECRET,
       { expiresIn: "30d" }
     );
 
+    // Send Welcome Notification (Run asynchronously in the background)
+    sendPatientWelcomeEmail(finalPatient).catch(emailErr => {
+      console.error("Welcome notification failed to send:", emailErr);
+    });
+
     res.status(201).json({
       token,
       user: {
-        id: newPatient._id,
-        name: newPatient.fullName,
-        email: newPatient.email,
-        nicNumber: newPatient.nicNumber,
-        role: "patient"
+        id: finalPatient._id,
+        name: finalPatient.fullName,
+        email: finalPatient.email,
+        nicNumber: finalPatient.nicNumber,
+        role: "patient",
+        patientId: finalPatient.patientId
       }
     });
 
@@ -102,21 +110,37 @@ export const registerPatient = async (req, res) => {
 // ==========================================
 export const login = async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const { identifier, password } = req.body;
 
     let user = null;
     let role = null;
 
-    // 1. Check Doctor Collection
-    const doctor = await Doctor.findOne({ email });
-    if (doctor) {
-      user = doctor;
-      role = "doctor";
+    if (!identifier) {
+      return res.status(400).json({ message: "Identifier is required" });
     }
 
-    // 2. Check Patient Collection (if not found in Doctor)
-    if (!user) {
-      const patient = await Patient.findOne({ email });
+    const trimmedIdentifier = identifier.trim();
+
+    // Check if the identifier is a numeric string (valid SLMC registration number)
+    const isNumeric = /^\d+$/.test(trimmedIdentifier);
+
+    if (isNumeric) {
+      // 1. Check Doctor Collection by SLMC Registration Number
+      const slmcNumber = parseInt(trimmedIdentifier, 10);
+      const doctor = await Doctor.findOne({ slmcReg: slmcNumber });
+      if (doctor) {
+        // Block unapproved doctors
+        if (!doctor.isApproved) {
+          return res.status(403).json({ message: "Your account is pending admin approval. Please wait for the administrator to activate your account." });
+        }
+        user = doctor;
+        role = "doctor";
+      }
+    } else {
+      // 2. Check Patient Collection by Patient ID
+      const patient = await Patient.findOne({
+        patientId: trimmedIdentifier.toUpperCase()
+      });
       if (patient) {
         user = patient;
         role = "patient";
@@ -149,7 +173,9 @@ export const login = async (req, res) => {
         email: user.email,
         role: role,
         specialization: user.specialization || null,
-        nicNumber: user.nicNumber || user.nic || null  // Include NIC for patients/doctors
+        nicNumber: user.nicNumber || user.nic || null,  // Include NIC for patients/doctors
+        patientId: user.patientId || null,
+        hospital: user.hospital || null
       }
     });
 
@@ -167,12 +193,12 @@ export const registerDoctorsBulk = async (req, res) => {
     if (!Array.isArray(doctorsList)) return res.status(400).json({ message: "Input must be an array." });
 
     const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash("Damidu12", salt);
+    const hashedPassword = await bcrypt.hash("Damidu12.", salt);
 
     const doctorsWithHashedPassword = doctorsList.map(doc => ({
       ...doc,
       password: hashedPassword,
-      // Map JSON fields to Schema if needed, assuming JSON matches Schema for bulk
+      isApproved: false
     }));
 
     // ordered: false allows successful inserts even if some fail (duplicates)
@@ -211,7 +237,7 @@ export const updateProfile = async (req, res) => {
     const {
       fullName, mobileNumber, district,
       emergencyContact, medicalConditions, allergies,
-      insuranceProvider, policyNumber, profileImage
+      insuranceProvider, policyNumber, profileImage, email
     } = req.body;
 
     const patient = await Patient.findById(req.user.id);
@@ -227,6 +253,7 @@ export const updateProfile = async (req, res) => {
     if (insuranceProvider) patient.insuranceProvider = insuranceProvider;
     if (policyNumber) patient.policyNumber = policyNumber;
     if (profileImage) patient.profileImage = profileImage; // Expecting Base64 string
+    if (email) patient.email = email.toLowerCase().trim();
 
     await patient.save();
     res.json({ msg: "Profile updated successfully", patient });
@@ -269,3 +296,170 @@ export const getNotifications = async (req, res) => {
   }
 };
 
+// Helper to mask email address: e.g. john.doe@example.com -> j***@example.com
+const maskEmail = (email) => {
+  if (!email) return "";
+  const [localPart, domain] = email.split("@");
+  if (!localPart || !domain) return email;
+  const firstChar = localPart.charAt(0);
+  return `${firstChar}***@${domain}`;
+};
+
+// Helper to find patient or doctor by various identifiers
+const findUserByIdentifier = async (identifier) => {
+  if (!identifier) return null;
+  const searchStr = identifier.toString().trim();
+
+  // 1. Try finding patient by patientId (case-insensitive/uppercase) or email
+  let user = await Patient.findOne({
+    $or: [
+      { patientId: searchStr.toUpperCase() },
+      { email: searchStr.toLowerCase() }
+    ]
+  });
+  if (user) return { user, userType: "Patient" };
+
+  // 2. Try finding doctor by slmcReg or email
+  if (/^\d+$/.test(searchStr)) {
+    const slmcNum = parseInt(searchStr, 10);
+    user = await Doctor.findOne({ slmcReg: slmcNum });
+    if (user) return { user, userType: "Doctor" };
+  }
+
+  user = await Doctor.findOne({ email: searchStr.toLowerCase() });
+  if (user) return { user, userType: "Doctor" };
+
+  return null;
+};
+
+// ==========================================
+// FORGOT PASSWORD (Generate & Send OTP)
+// ==========================================
+export const forgotPassword = async (req, res) => {
+  const { email } = req.body; // email parameter acts as the identifier input from user (email, slmcReg, or patientId)
+
+  try {
+    const result = await findUserByIdentifier(email);
+    if (!result) {
+      // Security: Do not reveal if the account exists
+      return res.json({ msg: "If the account is registered, an OTP has been sent." });
+    }
+
+    const { user } = result;
+
+    const phone = user.mobileNumber || user.phone;
+    if (!user.email && !phone) {
+      return res.status(400).json({ msg: "This account has no associated email or phone number for password reset. Please contact administration." });
+    }
+
+    // 2. Generate a 6-digit OTP
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+
+    // 3. Save OTP and set expiration (10 minutes)
+    user.resetPasswordOtp = otp;
+    user.resetPasswordExpire = Date.now() + 10 * 60 * 1000;
+    await user.save();
+
+    // 4. Send Password Reset Code using our service (both SMS and email if available)
+    await sendPasswordResetOtp(user, otp);
+
+    const maskedEmail = user.email ? maskEmail(user.email) : null;
+
+    res.json({ 
+      msg: "If the account is registered, an OTP has been sent.", 
+      maskedEmail,
+      email: user.email || null
+    });
+
+  } catch (err) {
+    console.error("Forgot Password Error:", err);
+    res.status(500).send("Server Error");
+  }
+};
+
+// ==========================================
+// VERIFY OTP
+// ==========================================
+export const verifyOtp = async (req, res) => {
+  const { email, otp } = req.body;
+
+  try {
+    const result = await findUserByIdentifier(email);
+    if (!result) return res.status(400).json({ msg: "Invalid request." });
+
+    const { user } = result;
+
+    // Check if OTP matches and is not expired
+    if (user.resetPasswordOtp !== otp) {
+      return res.status(400).json({ msg: "Invalid OTP." });
+    }
+
+    if (user.resetPasswordExpire < Date.now()) {
+      return res.status(400).json({ msg: "OTP has expired. Please request a new one." });
+    }
+
+    res.json({ msg: "OTP verified successfully." });
+
+  } catch (err) {
+    console.error("Verify OTP Error:", err);
+    res.status(500).send("Server Error");
+  }
+};
+
+// ==========================================
+// RESET PASSWORD (Set new password)
+// ==========================================
+export const resetPassword = async (req, res) => {
+  const { email, otp, newPassword } = req.body;
+
+  try {
+    const result = await findUserByIdentifier(email);
+    if (!result) return res.status(400).json({ msg: "Invalid request." });
+
+    const { user } = result;
+
+    // Final security check
+    if (user.resetPasswordOtp !== otp || user.resetPasswordExpire < Date.now()) {
+      return res.status(400).json({ msg: "Invalid or expired OTP." });
+    }
+
+    // Hash new password
+    const salt = await bcrypt.genSalt(10);
+    user.password = await bcrypt.hash(newPassword, salt);
+
+    // Clear the OTP fields
+    user.resetPasswordOtp = undefined;
+    user.resetPasswordExpire = undefined;
+    await user.save();
+
+    res.json({ msg: "Password reset successfully. You can now log in." });
+
+  } catch (err) {
+    console.error("Reset Password Error:", err);
+    res.status(500).send("Server Error");
+  }
+};
+
+export const getNextPatientId = async (req, res) => {
+  try {
+    const lastPatient = await Patient.findOne(
+      { patientId: /^SHP\d+$/ },
+      {},
+      { sort: { patientId: -1 } }
+    );
+    
+    let nextNum = 1;
+    if (lastPatient && lastPatient.patientId) {
+      const match = lastPatient.patientId.match(/^SHP(\d+)$/);
+      if (match) {
+        nextNum = parseInt(match[1], 10) + 1;
+      }
+    }
+    
+    const paddedNum = String(nextNum).padStart(3, '0');
+    res.json({ patientId: `SHP${paddedNum}` });
+  } catch (error) {
+    console.error("Error getting next patient ID:", error);
+    res.status(500).json({ message: "Server Error" });
+  }
+};

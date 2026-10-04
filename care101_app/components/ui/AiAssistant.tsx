@@ -8,13 +8,13 @@ import {
   KeyboardAvoidingView,
   Platform,
   Image,
-  Modal,
+  Modal,  
   SafeAreaView,
-  Alert,
+
 } from "react-native";
-import { Send, X, Loader2, Stethoscope, Activity, MessageCircle } from "lucide-react-native";
+import { Send, X, Loader2, Stethoscope, Activity } from "lucide-react-native";
 import { MotiView } from "moti";
-import Constants from "expo-constants";
+
 import api from "@/services/api"; // Import the centralized API service
 
 type Message = {
@@ -103,7 +103,7 @@ export default function AiAssistant() {
               {/* Note: If this is a local asset, use require() instead of uri string */}
               {/* Example: source={require('../../assets/images/icon.png')} */}
               <Image
-                source={require('../../assets/images/icon3.png')}
+                source={require('../../assets/AIchatbot.png')}
                 className="h-full w-full"
                 resizeMode="contain"
               />
@@ -200,7 +200,7 @@ export default function AiAssistant() {
                   {m.role === "assistant" && (
                     <View className="w-8 h-8 rounded-full bg-white border border-slate-200 items-center justify-center mr-2 shadow-sm">
                       <Image
-                        source={require('../../assets/images/icon3.png')}
+                        source={require('../../assets/AIchatbot.png')}
                         className="h-5 w-5"
                         resizeMode="contain"
                       />

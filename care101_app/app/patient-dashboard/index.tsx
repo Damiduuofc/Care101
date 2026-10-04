@@ -11,7 +11,7 @@ import {
     ActivityIndicator,
     Modal,
     Alert,
-    FlatList // Added FlatList
+    FlatList
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -27,15 +27,17 @@ import {
     X,
     CreditCard,
     Bell,
-    Activity
+    Trash2,
+    CheckCheck
 } from 'lucide-react-native';
 
 import PatientBottomNavBar from '../../components/PatientBottomNavBar';
 import { useAuth } from '@/context/auth';
 import AiAssistant from '@/components/ui/AiAssistant';
+import { io } from 'socket.io-client';
+import { WidgetService } from '@/services/widgetService';
 
-// Replace with your actual API URL
-const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.1.100:5000/api';
+const API_URL = process.env.EXPO_PUBLIC_API_URL;
 
 export default function PatientDashboardScreen() {
     const router = useRouter();
@@ -48,9 +50,21 @@ export default function PatientDashboardScreen() {
 
     // Modals
     const [isQueueVisible, setQueueVisible] = useState(false);
-    const [isNotifVisible, setNotifVisible] = useState(false); // ✅ Notification Modal State
-    const [notifications, setNotifications] = useState<any[]>([]); // ✅ Notification Data
-    const [unreadCount, setUnreadCount] = useState(0); // ✅ Unread notification count
+    const [isNotifVisible, setNotifVisible] = useState(false); 
+    const [notifications, setNotifications] = useState<any[]>([]); 
+    const [unreadCount, setUnreadCount] = useState(0);
+
+    const upcomingAppointmentRef = React.useRef(upcomingAppointment);
+    const socketRef = React.useRef<any>(null);
+    useEffect(() => {
+        upcomingAppointmentRef.current = upcomingAppointment;
+        if (upcomingAppointment && socketRef.current?.connected) {
+            const apptDocId = upcomingAppointment.doctorId?._id || upcomingAppointment.doctorId;
+            if (apptDocId) {
+                socketRef.current.emit("joinDoctorRoom", apptDocId);
+            }
+        }
+    }, [upcomingAppointment]);
 
     // Session Check
     useEffect(() => {
@@ -59,25 +73,240 @@ export default function PatientDashboardScreen() {
         }
     }, [user, authLoading]);
 
+    // --- SOCKET.IO FOR LIVE QUEUE ---
+    useEffect(() => {
+        if (!token) return;
+
+        let socketUrl = API_URL || "http://localhost:5002";
+        try {
+            const urlObj = new URL(socketUrl);
+            socketUrl = urlObj.origin;
+        } catch (e) {
+            console.error("Invalid API URL for socket:", e);
+        }
+
+        const socket = io(socketUrl, {
+            extraHeaders: {
+                'ngrok-skip-browser-warning': 'true'
+            },
+            transports: ['websocket', 'polling']
+        });
+        socketRef.current = socket;
+
+        socket.on("connect", () => {
+            console.log("🔌 Patient App Connected to Socket.IO Server");
+            const currentAppt = upcomingAppointmentRef.current;
+            if (currentAppt) {
+                const apptDocId = currentAppt.doctorId?._id || currentAppt.doctorId;
+                if (apptDocId) {
+                    socket.emit("joinDoctorRoom", apptDocId);
+                }
+            }
+        });
+
+        // 1. Listen for dynamic doctor updates
+        socket.on("doctorStatusUpdated", (updatedDoc: any) => {
+            if (user) WidgetService.syncWithServer(token, user._id || user.id);
+            const currentAppt = upcomingAppointmentRef.current;
+            if (currentAppt && updatedDoc) {
+                const apptDocId = currentAppt.doctorId?._id || currentAppt.doctorId;
+                if (!apptDocId || String(apptDocId) === String(updatedDoc._id)) {
+                    const myToken = Number(currentAppt.queueNumber) || 1;
+                    const currentToken = Number(updatedDoc.currentQueueNumber ?? 0);
+                    const peopleAhead = Math.max(0, myToken - currentToken);
+                    const allocatedRoom = updatedDoc.allocatedRoom || currentAppt.allocatedRoom || "Room TBA";
+                    const sessionStarted = Boolean(updatedDoc.sessionStarted);
+
+                    setUpcomingAppointment((prev: any) => prev ? ({
+                        ...prev,
+                        currentToken,
+                        ongoingToken: currentToken,
+                        peopleAhead,
+                        allocatedRoom,
+                        sessionStarted
+                    }) : prev);
+
+                    setQueueData((prev: any) => ({
+                        ...(prev || {}),
+                        doctorName: prev?.doctorName || currentAppt.doctorName || updatedDoc.name || "Doctor",
+                        department: prev?.department || currentAppt.department || currentAppt.specialty || "General",
+                        appointmentStatus: prev?.appointmentStatus || currentAppt.status || "confirmed",
+                        queueNumber: prev?.queueNumber ?? myToken,
+                        currentToken,
+                        ongoingToken: currentToken,
+                        currentServingNumber: currentToken,
+                        peopleAhead,
+                        allocatedRoom,
+                        sessionStarted
+                    }));
+                }
+            }
+        });
+
+        // 2. Listen for live queue broadcasts
+        socket.on("queueUpdated", (payload: any) => {
+            if (user) WidgetService.syncWithServer(token, user._id || user.id);
+            const currentAppt = upcomingAppointmentRef.current;
+            if (currentAppt && payload) {
+                const apptDocId = currentAppt.doctorId?._id || currentAppt.doctorId;
+                if (!apptDocId || !payload.doctorId || String(apptDocId) === String(payload.doctorId)) {
+                    const myToken = Number(currentAppt.queueNumber) || 1;
+                    const currentToken = Number(payload.currentToken ?? payload.currentServingNumber ?? 0);
+                    const peopleAhead = Math.max(0, myToken - currentToken);
+
+                    setUpcomingAppointment((prev: any) => prev ? ({
+                        ...prev,
+                        currentToken,
+                        ongoingToken: currentToken,
+                        peopleAhead
+                    }) : prev);
+
+                    setQueueData((prev: any) => ({
+                        ...(prev || {}),
+                        doctorName: prev?.doctorName || currentAppt.doctorName || "Doctor",
+                        department: prev?.department || currentAppt.department || currentAppt.specialty || "General",
+                        appointmentStatus: prev?.appointmentStatus || currentAppt.status || "confirmed",
+                        queueNumber: prev?.queueNumber ?? myToken,
+                        currentToken,
+                        ongoingToken: currentToken,
+                        currentServingNumber: payload.currentServingNumber ?? currentToken,
+                        lastUpdated: payload.lastUpdated,
+                        peopleAhead
+                    }));
+                }
+            }
+        });
+
+        socket.on("doctorDelayAlert", () => {
+            fetchDashboardData();
+            fetchNotifications(false);
+            fetchUnreadCount();
+            if (user) WidgetService.syncWithServer(token, user._id || user.id);
+        });
+
+        socket.on("doctorArrivalAlert", () => {
+            fetchDashboardData();
+            fetchNotifications(false);
+            fetchUnreadCount();
+            if (user) WidgetService.syncWithServer(token, user._id || user.id);
+        });
+
+        socket.on("newNotification", (notif: any) => {
+            const myId = user?._id || user?.id;
+            if (notif && String(notif.userId) === String(myId)) {
+                WidgetService.showLocalNotification(
+                    notif._id || `${Date.now()}`,
+                    notif.title || "CareLink 101 Alert",
+                    notif.message || ""
+                );
+                fetchNotifications(false);
+                fetchUnreadCount();
+                WidgetService.syncWithServer(token, myId);
+            }
+        });
+
+        socket.on("appointmentUpdated", () => {
+            fetchDashboardData();
+            if (user) WidgetService.syncWithServer(token, user._id || user.id);
+        });
+
+        socket.on("disconnect", () => {
+            console.log("🔌 Patient App Disconnected from Socket.IO Server");
+        });
+
+        return () => {
+            socket.disconnect();
+            socketRef.current = null;
+        };
+    }, [token, user]);
+
     // --- FETCH DASHBOARD DATA ---
     const fetchDashboardData = async () => {
         try {
-            setLoading(true);
-            const response = await fetch(`${API_URL}/appointments/upcoming`, {
-                method: 'GET',
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json'
-                }
-            });
+            const headers = {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json',
+                'ngrok-skip-browser-warning': 'true'
+            };
 
-            if (response.ok) {
-                const data = await response.json();
-                setUpcomingAppointment(data.appointment || null);
-            } else {
-                setUpcomingAppointment(null);
+            const [upcomingRes, widgetRes] = await Promise.all([
+                fetch(`${API_URL}/appointments/upcoming`, { method: 'GET', headers }).catch(() => null),
+                fetch(`${API_URL}/appointments/widget-status`, { method: 'GET', headers }).catch(() => null)
+            ]);
+
+            let appt: any = null;
+            if (upcomingRes && upcomingRes.ok) {
+                const data = await upcomingRes.json();
+                appt = data.appointment || null;
             }
 
+            let widgetData: any = null;
+            if (widgetRes && widgetRes.ok) {
+                widgetData = await widgetRes.json();
+            }
+
+            // Also fetch /queue/patient/:patientId for authoritative live queue state
+            let liveQueue: any = null;
+            const patientId = user?._id || user?.id || appt?.patientId;
+            if (patientId && (appt || (widgetData && widgetData.state !== 'empty'))) {
+                const apptQuery = appt?._id ? `?appointmentId=${appt._id}` : '';
+                const queueRes = await fetch(`${API_URL}/queue/patient/${patientId}${apptQuery}`, {
+                    method: 'GET',
+                    headers
+                }).catch(() => null);
+                if (queueRes && queueRes.ok) {
+                    liveQueue = await queueRes.json();
+                }
+            }
+
+            if (appt) {
+                const myToken = Number(liveQueue?.queueNumber ?? widgetData?.myToken ?? appt.queueNumber ?? 1);
+                const currentToken = Number(
+                    liveQueue?.currentToken ??
+                    liveQueue?.currentServingNumber ??
+                    widgetData?.ongoingToken ??
+                    widgetData?.currentToken ??
+                    appt.currentToken ??
+                    appt.ongoingToken ??
+                    0
+                );
+                const peopleAhead = Math.max(0, myToken - currentToken);
+                const allocatedRoom = liveQueue?.allocatedRoom || widgetData?.room || appt.allocatedRoom || "Room TBA";
+                const sessionStarted = Boolean(
+                    liveQueue?.sessionStarted ||
+                    widgetData?.state === 'queue' ||
+                    appt.sessionStarted
+                );
+
+                const enrichedAppt = {
+                    ...appt,
+                    queueNumber: myToken,
+                    currentToken,
+                    ongoingToken: currentToken,
+                    peopleAhead,
+                    allocatedRoom,
+                    sessionStarted
+                };
+
+                setUpcomingAppointment(enrichedAppt);
+                setQueueData((prev: any) => ({
+                    ...(prev || {}),
+                    ...(liveQueue || {}),
+                    doctorName: liveQueue?.doctorName || widgetData?.doctorName || appt.doctorName || "Doctor",
+                    department: liveQueue?.department || appt.department || appt.specialty || "General",
+                    appointmentStatus: liveQueue?.appointmentStatus || appt.status || "confirmed",
+                    queueNumber: myToken,
+                    currentToken,
+                    ongoingToken: currentToken,
+                    currentServingNumber: currentToken,
+                    peopleAhead,
+                    allocatedRoom,
+                    sessionStarted
+                }));
+            } else {
+                setUpcomingAppointment(null);
+                setQueueData(null);
+            }
         } catch (error) {
             console.error("Dashboard Fetch Error:", error);
         } finally {
@@ -85,7 +314,7 @@ export default function PatientDashboardScreen() {
         }
     };
 
-    // --- FETCH NOTIFICATIONS ---
+    // --- NOTIFICATION MANAGEMENT ---
     const fetchNotifications = async (openModal = true) => {
         try {
             const response = await fetch(`${API_URL}/notifications`, {
@@ -97,18 +326,23 @@ export default function PatientDashboardScreen() {
             if (response.ok) {
                 const data = await response.json();
                 setNotifications(data);
-                if (openModal) {
-                    setNotifVisible(true); // Open Modal
+                if (Array.isArray(data) && data.length > 0) {
+                    const latestUnread = data.find((n: any) => !n.read);
+                    if (latestUnread && latestUnread._id) {
+                        WidgetService.showLocalNotification(
+                            latestUnread._id,
+                            latestUnread.title || "CareLink 101 Alert",
+                            latestUnread.message || ""
+                        );
+                    }
                 }
-            } else {
-                console.log("Failed to fetch notifications");
+                if (openModal) setNotifVisible(true);
             }
         } catch (error) {
             console.error("Notification Error:", error);
         }
     };
 
-    // --- FETCH UNREAD COUNT ---
     const fetchUnreadCount = async () => {
         try {
             const response = await fetch(`${API_URL}/notifications/unread-count`, {
@@ -126,49 +360,181 @@ export default function PatientDashboardScreen() {
         }
     };
 
-    // --- FETCH LIVE QUEUE DATA ---
-    const fetchQueueStatus = async (appointmentId: string) => {
+    const markAsRead = async (id: string) => {
         try {
-            const response = await fetch(`${API_URL}/queue/status/${appointmentId}`, {
-                method: 'GET',
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json'
-                }
+            await fetch(`${API_URL}/notifications/read/${id}`, {
+                method: 'PUT',
+                headers: { 'Authorization': `Bearer ${token}` }
             });
-
-            if (response.ok) {
-                const data = await response.json();
-                setQueueData(data);
-                setQueueVisible(true);
-            } else {
-                Alert.alert("Error", "Unable to fetch live queue status.");
-            }
+            setNotifications(prev => prev.map(n => n._id === id ? { ...n, read: true } : n));
+            fetchUnreadCount();
         } catch (error) {
-            console.error("Queue Fetch Error:", error);
-            Alert.alert("Error", "Connection failed.");
+            console.error("Mark Read Error:", error);
         }
     };
 
+    const deleteNotification = async (id: string) => {
+        try {
+            await fetch(`${API_URL}/notifications/${id}`, {
+                method: 'DELETE',
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            setNotifications(prev => prev.filter(n => n._id !== id));
+            fetchUnreadCount();
+        } catch (error) {
+            console.error("Delete Error:", error);
+        }
+    };
+
+    const clearAllNotifications = async () => {
+        Alert.alert("Clear All", "Delete all notifications?", [
+            { text: "Cancel", style: "cancel" },
+            {
+                text: "Clear All",
+                style: "destructive",
+                onPress: async () => {
+                    try {
+                        await fetch(`${API_URL}/notifications/clear-all`, {
+                            method: 'DELETE',
+                            headers: { 'Authorization': `Bearer ${token}` }
+                        });
+                        setNotifications([]);
+                        setUnreadCount(0);
+                    } catch (error) { console.error(error); }
+                }
+            }
+        ]);
+    };
+
+    const markAllRead = async () => {
+        try {
+            await fetch(`${API_URL}/notifications/read-all`, {
+                method: 'PUT',
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+            setUnreadCount(0);
+        } catch (error) { console.error(error); }
+    };
+
+    // --- FETCH LIVE QUEUE DATA ---
+    const fetchQueueStatus = async () => {
+        // Set immediate fallback from upcomingAppointment so modal always opens cleanly
+        if (upcomingAppointment) {
+            const fallbackMyToken = Number(queueData?.queueNumber ?? upcomingAppointment.queueNumber ?? 1);
+            const fallbackCurrentToken = Number(
+                queueData?.currentToken ??
+                queueData?.ongoingToken ??
+                upcomingAppointment.currentToken ??
+                upcomingAppointment.ongoingToken ??
+                0
+            );
+            const fallbackPeopleAhead = Math.max(0, fallbackMyToken - fallbackCurrentToken);
+
+            setQueueData((prev: any) => ({
+                ...(prev || {}),
+                doctorName: prev?.doctorName || upcomingAppointment.doctorName || "Doctor",
+                department: prev?.department || upcomingAppointment.department || upcomingAppointment.specialty || "General",
+                appointmentStatus: prev?.appointmentStatus || upcomingAppointment.status || "confirmed",
+                queueNumber: fallbackMyToken,
+                currentToken: fallbackCurrentToken,
+                ongoingToken: fallbackCurrentToken,
+                currentServingNumber: fallbackCurrentToken,
+                peopleAhead: fallbackPeopleAhead,
+                allocatedRoom: prev?.allocatedRoom || upcomingAppointment.allocatedRoom || "Room TBA",
+                sessionStarted: Boolean(prev?.sessionStarted ?? upcomingAppointment.sessionStarted)
+            }));
+            setQueueVisible(true);
+        }
+
+        try {
+            const headers = {
+                'Authorization': `Bearer ${token}`,
+                'ngrok-skip-browser-warning': 'true'
+            };
+            const patientId = user?._id || user?.id || upcomingAppointment?.patientId;
+            const apptQuery = upcomingAppointment?._id ? `?appointmentId=${upcomingAppointment._id}` : '';
+
+            const [queueRes, widgetRes] = await Promise.all([
+                patientId
+                    ? fetch(`${API_URL}/queue/patient/${patientId}${apptQuery}`, { method: 'GET', headers }).catch(() => null)
+                    : Promise.resolve(null),
+                fetch(`${API_URL}/appointments/widget-status`, { method: 'GET', headers }).catch(() => null)
+            ]);
+
+            const qData = queueRes && queueRes.ok ? await queueRes.json() : null;
+            const wData = widgetRes && widgetRes.ok ? await widgetRes.json() : null;
+
+            if (qData || wData) {
+                const myToken = Number(qData?.queueNumber ?? wData?.myToken ?? upcomingAppointment?.queueNumber ?? 1);
+                const currentToken = Number(
+                    qData?.currentToken ??
+                    qData?.currentServingNumber ??
+                    wData?.ongoingToken ??
+                    wData?.currentToken ??
+                    upcomingAppointment?.currentToken ??
+                    0
+                );
+                const peopleAhead = Math.max(0, myToken - currentToken);
+                const allocatedRoom = qData?.allocatedRoom || wData?.room || upcomingAppointment?.allocatedRoom || "Room TBA";
+                const sessionStarted = Boolean(qData?.sessionStarted || wData?.state === 'queue' || upcomingAppointment?.sessionStarted);
+
+                setQueueData((prev: any) => ({
+                    ...(prev || {}),
+                    ...(qData || {}),
+                    doctorName: qData?.doctorName || wData?.doctorName || upcomingAppointment?.doctorName || "Doctor",
+                    department: qData?.department || upcomingAppointment?.department || upcomingAppointment?.specialty || "General",
+                    appointmentStatus: qData?.appointmentStatus || upcomingAppointment?.status || "confirmed",
+                    queueNumber: myToken,
+                    currentToken,
+                    ongoingToken: currentToken,
+                    currentServingNumber: currentToken,
+                    peopleAhead,
+                    allocatedRoom,
+                    sessionStarted
+                }));
+
+                setUpcomingAppointment((prev: any) => prev ? ({
+                    ...prev,
+                    queueNumber: myToken,
+                    currentToken,
+                    ongoingToken: currentToken,
+                    peopleAhead,
+                    allocatedRoom,
+                    sessionStarted
+                }) : prev);
+
+                setQueueVisible(true);
+            } else if (!upcomingAppointment) {
+                Alert.alert("Error", "Unable to fetch live queue status.");
+            }
+        } catch (error) {
+            console.error(error);
+        }
+    };
+
+    // --- REAL-TIME REFRESH LOGIC ---
     useEffect(() => {
         if (user && token) {
             fetchDashboardData();
             fetchUnreadCount();
+            WidgetService.syncWithServer(token, user._id || user.id);
 
-            // Auto-refresh notifications every 30 seconds
-            const notifInterval = setInterval(() => {
-                fetchNotifications(false); // Don't open modal on auto-refresh
+            const refreshInterval = setInterval(() => {
+                fetchDashboardData();
+                fetchNotifications(false); // Silent background fetch
                 fetchUnreadCount();
-            }, 30000);
+                WidgetService.syncWithServer(token, user._id || user.id);
+            }, 10000);
 
-            return () => clearInterval(notifInterval);
+            return () => clearInterval(refreshInterval);
         }
     }, [user, token]);
 
     const getFormattedName = () => {
         if (!user) return "Patient";
         const title = user.title ? `${user.title}. ` : '';
-        const name = user.fullName || user.name || user.username || (user.email ? user.email.split('@')[0] : "Patient");
+        const name = user.fullName || user.name || user.username || "Patient";
         return `${title}${name}`;
     };
 
@@ -187,47 +553,25 @@ export default function PatientDashboardScreen() {
             </View>
         );
     }
-
-    const bannerImage = { uri: "https://images.unsplash.com/photo-1506126613408-eca07ce68773?ixlib=rb-1.2.1&auto=format&fit=crop&w=800&q=80" };
-
+     const bannerImage = require('../../assets/images/paitentwallpaper.jpg');
     const quickActions = [
-        {
-            id: 1,
-            title: 'Book Appointment',
-            subtitle: 'Find a doctor and schedule a visit',
-            icon: Calendar,
-            link: '/patient-dashboard/appointments',
-            color: '#06b6d4',
-            bg: '#cffafe',
-        },
-        {
-            id: 2,
-            title: 'Medical Records',
-            subtitle: 'View your history and prescriptions',
-            icon: FileText,
-            link: '/patient-dashboard/surgery-records',
-            color: '#8b5cf6',
-            bg: '#f5f3ff',
-        },
-        {
-            id: 4,
-            title: 'Payment',
-            subtitle: 'Manage your billing and invoices',
-            icon: CreditCard,
-            link: '/patient-dashboard/billing',
-            color: '#ec4899',
-            bg: '#fdf2f8',
-        },
-        {
-            id: 5,
-            title: 'Update Profile',
-            subtitle: 'Manage your personal information',
-            icon: User,
-            link: '/patient-dashboard/profile',
-            color: '#f59e0b',
-            bg: '#fffbeb',
-        },
+        { id: 1, title: 'Book Appointment', subtitle: 'Schedule a visit', icon: Calendar, link: '/patient-dashboard/appointments', color: '#06b6d4', bg: '#cffafe' },
+        { id: 2, title: 'Medical Records', subtitle: 'View history', icon: FileText, link: '/patient-dashboard/records', color: '#8b5cf6', bg: '#f5f3ff' },
+        { id: 4, title: 'Payment', subtitle: 'Manage billing', icon: CreditCard, link: '/patient-dashboard/billing', color: '#ec4899', bg: '#fdf2f8' },
+        { id: 5, title: 'Update Profile', subtitle: 'Manage info', icon: User, link: '/patient-dashboard/profile', color: '#f59e0b', bg: '#fffbeb' },
     ];
+
+    const liveMyToken = Number(queueData?.queueNumber ?? upcomingAppointment?.queueNumber ?? 1);
+    const liveOngoingToken = Number(
+        queueData?.currentToken ??
+        queueData?.ongoingToken ??
+        upcomingAppointment?.currentToken ??
+        upcomingAppointment?.ongoingToken ??
+        0
+    );
+    const livePeopleAhead = queueData?.peopleAhead !== undefined
+        ? Number(queueData.peopleAhead)
+        : Math.max(0, liveMyToken - liveOngoingToken);
 
     return (
         <View style={styles.container}>
@@ -235,7 +579,6 @@ export default function PatientDashboardScreen() {
 
             <SafeAreaView edges={['top']} style={styles.headerSafeArea}>
                 <View style={styles.headerContainer}>
-                    {/* LEFT: Profile */}
                     <View style={styles.profileSection}>
                         <View style={styles.avatarContainer}>
                             <User size={24} color="#06b6d4" />
@@ -246,17 +589,11 @@ export default function PatientDashboardScreen() {
                         </View>
                     </View>
 
-                    {/* RIGHT: Notifications (Updated onPress) */}
-                    <TouchableOpacity
-                        style={styles.notificationButton}
-                        onPress={() => fetchNotifications(true)} // ✅ Calls fetchNotifications
-                    >
+                    <TouchableOpacity style={styles.notificationButton} onPress={() => fetchNotifications(true)}>
                         <Bell size={24} color="#1e293b" />
                         {unreadCount > 0 && (
                             <View style={styles.unreadBadge}>
-                                <Text style={styles.unreadBadgeText}>
-                                    {unreadCount > 9 ? '9+' : unreadCount}
-                                </Text>
+                                <Text style={styles.unreadBadgeText}>{unreadCount > 9 ? '9+' : unreadCount}</Text>
                             </View>
                         )}
                     </TouchableOpacity>
@@ -264,7 +601,6 @@ export default function PatientDashboardScreen() {
             </SafeAreaView>
 
             <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-                {/* --- HERO BANNER --- */}
                 <View style={styles.heroContainer}>
                     <Image source={bannerImage} style={styles.heroImage} />
                     <LinearGradient colors={['transparent', 'rgba(0,0,0,0.7)']} style={styles.heroOverlay}>
@@ -273,174 +609,235 @@ export default function PatientDashboardScreen() {
                     </LinearGradient>
                 </View>
 
-                {/* --- UPCOMING APPOINTMENT SECTION --- */}
                 <View style={styles.section}>
                     <Text style={styles.sectionTitle}>Upcoming Appointment</Text>
-
                     {upcomingAppointment ? (
                         <TouchableOpacity
                             style={styles.appointmentCard}
-                            onPress={() => fetchQueueStatus(upcomingAppointment._id || upcomingAppointment.id)}
+                            onPress={() => fetchQueueStatus()}
                             activeOpacity={0.9}
                         >
-                            <View style={styles.appointLeft}>
-                                <View style={styles.dateBox}>
-                                    <Text style={styles.dateDay}>{formatDate(upcomingAppointment.date).day}</Text>
-                                    <Text style={styles.dateMonth}>{formatDate(upcomingAppointment.date).month}</Text>
-                                </View>
-                                <View style={styles.appointDetails}>
-                                    <Text style={styles.doctorName}>{upcomingAppointment.doctorName || "Dr. Unknown"}</Text>
-                                    <Text style={styles.specialty}>{upcomingAppointment.specialty || "General"}</Text>
-                                    <View style={styles.timeRow}>
-                                        <Clock size={14} color="#64748b" />
-                                        <Text style={styles.timeText}>{upcomingAppointment.time || "TBA"}</Text>
+                            <View style={styles.appointmentTopRow}>
+                                <View style={styles.appointLeft}>
+                                    <View style={styles.dateBox}>
+                                        <Text style={styles.dateDay}>{formatDate(upcomingAppointment.date).day}</Text>
+                                        <Text style={styles.dateMonth}>{formatDate(upcomingAppointment.date).month}</Text>
                                     </View>
-                                    <Text style={styles.tapHint}>Tap to view queue status</Text>
+                                    <View style={styles.appointDetails}>
+                                        <Text style={styles.doctorName} numberOfLines={2} ellipsizeMode="tail">
+                                            {upcomingAppointment.doctorName
+                                                ? `Dr. ${String(upcomingAppointment.doctorName).replace(/^dr\.?\s*/i, '').trim()}`
+                                                : "Dr. Unknown"}
+                                        </Text>
+                                        <Text style={styles.specialty} numberOfLines={1}>
+                                            {upcomingAppointment.department || upcomingAppointment.specialty || "General"} • {queueData?.allocatedRoom || upcomingAppointment.allocatedRoom || "Room TBA"}
+                                        </Text>
+                                        <View
+                                            style={[
+                                                styles.statusBadge,
+                                                {
+                                                    backgroundColor:
+                                                        (upcomingAppointment.status || '').toLowerCase() === 'confirmed'
+                                                            ? '#ecfeff'
+                                                            : '#fffbeb'
+                                                }
+                                            ]}
+                                        >
+                                            <Text
+                                                style={[
+                                                    styles.statusText,
+                                                    {
+                                                        color:
+                                                            (upcomingAppointment.status || '').toLowerCase() === 'confirmed'
+                                                                ? '#0891b2'
+                                                                : '#d97706'
+                                                    }
+                                                ]}
+                                            >
+                                                {(upcomingAppointment.status || 'Confirmed').toUpperCase()}
+                                            </Text>
+                                        </View>
+                                    </View>
+                                </View>
+                                <View style={styles.appointRight}>
+                                    <View style={styles.viewButton}>
+                                        <Text style={styles.viewButtonText}>Check Status</Text>
+                                    </View>
                                 </View>
                             </View>
-                            <View style={styles.viewButton}>
-                                <Text style={styles.viewButtonText}>View</Text>
+
+                            <View style={styles.cardQueueMetricsRow}>
+                                <View style={styles.cardMetricBox}>
+                                    <Text style={styles.cardMetricLabel}>YOUR TOKEN</Text>
+                                    <Text style={styles.cardMetricValue}>#{liveMyToken}</Text>
+                                </View>
+                                <View style={[styles.cardMetricBox, styles.cardMetricBoxActive]}>
+                                    <View style={styles.cardMetricLiveHeader}>
+                                        <View style={styles.cardMetricLiveDot} />
+                                        <Text style={styles.cardMetricLabelActive}>ONGOING TOKEN</Text>
+                                    </View>
+                                    <Text style={styles.cardMetricValueActive}>#{liveOngoingToken}</Text>
+                                </View>
+                                <View style={styles.cardMetricBox}>
+                                    <Text style={styles.cardMetricLabel}>PATIENTS AHEAD</Text>
+                                    <Text style={styles.cardMetricValue}>{livePeopleAhead}</Text>
+                                </View>
                             </View>
                         </TouchableOpacity>
                     ) : (
                         <View style={styles.emptyCard}>
                             <Calendar size={24} color="#94a3b8" />
-                            <Text style={styles.emptyText}>No upcoming appointments scheduled.</Text>
-                            <TouchableOpacity onPress={() => router.push('/patient-dashboard/appointments')}>
-                                <Text style={styles.bookNowText}>Book Now</Text>
-                            </TouchableOpacity>
+                            <Text style={styles.emptyText}>No upcoming appointments.</Text>
+                            <TouchableOpacity onPress={() => router.push('/patient-dashboard/appointments')}><Text style={styles.bookNowText}>Book Now</Text></TouchableOpacity>
                         </View>
                     )}
                 </View>
 
-                {/* --- QUICK ACTIONS --- */}
                 <View style={styles.section}>
                     <Text style={styles.sectionTitle}>Quick Actions</Text>
                     <View style={styles.actionList}>
                         {quickActions.map((action) => (
-                            <TouchableOpacity
-                                key={action.id}
-                                style={styles.actionCard}
-                                onPress={() => router.push(action.link as any)}
-                            >
-                                <View style={[styles.actionIconBox, { backgroundColor: action.bg }]}>
-                                    <action.icon size={24} color={action.color} />
-                                </View>
-                                <View style={styles.actionDetails}>
-                                    <Text style={styles.actionTitle}>{action.title}</Text>
-                                    <Text style={styles.actionSubtitle}>{action.subtitle}</Text>
-                                </View>
+                            <TouchableOpacity key={action.id} style={styles.actionCard} onPress={() => router.push(action.link as any)}>
+                                <View style={[styles.actionIconBox, { backgroundColor: action.bg }]}><action.icon size={24} color={action.color} /></View>
+                                <View style={styles.actionDetails}><Text style={styles.actionTitle}>{action.title}</Text><Text style={styles.actionSubtitle}>{action.subtitle}</Text></View>
                                 <ChevronRight size={20} color="#cbd5e1" />
                             </TouchableOpacity>
                         ))}
                     </View>
                 </View>
 
-                {/* --- INFO CARD --- */}
                 <View style={styles.section}>
                     <View style={styles.infoCard}>
                         <ShieldCheck size={32} color="#10b981" style={{ marginBottom: 8 }} />
                         <Text style={styles.infoTitle}>Complete your profile</Text>
-                        <Text style={styles.infoText}>Ensure your medical history needs are up to date for better care.</Text>
+                        <Text style={styles.infoText}>Ensure your medical history is up to date.</Text>
                     </View>
                 </View>
-
-                <View style={{ height: 80 }} />
             </ScrollView>
 
-            {/* --- QUEUE STATUS MODAL --- */}
-            <Modal
-                animationType="fade"
-                transparent={true}
-                visible={isQueueVisible}
-                onRequestClose={() => setQueueVisible(false)}
-            >
+            <Modal animationType="fade" transparent={true} visible={isQueueVisible} onRequestClose={() => setQueueVisible(false)}>
                 <View style={styles.modalOverlay}>
                     <View style={styles.modalContent}>
                         <View style={styles.modalHeader}>
                             <Text style={styles.modalTitle}>Live Queue Status</Text>
-                            <TouchableOpacity onPress={() => setQueueVisible(false)}>
-                                <X size={24} color="#64748b" />
-                            </TouchableOpacity>
+                            <TouchableOpacity onPress={() => setQueueVisible(false)}><X size={24} color="#64748b" /></TouchableOpacity>
                         </View>
                         {queueData ? (
-                            <>
-                                <View style={styles.queueContainer}>
+                            <View style={styles.queueContainer}>
+                                <View style={styles.queueDoctorInfoBox}>
+                                    <Text style={styles.queueDoctorName} numberOfLines={2}>
+                                        {(queueData.doctorName || upcomingAppointment?.doctorName)
+                                            ? `Dr. ${String(queueData.doctorName || upcomingAppointment?.doctorName).replace(/^dr\.?\s*/i, '').trim()}`
+                                            : "Doctor"}
+                                    </Text>
+                                    <Text style={styles.queueDoctorSub}>
+                                        {queueData.department || upcomingAppointment?.department || "General"} • {queueData.allocatedRoom || upcomingAppointment?.allocatedRoom || "Room TBA"}
+                                    </Text>
+                                    <View style={styles.queueStatusChipRow}>
+                                        <View style={[styles.statusBadge, { backgroundColor: '#ecfeff', marginTop: 0 }]}>
+                                            <Text style={[styles.statusText, { color: '#0891b2' }]}>
+                                                STATUS: {(queueData.appointmentStatus || upcomingAppointment?.status || 'Confirmed').toUpperCase()}
+                                            </Text>
+                                        </View>
+                                        <View style={[styles.statusBadge, { backgroundColor: queueData.sessionStarted ? '#f0fdf4' : '#f1f5f9', marginTop: 0 }]}>
+                                            <Text style={[styles.statusText, { color: queueData.sessionStarted ? '#16a34a' : '#64748b' }]}>
+                                                {queueData.sessionStarted ? 'SESSION LIVE' : 'WAITING TO START'}
+                                            </Text>
+                                        </View>
+                                    </View>
+                                </View>
+
+                                <View style={styles.tokenRow}>
                                     <View style={styles.tokenBox}>
-                                        <Text style={styles.tokenLabel}>Your Token</Text>
-                                        <Text style={styles.tokenNumber}>{queueData.myToken || "--"}</Text>
+                                        <Text style={styles.tokenLabel}>Your Queue #</Text>
+                                        <Text style={styles.tokenNumber}>
+                                            #{liveMyToken}
+                                        </Text>
                                     </View>
                                     <View style={[styles.tokenBox, styles.activeTokenBox]}>
-                                        <Text style={styles.activeTokenLabel}>Ongoing</Text>
-                                        <Text style={styles.activeTokenNumber}>{queueData.currentToken || "--"}</Text>
+                                        <Text style={styles.activeTokenLabel}>Ongoing Token</Text>
+                                        <Text style={styles.activeTokenNumber}>
+                                            #{liveOngoingToken}
+                                        </Text>
                                         <View style={styles.liveIndicator}>
                                             <View style={styles.liveDot} />
                                             <Text style={styles.liveText}>Live</Text>
                                         </View>
                                     </View>
                                 </View>
-                                <View style={styles.queueInfo}>
-                                    <Users size={16} color="#64748b" />
-                                    <Text style={styles.queueInfoText}>{queueData.peopleAhead || 0} people ahead of you</Text>
+
+                                <View style={styles.queueSummaryFooter}>
+                                    <Text style={styles.queueSummaryText}>
+                                        Patients Ahead: <Text style={{ fontWeight: '800', color: '#0f172a' }}>
+                                            {livePeopleAhead}
+                                        </Text>
+                                    </Text>
                                 </View>
-                                <View style={styles.queueInfo}>
-                                    <Clock size={16} color="#64748b" />
-                                    <Text style={styles.queueInfoText}>Approx. Wait: {queueData.estimatedWait || 0} mins</Text>
-                                </View>
-                            </>
-                        ) : (
-                            <View style={{ padding: 20, alignItems: 'center' }}>
-                                <ActivityIndicator color="#06b6d4" />
-                                <Text style={{ marginTop: 10, color: '#64748b' }}>Updating status...</Text>
                             </View>
-                        )}
-                        <TouchableOpacity style={styles.closeButton} onPress={() => setQueueVisible(false)}>
-                            <Text style={styles.closeButtonText}>Close</Text>
-                        </TouchableOpacity>
+                        ) : <ActivityIndicator color="#06b6d4" />}
+                        <TouchableOpacity style={styles.closeButton} onPress={() => setQueueVisible(false)}><Text style={styles.closeButtonText}>Close</Text></TouchableOpacity>
                     </View>
                 </View>
             </Modal>
 
-            {/* --- NOTIFICATION MODAL (New) --- */}
-            <Modal
-                animationType="slide"
-                visible={isNotifVisible}
-                presentationStyle="pageSheet" // Looks better on iOS
-                onRequestClose={() => setNotifVisible(false)}
-            >
-                <SafeAreaView style={{ flex: 1, backgroundColor: '#fff' }}>
-                    <View style={styles.modalHeader}>
-                        <Text style={styles.modalTitle}>Notifications</Text>
-                        <TouchableOpacity onPress={() => setNotifVisible(false)}>
-                            <X size={24} color="#0f172a" />
-                        </TouchableOpacity>
-                    </View>
-                    <FlatList
-                        data={notifications}
-                        keyExtractor={(item) => item._id}
-                        contentContainerStyle={{ padding: 20 }}
-                        ListEmptyComponent={
-                            <View style={{ alignItems: 'center', marginTop: 50 }}>
-                                <Bell size={40} color="#cbd5e1" />
-                                <Text style={{ color: '#94a3b8', marginTop: 10 }}>No new notifications</Text>
-                            </View>
-                        }
-                        renderItem={({ item }) => (
-                            <View style={styles.notifCard}>
-                                <View style={[styles.notifIcon, { backgroundColor: item.type === 'appointment' ? '#ecfeff' : '#f1f5f9' }]}>
-                                    {item.type === 'appointment' ? <Calendar size={20} color="#06b6d4" /> : <Bell size={20} color="#64748b" />}
-                                </View>
-                                <View style={{ flex: 1 }}>
-                                    <Text style={styles.notifMessage}>{item.message}</Text>
-                                    <Text style={styles.notifTime}>{new Date(item.timestamp).toLocaleString()}</Text>
-                                </View>
-                                {!item.read && <View style={styles.unreadDot} />}
-                            </View>
-                        )}
-                    />
-                </SafeAreaView>
-            </Modal>
+       <Modal animationType="slide" visible={isNotifVisible} presentationStyle="pageSheet" onRequestClose={() => setNotifVisible(false)}>
+    <View style={styles.notifModalContainer}>
+        <View style={styles.notifHeader}>
+            <Text style={styles.notifTitle}>Notifications</Text>
+            <View style={styles.notifHeaderActions}>
+                <TouchableOpacity style={styles.iconButton} onPress={markAllRead}>
+                    <CheckCheck size={20} color="#06b6d4" />
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.iconButton} onPress={clearAllNotifications}>
+                    <Trash2 size={20} color="#ef4444" />
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.closeIconButton} onPress={() => setNotifVisible(false)}>
+                    <X size={22} color="#0f172a" />
+                </TouchableOpacity>
+            </View>
+        </View>
 
+        <FlatList
+            data={notifications}
+            keyExtractor={(item) => item._id}
+            contentContainerStyle={styles.notifListContent}
+            showsVerticalScrollIndicator={false}
+            ListEmptyComponent={() => (
+                <View style={styles.emptyNotifContainer}>
+                    <Bell size={48} color="#cbd5e1" />
+                    <Text style={styles.emptyNotifText}>You're all caught up!</Text>
+                </View>
+            )}
+            renderItem={({ item }) => (
+                <TouchableOpacity 
+                    style={[styles.notifCard, !item.read && styles.notifCardUnread]} 
+                    onPress={() => markAsRead(item._id)}
+                    activeOpacity={0.7}
+                >
+                    <View style={[styles.notifIcon, !item.read && styles.notifIconUnread]}>
+                        <Bell size={20} color={item.read ? "#94a3b8" : "#06b6d4"} />
+                    </View>
+                    
+                    <View style={styles.notifTextContainer}>
+                        <Text style={[styles.notifMessage, !item.read && styles.notifMessageUnread]}>
+                            {item.message}
+                        </Text>
+                    </View>
+
+                    <TouchableOpacity style={styles.notifDeleteBtn} onPress={() => deleteNotification(item._id)}>
+                        <Trash2 size={18} color="#cbd5e1" />
+                    </TouchableOpacity>
+
+                    {/* Unread Indicator Dot */}
+                    {!item.read && <View style={styles.unreadDot} />}
+                </TouchableOpacity>
+            )}
+        />
+    </View>
+</Modal>
+
+            {/* ✅ AI Assistant is now safely rendered. 
+                Because it uses ChatContext, it won't reset on dashboard updates! */}
             <View style={{ zIndex: 100 }}>
                 <AiAssistant />
             </View>
@@ -451,405 +848,116 @@ export default function PatientDashboardScreen() {
 }
 
 const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-        backgroundColor: '#f8fafc',
-    },
-    headerSafeArea: {
-        backgroundColor: '#fff',
-        zIndex: 10,
-        paddingTop: Platform.OS === 'android' ? 10 : 0,
-    },
-    headerContainer: {
-        paddingHorizontal: 20,
-        paddingVertical: 15,
-        borderBottomWidth: 1,
-        borderBottomColor: '#f1f5f9',
-        backgroundColor: '#fff',
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center'
-    },
-    profileSection: {
-        flexDirection: 'row',
-        alignItems: 'center',
-    },
-    notificationButton: {
-        width: 40,
-        height: 40,
-        borderRadius: 20,
-        backgroundColor: '#f1f5f9',
-        alignItems: 'center',
-        justifyContent: 'center',
-        position: 'relative'
-    },
-    unreadBadge: {
-        position: 'absolute',
-        top: 6,
-        right: 6,
-        minWidth: 18,
-        height: 18,
-        borderRadius: 9,
-        backgroundColor: '#ef4444',
-        borderWidth: 1.5,
-        borderColor: '#fff',
-        alignItems: 'center',
-        justifyContent: 'center',
-        paddingHorizontal: 4,
-    },
-    unreadBadgeText: {
-        color: '#fff',
-        fontSize: 10,
-        fontWeight: '700',
-    },
-    avatarContainer: {
-        width: 50,
-        height: 50,
-        borderRadius: 25,
-        backgroundColor: '#ecfeff',
-        alignItems: 'center',
-        justifyContent: 'center',
-        marginRight: 15,
-        borderWidth: 1,
-        borderColor: '#cffafe',
-    },
-    welcomeText: {
-        fontSize: 14,
-        color: '#64748b',
-        fontWeight: '500',
-        marginBottom: 2,
-    },
-    userName: {
-        fontSize: 18,
-        fontWeight: '700',
-        color: '#0f172a',
-    },
-    scrollContent: {
-        paddingBottom: 20,
-    },
-    heroContainer: {
-        margin: 20,
-        height: 160,
-        borderRadius: 16,
-        overflow: 'hidden',
-        position: 'relative',
-        backgroundColor: '#0f172a',
-        shadowColor: '#06b6d4',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.2,
-        shadowRadius: 8,
-        elevation: 5,
-    },
-    heroImage: {
-        width: '100%',
-        height: '100%',
-        opacity: 0.8,
-    },
-    heroOverlay: {
-        position: 'absolute',
-        bottom: 0,
-        left: 0,
-        right: 0,
-        padding: 16,
-        paddingTop: 40,
-    },
-    heroTitle: {
-        color: '#fff',
-        fontSize: 20,
-        fontWeight: '800',
-        marginBottom: 4,
-    },
-    heroSubtitle: {
-        color: '#cbd5e1',
-        fontSize: 14,
-    },
-    section: {
-        paddingHorizontal: 20,
-        marginBottom: 24,
-    },
-    sectionTitle: {
-        fontSize: 18,
-        fontWeight: '700',
-        color: '#1e293b',
-        marginBottom: 16,
-    },
-    actionList: {
-        gap: 12,
-    },
-    actionCard: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        backgroundColor: '#fff',
-        padding: 16,
-        borderRadius: 16,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.05,
-        shadowRadius: 4,
-        elevation: 2,
-    },
-    actionIconBox: {
-        width: 48,
-        height: 48,
-        borderRadius: 12,
-        alignItems: 'center',
-        justifyContent: 'center',
-        marginRight: 16,
-    },
-    actionDetails: {
-        flex: 1,
-    },
-    actionTitle: {
-        fontSize: 16,
-        fontWeight: '600',
-        color: '#1e293b',
-        marginBottom: 4,
-    },
-    actionSubtitle: {
-        fontSize: 12,
-        color: '#94a3b8',
-    },
-    appointmentCard: {
-        backgroundColor: '#fff',
-        borderRadius: 16,
-        padding: 16,
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.05,
-        shadowRadius: 4,
-        elevation: 2,
-    },
-    emptyCard: {
-        backgroundColor: '#f8fafc',
-        borderRadius: 16,
-        padding: 24,
-        alignItems: 'center',
-        borderWidth: 1,
-        borderColor: '#e2e8f0',
-        borderStyle: 'dashed'
-    },
-    emptyText: {
-        color: '#94a3b8',
-        marginVertical: 8,
-        fontSize: 14
-    },
-    bookNowText: {
-        color: '#06b6d4',
-        fontWeight: '600',
-        fontSize: 14
-    },
-    appointLeft: {
-        flexDirection: 'row',
-        alignItems: 'center',
-    },
-    dateBox: {
-        backgroundColor: '#eff6ff',
-        borderRadius: 12,
-        width: 50,
-        height: 60,
-        alignItems: 'center',
-        justifyContent: 'center',
-        marginRight: 16,
-    },
-    dateDay: {
-        fontSize: 18,
-        fontWeight: '700',
-        color: '#06B6D4',
-    },
-    dateMonth: {
-        fontSize: 12,
-        fontWeight: '600',
-        color: '#60a5fa',
-        textTransform: 'uppercase',
-    },
-    appointDetails: {
-        justifyContent: 'center',
-    },
-    doctorName: {
-        fontSize: 16,
-        fontWeight: '600',
-        color: '#0f172a',
-        marginBottom: 4,
-    },
-    specialty: {
-        fontSize: 13,
-        color: '#64748b',
-        marginBottom: 4,
-    },
-    timeRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-    },
-    timeText: {
-        fontSize: 12,
-        color: '#64748b',
-        marginLeft: 4,
-    },
-    tapHint: {
-        fontSize: 10,
-        color: '#06b6d4',
-        marginTop: 4,
-        fontWeight: '500'
-    },
-    viewButton: {
-        backgroundColor: '#f1f5f9',
-        paddingHorizontal: 12,
-        paddingVertical: 8,
-        borderRadius: 20,
-    },
-    viewButtonText: {
-        fontSize: 12,
-        fontWeight: '600',
-        color: '#475569',
-    },
-    infoCard: {
-        backgroundColor: '#ecfdf5',
-        borderRadius: 16,
-        padding: 20,
-        alignItems: 'flex-start',
-    },
-    infoTitle: {
-        fontSize: 16,
-        fontWeight: '700',
-        color: '#065f46',
-        marginBottom: 4,
-    },
-    infoText: {
-        fontSize: 14,
-        color: '#10b981',
-        lineHeight: 20,
-    },
-    // --- MODAL STYLES ---
-    modalOverlay: {
-        flex: 1,
-        backgroundColor: 'rgba(0,0,0,0.5)',
-        justifyContent: 'center',
-        alignItems: 'center',
-        padding: 20
-    },
-    modalContent: {
-        backgroundColor: '#fff',
-        width: '90%',
-        borderRadius: 20,
-        padding: 20,
-        alignItems: 'center',
-        shadowColor: "#000",
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.25,
-        shadowRadius: 4,
-        elevation: 5
-    },
-    modalHeader: {
-        flexDirection: 'row',
-        width: '100%',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        marginBottom: 20,
-        paddingHorizontal: 20,
-        paddingTop: 20
-    },
-    modalTitle: {
-        fontSize: 18,
-        fontWeight: '700',
-        color: '#0f172a'
-    },
-    queueContainer: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        width: '100%',
-        marginBottom: 20,
-        gap: 15
-    },
-    tokenBox: {
-        flex: 1,
-        backgroundColor: '#f1f5f9',
-        borderRadius: 16,
-        padding: 15,
-        alignItems: 'center',
-        borderWidth: 1,
-        borderColor: '#e2e8f0'
-    },
-    activeTokenBox: {
-        backgroundColor: '#ecfeff',
-        borderColor: '#06b6d4',
-        borderWidth: 2
-    },
-    tokenLabel: {
-        fontSize: 12,
-        color: '#64748b',
-        marginBottom: 5,
-        textTransform: 'uppercase',
-        fontWeight: '600'
-    },
-    tokenNumber: {
-        fontSize: 32,
-        fontWeight: '800',
-        color: '#1e293b'
-    },
-    activeTokenLabel: {
-        fontSize: 12,
-        color: '#0891b2',
-        marginBottom: 5,
-        textTransform: 'uppercase',
-        fontWeight: '700'
-    },
-    activeTokenNumber: {
-        fontSize: 36,
-        fontWeight: '800',
-        color: '#06b6d4'
-    },
-    liveIndicator: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        marginTop: 5,
-        backgroundColor: '#06b6d4',
-        paddingHorizontal: 8,
-        paddingVertical: 2,
-        borderRadius: 10
-    },
-    liveDot: {
-        width: 6,
-        height: 6,
-        borderRadius: 3,
-        backgroundColor: '#fff',
-        marginRight: 4
-    },
-    liveText: {
-        color: '#fff',
-        fontSize: 10,
-        fontWeight: '700'
-    },
-    queueInfo: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        marginBottom: 10,
-        gap: 8
-    },
-    queueInfoText: {
-        fontSize: 14,
-        color: '#475569',
-        fontWeight: '500'
-    },
-    closeButton: {
-        marginTop: 10,
-        width: '100%',
-        backgroundColor: '#0f172a',
-        padding: 14,
-        borderRadius: 12,
-        alignItems: 'center'
-    },
-    closeButtonText: {
-        color: '#fff',
-        fontWeight: '600',
-        fontSize: 16
-    },
-    // Notif Styles
-    notifCard: { flexDirection: 'row', padding: 16, backgroundColor: '#fff', borderRadius: 12, marginBottom: 10, borderWidth: 1, borderColor: '#e2e8f0' },
-    notifIcon: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', marginRight: 12 },
-    notifMessage: { fontSize: 14, color: '#334155', marginBottom: 4, flexWrap: 'wrap' },
-    notifTime: { fontSize: 11, color: '#94a3b8' },
-    unreadDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#ef4444', marginLeft: 8, marginTop: 6 },
+    // --- LAYOUT & HEADER ---
+    container: { flex: 1, backgroundColor: '#f8fafc' },
+    headerSafeArea: { backgroundColor: '#fff', zIndex: 10, paddingTop: Platform.OS === 'android' ? 10 : 0 },
+    headerContainer: { paddingHorizontal: 20, paddingVertical: 15, borderBottomWidth: 1, borderBottomColor: '#f1f5f9', backgroundColor: '#fff', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+    profileSection: { flexDirection: 'row', alignItems: 'center' },
+    notificationButton: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#f1f5f9', alignItems: 'center', justifyContent: 'center' },
+    unreadBadge: { position: 'absolute', top: 6, right: 6, minWidth: 18, height: 18, borderRadius: 9, backgroundColor: '#ef4444', alignItems: 'center', justifyContent: 'center' },
+    unreadBadgeText: { color: '#fff', fontSize: 10, fontWeight: '700' },
+    avatarContainer: { width: 50, height: 50, borderRadius: 25, backgroundColor: '#ecfeff', alignItems: 'center', justifyContent: 'center', marginRight: 15, borderWidth: 1, borderColor: '#cffafe' },
+    welcomeText: { fontSize: 14, color: '#64748b' },
+    userName: { fontSize: 18, fontWeight: '700', color: '#0f172a' },
+    
+    // --- MAIN DASHBOARD CONTENT ---
+    scrollContent: { paddingBottom: 20 },
+    heroContainer: { margin: 20, height: 160, borderRadius: 16, overflow: 'hidden', backgroundColor: '#0f172a' },
+    heroImage: { width: '100%', height: '100%', opacity: 0.8 },
+    heroOverlay: { position: 'absolute', bottom: 0, left: 0, right: 0, padding: 16 },
+    heroTitle: { color: '#fff', fontSize: 20, fontWeight: '800' },
+    heroSubtitle: { color: '#cbd5e1', fontSize: 14 },
+    section: { paddingHorizontal: 20, marginBottom: 24 },
+    sectionTitle: { fontSize: 18, fontWeight: '700', color: '#1e293b', marginBottom: 16 },
+    
+    // --- QUICK ACTIONS ---
+    actionList: { gap: 12 },
+    actionCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', padding: 16, borderRadius: 16, elevation: 2 },
+    actionIconBox: { width: 48, height: 48, borderRadius: 12, alignItems: 'center', justifyContent: 'center', marginRight: 16 },
+    actionDetails: { flex: 1 },
+    actionTitle: { fontSize: 16, fontWeight: '600' },
+    actionSubtitle: { fontSize: 12, color: '#94a3b8' },
+    
+    // --- APPOINTMENT CARDS ---
+    appointmentCard: { backgroundColor: '#fff', borderRadius: 16, padding: 16, flexDirection: 'column', gap: 14, elevation: 2, borderWidth: 1, borderColor: '#f1f5f9' },
+    appointmentTopRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+    emptyCard: { backgroundColor: '#f8fafc', borderRadius: 16, padding: 24, alignItems: 'center', borderWidth: 1, borderColor: '#e2e8f0', borderStyle: 'dashed' },
+    emptyText: { color: '#94a3b8', marginVertical: 8 },
+    bookNowText: { color: '#06b6d4', fontWeight: '600' },
+    appointLeft: { flex: 1, flexDirection: 'row', alignItems: 'center', marginRight: 12 },
+    dateBox: { backgroundColor: '#eff6ff', borderRadius: 12, width: 52, height: 64, alignItems: 'center', justifyContent: 'center', marginRight: 14, flexShrink: 0 },
+    dateDay: { fontSize: 18, fontWeight: '700', color: '#06b6d4' },
+    dateMonth: { fontSize: 12, fontWeight: '600', color: '#60a5fa' },
+    appointDetails: { flex: 1, justifyContent: 'center' },
+    doctorName: { fontSize: 15, fontWeight: '700', color: '#0f172a', lineHeight: 20, marginBottom: 2 },
+    specialty: { fontSize: 13, color: '#64748b', marginBottom: 4 },
+    timeRow: { flexDirection: 'row', alignItems: 'center' },
+    timeText: { fontSize: 12, color: '#475569', fontWeight: '600', marginLeft: 4 },
+    statusBadge: { alignSelf: 'flex-start', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, marginTop: 6 },
+    statusText: { fontSize: 10, fontWeight: '700', letterSpacing: 0.4 },
+    appointRight: { alignItems: 'flex-end', justifyContent: 'center', flexShrink: 0, gap: 8 },
+    queueBadgeMini: { backgroundColor: '#f0fdfa', borderWidth: 1, borderColor: '#ccfbf1', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 5, alignItems: 'center', minWidth: 64 },
+    queueBadgeMiniLabel: { fontSize: 9, fontWeight: '700', color: '#0d9488', letterSpacing: 0.5 },
+    queueBadgeMiniValue: { fontSize: 16, fontWeight: '800', color: '#0f766e' },
+    viewButton: { backgroundColor: '#06b6d4', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12, flexShrink: 0 },
+    viewButtonText: { fontSize: 12, fontWeight: '700', color: '#fff' },
+    cardQueueMetricsRow: { flexDirection: 'row', gap: 10, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#f1f5f9' },
+    cardMetricBox: { flex: 1, backgroundColor: '#f8fafc', borderRadius: 12, paddingVertical: 10, paddingHorizontal: 8, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#e2e8f0' },
+    cardMetricBoxActive: { backgroundColor: '#ecfeff', borderColor: '#06b6d4', borderWidth: 1.5 },
+    cardMetricLiveHeader: { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 2 },
+    cardMetricLiveDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#06b6d4' },
+    cardMetricLabel: { fontSize: 9, fontWeight: '700', color: '#64748b', letterSpacing: 0.4, marginBottom: 2 },
+    cardMetricLabelActive: { fontSize: 9, fontWeight: '800', color: '#0891b2', letterSpacing: 0.4 },
+    cardMetricValue: { fontSize: 18, fontWeight: '800', color: '#0f172a' },
+    cardMetricValueActive: { fontSize: 18, fontWeight: '800', color: '#06b6d4' },
+    
+    // --- INFO CARD ---
+    infoCard: { backgroundColor: '#ecfdf5', borderRadius: 16, padding: 20 },
+    infoTitle: { fontSize: 16, fontWeight: '700', color: '#065f46' },
+    infoText: { fontSize: 14, color: '#10b981' },
+    
+    // --- QUEUE MODAL ---
+    modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' },
+    modalContent: { backgroundColor: '#fff', width: '90%', borderRadius: 20, padding: 20 },
+    modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
+    modalTitle: { fontSize: 20, fontWeight: '800', color: '#0f172a' },
+    queueContainer: { flexDirection: 'column', gap: 14 },
+    queueDoctorInfoBox: { backgroundColor: '#f8fafc', padding: 14, borderRadius: 14, borderWidth: 1, borderColor: '#e2e8f0' },
+    queueDoctorName: { fontSize: 16, fontWeight: '700', color: '#0f172a', marginBottom: 4 },
+    queueDoctorSub: { fontSize: 13, color: '#64748b', marginBottom: 10 },
+    queueStatusChipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+    tokenRow: { flexDirection: 'row', gap: 15 },
+    tokenBox: { flex: 1, backgroundColor: '#f1f5f9', borderRadius: 16, padding: 15, alignItems: 'center', justifyContent: 'center' },
+    activeTokenBox: { backgroundColor: '#ecfeff', borderColor: '#06b6d4', borderWidth: 2 },
+    tokenLabel: { fontSize: 12, color: '#64748b', fontWeight: '600', marginBottom: 4 },
+    tokenNumber: { fontSize: 32, fontWeight: '800', color: '#0f172a' },
+    activeTokenLabel: { fontSize: 12, color: '#0891b2', fontWeight: '600', marginBottom: 4 },
+    activeTokenNumber: { fontSize: 34, fontWeight: '800', color: '#06b6d4' },
+    liveIndicator: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#06b6d4', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10, marginTop: 6 },
+    liveDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#fff', marginRight: 4 },
+    liveText: { color: '#fff', fontSize: 10, fontWeight: '700' },
+    queueSummaryFooter: { backgroundColor: '#f8fafc', paddingVertical: 10, paddingHorizontal: 14, borderRadius: 12, alignItems: 'center', borderWidth: 1, borderColor: '#f1f5f9' },
+    queueSummaryText: { fontSize: 13, color: '#475569', fontWeight: '600' },
+    closeButton: { marginTop: 15, backgroundColor: '#0f172a', paddingVertical: 14, borderRadius: 12, alignItems: 'center' },
+    closeButtonText: { color: '#fff', fontWeight: '700' },
+
+    // --- NOTIFICATION MODAL ---
+    notifModalContainer: { flex: 1, backgroundColor: '#f8fafc', paddingTop: Platform.OS === 'ios' ? 20 : 0 },
+    notifHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 16, backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#f1f5f9' },
+    notifTitle: { fontSize: 22, fontWeight: '800', color: '#0f172a' },
+    notifHeaderActions: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+    iconButton: { padding: 8, backgroundColor: '#f8fafc', borderRadius: 10, borderWidth: 1, borderColor: '#f1f5f9' },
+    closeIconButton: { padding: 8, backgroundColor: '#e2e8f0', borderRadius: 20, marginLeft: 4 },
+    notifListContent: { padding: 20, paddingBottom: 40 },
+    notifCard: { flexDirection: 'row', backgroundColor: '#fff', padding: 16, borderRadius: 16, marginBottom: 12, alignItems: 'center', elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 3, borderWidth: 1, borderColor: '#f1f5f9' },
+    notifCardUnread: { backgroundColor: '#ecfeff', borderColor: '#cffafe' },
+    notifIcon: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#f8fafc', alignItems: 'center', justifyContent: 'center', marginRight: 15 },
+    notifIconUnread: { backgroundColor: '#cffafe' },
+    notifTextContainer: { flex: 1, paddingRight: 10 },
+    notifMessage: { fontSize: 14, color: '#475569', lineHeight: 20 },
+    notifMessageUnread: { fontWeight: '700', color: '#0f172a' },
+    notifDeleteBtn: { padding: 8 },
+    unreadDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#06b6d4', position: 'absolute', top: 16, right: 16 },
+    emptyNotifContainer: { alignItems: 'center', justifyContent: 'center', marginTop: 80 },
+    emptyNotifText: { marginTop: 16, color: '#94a3b8', fontSize: 16, fontWeight: '500' }
 });

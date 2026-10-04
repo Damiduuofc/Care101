@@ -1,0 +1,244 @@
+name: Build Android APK
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'care101_app/**'
+      - '.github/workflows/build-apk.yml'
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      build_type:
+        description: 'Build Type'
+        required: true
+        default: 'release'
+        type: choice
+        options:
+          - 'release'
+          - 'debug'
+      api_url:
+        description: 'Override EXPO_PUBLIC_API_URL (Optional)'
+        required: false
+        default: ''
+        type: string
+      create_github_release:
+        description: 'Create a GitHub Release with the APK attached'
+        required: false
+        default: false
+        type: boolean
+
+concurrency:
+  group: android-apk-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  build-android:
+    name: Build Android APK (${{ inputs.build_type || 'release' }})
+    runs-on: ubuntu-latest
+
+    steps:
+
+      # ---------------------------------------------------------
+      # 1. Checkout
+      # ---------------------------------------------------------
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      # ---------------------------------------------------------
+      # 2. Node.js + npm cache
+      # ---------------------------------------------------------
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: care101_app/package-lock.json
+
+      # ---------------------------------------------------------
+      # 3. Java 17
+      # ---------------------------------------------------------
+      - name: Setup Java JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: temurin
+          cache: gradle
+
+      # ---------------------------------------------------------
+      # 4. Gradle caching
+      # ---------------------------------------------------------
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: false
+
+      # ---------------------------------------------------------
+      # 5. Configure environment
+      # ---------------------------------------------------------
+      - name: Configure Environment
+        working-directory: care101_app
+        env:
+          DOT_ENV: ${{ secrets.DOT_ENV }}
+          API_URL_INPUT: ${{ inputs.api_url }}
+          API_URL_SECRET: ${{ secrets.EXPO_PUBLIC_API_URL }}
+          OPENROUTER_KEY: ${{ secrets.EXPO_PUBLIC_OPENROUTER_API_KEY }}
+          STRIPE_KEY: ${{ secrets.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY }}
+        run: |
+          set -e
+
+          if [ -n "$DOT_ENV" ]; then
+            echo "::notice::Using DOT_ENV from GitHub Secrets."
+            printf '%s\n' "$DOT_ENV" > .env
+          else
+            echo "::notice::Creating .env from GitHub Secrets."
+
+            API_URL="$API_URL_INPUT"
+
+            if [ -z "$API_URL" ]; then
+              API_URL="$API_URL_SECRET"
+            fi
+
+            if [ -z "$API_URL" ]; then
+              echo "::error::EXPO_PUBLIC_API_URL is not configured."
+              exit 1
+            fi
+
+            if [ -z "$OPENROUTER_KEY" ]; then
+              echo "::error::EXPO_PUBLIC_OPENROUTER_API_KEY is not configured."
+              exit 1
+            fi
+
+            if [ -z "$STRIPE_KEY" ]; then
+              echo "::error::EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY is not configured."
+              exit 1
+            fi
+
+            cat > .env << EOF
+          EXPO_PUBLIC_API_URL=$API_URL
+          EXPO_PUBLIC_OPENROUTER_API_KEY=$OPENROUTER_KEY
+          EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY=$STRIPE_KEY
+          EOF
+          fi
+
+          echo "Environment configured successfully."
+
+ 
+      - name: Install Dependencies
+        working-directory: care101_app
+        run: npm ci --prefer-offline
+
+
+      - name: Build Android APK
+        working-directory: care101_app/android
+        env:
+          BUILD_TYPE: ${{ inputs.build_type || 'release' }}
+        run: |
+          set -e
+
+          echo "========================================"
+          echo "Care101 Android Build"
+          echo "Build type: $BUILD_TYPE"
+          echo "Architecture: arm64-v8a"
+          echo "========================================"
+
+          if [ "$BUILD_TYPE" = "debug" ]; then
+            ./gradlew assembleDebug \
+              --build-cache \
+              -PreactNativeArchitectures=arm64-v8a
+          else
+            ./gradlew assembleRelease \
+              --build-cache \
+              -PreactNativeArchitectures=arm64-v8a
+          fi
+
+      # ---------------------------------------------------------
+      # 8. Locate APK
+      # ---------------------------------------------------------
+      - name: Prepare APK
+        env:
+          BUILD_TYPE: ${{ inputs.build_type || 'release' }}
+        run: |
+          set -e
+
+          mkdir -p build_output
+
+          if [ "$BUILD_TYPE" = "debug" ]; then
+            APK_DIR="care101_app/android/app/build/outputs/apk/debug"
+          else
+            APK_DIR="care101_app/android/app/build/outputs/apk/release"
+          fi
+
+          APK_PATH=$(find "$APK_DIR" -type f -name "*.apk" | head -n 1)
+
+          if [ -z "$APK_PATH" ] || [ ! -f "$APK_PATH" ]; then
+            echo "::error::No APK file generated."
+            exit 1
+          fi
+
+          FILE_SIZE=$(du -h "$APK_PATH" | cut -f1)
+
+          TIMESTAMP=$(date +'%Y%m%d_%H%M%S')
+
+          FINAL_NAME="Care101_${BUILD_TYPE}_${TIMESTAMP}.apk"
+
+          cp "$APK_PATH" "build_output/$FINAL_NAME"
+
+          echo "APK_PATH=build_output/$FINAL_NAME" >> "$GITHUB_ENV"
+          echo "APK_NAME=$FINAL_NAME" >> "$GITHUB_ENV"
+          echo "APK_SIZE=$FILE_SIZE" >> "$GITHUB_ENV"
+          echo "BUILD_TYPE=$BUILD_TYPE" >> "$GITHUB_ENV"
+
+          cat >> "$GITHUB_STEP_SUMMARY" << EOF
+          ## 📱 Care101 Android APK
+
+          | Property | Value |
+          |---|---|
+          | Build Type | \`$BUILD_TYPE\` |
+          | Architecture | \`arm64-v8a\` |
+          | APK | \`$FINAL_NAME\` |
+          | Size | \`$FILE_SIZE\` |
+
+          The APK is available in the **Artifacts** section.
+          EOF
+
+          echo "APK prepared successfully:"
+          echo "$FINAL_NAME"
+          echo "Size: $FILE_SIZE"
+
+      # ---------------------------------------------------------
+      # 9. Upload APK
+      #
+      # APK files are already compressed.
+      # compression-level: 0 makes artifact upload faster.
+      # ---------------------------------------------------------
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.APK_NAME }}
+          path: ${{ env.APK_PATH }}
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30
+
+      # ---------------------------------------------------------
+      # 10. Optional GitHub Release
+      # ---------------------------------------------------------
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/') || inputs.create_github_release == true
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ env.APK_PATH }}
+          name: Release ${{ github.ref_name || env.APK_NAME }}
+          tag_name: ${{ github.ref_name || format('build-{0}', github.run_number) }}
+          generate_release_notes: true
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+

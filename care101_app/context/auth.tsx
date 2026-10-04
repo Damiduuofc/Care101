@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import * as SecureStore from 'expo-secure-store';
 import { useRouter, useSegments } from 'expo-router';
+import { WidgetService } from '@/services/widgetService';
 
 // Ensure this points to /api/auth in your .env
 const API_URL = `${process.env.EXPO_PUBLIC_API_URL}/auth`;
@@ -9,7 +10,7 @@ interface AuthProps {
   user: any;
   token: string | null; // <--- ✅ ADDED: Expose token in interface
   isLoading: boolean;
-  signIn: (emailOrUsername: string, pass: string) => Promise<void>;
+  signIn: (identifier: string, pass: string) => Promise<void>;
   signUp: (userData: any) => Promise<void>;
   registerPatient: (userData: any) => Promise<void>;
   signOut: () => Promise<void>;
@@ -40,8 +41,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const storedUserData = await SecureStore.getItemAsync('user_data');
 
         if (storedToken && storedUserData) {
+          const parsedUser = JSON.parse(storedUserData);
           setToken(storedToken); // <--- ✅ Load token into state
-          setUser(JSON.parse(storedUserData));
+          setUser(parsedUser);
+          if (parsedUser.role === 'patient') {
+            const pId = parsedUser._id || parsedUser.id;
+            WidgetService.startRealtimeSocket(storedToken, pId);
+            WidgetService.syncWithServer(storedToken, pId);
+          }
         }
       } catch (e) {
         console.error("Session Restoration Failed:", e);
@@ -53,14 +60,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   // 2. SIGN IN ACTION
-  const signIn = async (email: string, password: string) => {
+  const signIn = async (identifier: string, password: string) => {
     try {
       console.log(`Attempting login to: ${API_URL}/login`);
 
       const response = await fetch(`${API_URL}/login`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: email, password }),
+        headers: {
+          'Content-Type': 'application/json',
+          'ngrok-skip-browser-warning': 'true',
+        },
+        body: JSON.stringify({ identifier, password }),
       });
 
       const contentType = response.headers.get("content-type");
@@ -85,6 +95,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       // Navigate based on role
       if (data.user.role === 'patient') {
+        const pId = data.user._id || data.user.id;
+        WidgetService.startRealtimeSocket(data.token, pId);
+        WidgetService.syncWithServer(data.token, pId);
         router.replace('/patient-dashboard' as any);
       } else {
         router.replace('/dashboard');
@@ -97,13 +110,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   // 3. SIGN UP ACTION (Doctor)
+  // Note: Does NOT auto-login because new doctor accounts require admin approval first.
   const signUp = async (userData: any) => {
     try {
       console.log(`Registering doctor at: ${API_URL}/register-doctor`);
 
       const response = await fetch(`${API_URL}/register-doctor`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'ngrok-skip-browser-warning': 'true',
+        },
         body: JSON.stringify(userData),
       });
 
@@ -113,8 +130,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         throw new Error(data.message || data.msg || 'Registration failed');
       }
 
-      // ✅ AUTO-LOGIN
-      await signIn(userData.email, userData.password);
+      // Registration successful — caller will navigate to success screen.
+      // Do NOT auto-login: account requires admin approval before first login.
 
     } catch (error: any) {
       console.error("Signup Error:", error);
@@ -129,7 +146,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       const response = await fetch(`${API_URL}/register-patient`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'ngrok-skip-browser-warning': 'true',
+        },
         body: JSON.stringify(userData),
       });
 
@@ -139,8 +159,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         throw new Error(data.message || data.msg || 'Registration failed');
       }
 
-      // ✅ AUTO-LOGIN
-      await signIn(userData.email || userData.username, userData.password);
+      // ✅ SUCCESS: Save Session & Redirect
+      await SecureStore.setItemAsync('token', data.token);
+      await SecureStore.setItemAsync('user_data', JSON.stringify(data.user));
+
+      setToken(data.token);
+      setUser(data.user);
+
+      const pId = data.user._id || data.user.id;
+      WidgetService.startRealtimeSocket(data.token, pId);
+      WidgetService.syncWithServer(data.token, pId);
+      router.replace('/patient-dashboard' as any);
 
     } catch (error: any) {
       console.error("Patient Signup Error:", error);
@@ -155,6 +184,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       await SecureStore.deleteItemAsync('user_data');
       setUser(null);
       setToken(null); // <--- ✅ Clear token state
+      WidgetService.clearWidget();
       router.replace('/');
     } catch (error) {
       console.error("Sign Out Error:", error);

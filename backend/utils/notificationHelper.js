@@ -6,14 +6,16 @@ import Notification from "../models/Notification.js";
  * @param {String} type - Notification type
  * @param {String} message - Notification message
  * @param {Object} metadata - Additional data (optional)
+ * @param {String} title - Optional title
  */
-export const createNotification = async (userId, type, message, metadata = {}) => {
+export const createNotification = async (userId, type, message, metadata = {}, title = null) => {
     try {
         const notification = new Notification({
             userId,
             type,
             message,
             metadata,
+            title,
             read: false,
             timestamp: new Date()
         });

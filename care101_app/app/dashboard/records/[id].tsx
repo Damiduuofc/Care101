@@ -5,9 +5,11 @@ import {
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { ArrowLeft, Trash2, Calendar, Plus, Camera, Info, X } from 'lucide-react-native';
+import { ArrowLeft, Trash2, Calendar, Plus, Camera, Info, X, FileText } from 'lucide-react-native';
 import * as SecureStore from 'expo-secure-store';
 import * as ImagePicker from 'expo-image-picker';
+import * as FileSystem from 'expo-file-system/legacy';
+import * as Sharing from 'expo-sharing';
 
 const API_URL = `${process.env.EXPO_PUBLIC_API_URL}/surgery-records`;
 
@@ -28,9 +30,165 @@ export default function RecordDetailsScreen() {
   const [entryImage, setEntryImage] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
+  // --- LAB REQUEST STATE ---
+  const [showLabModal, setShowLabModal] = useState(false);
+  const [labTitle, setLabTitle] = useState('');
+  const [labDescription, setLabDescription] = useState('');
+  const [submittingLab, setSubmittingLab] = useState(false);
+
+  // --- LAB REPORTS & CLINICAL RECORDS STATE & HANDLERS ---
+  const [clinicalRecords, setClinicalRecords] = useState<any[]>([]);
+  const [labRequests, setLabRequests] = useState<any[]>([]);
+  const [labReports, setLabReports] = useState<any[]>([]);
+  const [selectedRecordData, setSelectedRecordData] = useState<any>(null);
+  const [showViewRecordModal, setShowViewRecordModal] = useState(false);
+  const [fetchingRecord, setFetchingRecord] = useState(false);
+
+  const handleDownloadFile = async (fileData: string, fileName: string, fileType: string) => {
+    try {
+      let base64Code = fileData;
+      if (fileData.includes(';base64,')) {
+        base64Code = fileData.split(';base64,')[1];
+      }
+
+      let extension = '.jpg';
+      if (fileType === 'application/pdf') {
+        extension = '.pdf';
+      } else if (fileType === 'image/png') {
+        extension = '.png';
+      }
+
+      const safeFileName = fileName.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+      const fileUri = `${FileSystem.documentDirectory}${safeFileName}${extension}`;
+
+      await FileSystem.writeAsStringAsync(fileUri, base64Code, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(fileUri);
+      } else {
+        Alert.alert('Success', `File saved to: ${fileUri}`);
+      }
+    } catch (error) {
+      console.error('Download error:', error);
+      Alert.alert('Error', 'Failed to download file.');
+    }
+  };
+
+  const handleViewRecord = async (recordId: string) => {
+    setFetchingRecord(true);
+    try {
+      const token = await SecureStore.getItemAsync('token');
+      const baseApi = process.env.EXPO_PUBLIC_API_URL;
+      const response = await fetch(`${baseApi}/medical-records/download/${recordId}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+          'ngrok-skip-browser-warning': 'true'
+        }
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setSelectedRecordData(data);
+        setShowViewRecordModal(true);
+      } else {
+        Alert.alert("Error", "Failed to load medical record details.");
+      }
+    } catch (error) {
+      console.error("View Record Error:", error);
+      Alert.alert("Error", "Connection failed");
+    } finally {
+      setFetchingRecord(false);
+    }
+  };
+
   useEffect(() => {
     fetchRecordDetails();
   }, [id]);
+
+  const handleRequestLab = async () => {
+    if (!labTitle.trim()) {
+      Alert.alert("Required", "Please enter a title for the lab request.");
+      return;
+    }
+
+    setSubmittingLab(true);
+    try {
+      const token = await SecureStore.getItemAsync('token');
+      const baseApi = process.env.EXPO_PUBLIC_API_URL;
+
+      let patientMongooseId = record.patientMongoId || null;
+
+      if (!patientMongooseId) {
+        const searchRes = await fetch(`${baseApi}/patients/search-by-patientid/${record.patientId}`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+            'ngrok-skip-browser-warning': 'true'
+          }
+        });
+
+        if (searchRes.ok) {
+          const searchData = await searchRes.json();
+          if (searchData.found && searchData.patient?._id) {
+            patientMongooseId = searchData.patient._id;
+          }
+        }
+      }
+
+      if (!patientMongooseId) {
+        Alert.alert("Error", "Associated patient not found in system.");
+        setSubmittingLab(false);
+        return;
+      }
+
+      const userDataStr = await SecureStore.getItemAsync('user_data');
+      let doctorName = '';
+      let doctorId = '';
+      if (userDataStr) {
+        try {
+          const userData = JSON.parse(userDataStr);
+          doctorName = userData.name || userData.fullName || '';
+          doctorId = userData.id || userData._id || '';
+        } catch(e) {}
+      }
+
+      // 2. Submit Lab Request
+      const res = await fetch(`${baseApi}/lab-requests/create`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          patientId: patientMongooseId,
+          title: labTitle.trim(),
+          description: labDescription.trim(),
+          doctorId,
+          doctorName
+        })
+      });
+
+      if (res.ok) {
+        Alert.alert("Success", "Lab request created successfully!");
+        setLabTitle('');
+        setLabDescription('');
+        setShowLabModal(false);
+        fetchRecordDetails();
+      } else {
+        const errData = await res.json();
+        Alert.alert("Error", errData.msg || "Failed to create request");
+      }
+
+    } catch (error: any) {
+      console.error("Request Lab Error:", error);
+      Alert.alert("Error", error.message || "Connection failed");
+    } finally {
+      setSubmittingLab(false);
+    }
+  };
 
   const fetchRecordDetails = async () => {
     try {
@@ -41,6 +199,56 @@ export default function RecordDetailsScreen() {
       if (res.ok) {
         const data = await res.json();
         setRecord(data);
+
+        // Fetch patient clinical records, lab reports & lab requests
+        try {
+          const baseApi = process.env.EXPO_PUBLIC_API_URL;
+          let patId = data.patientMongoId || null;
+
+          if (!patId && data.patientId) {
+            const searchRes = await fetch(`${baseApi}/patients/search-by-patientid/${data.patientId}`, {
+              headers: {
+                Authorization: `Bearer ${token}`,
+                'Content-Type': 'application/json',
+                'ngrok-skip-browser-warning': 'true'
+              }
+            });
+            if (searchRes.ok) {
+              const searchData = await searchRes.json();
+              if (searchData.found && searchData.patient?._id) {
+                patId = searchData.patient._id;
+              }
+            }
+          }
+
+          if (patId) {
+            const commonHeaders = {
+              Authorization: `Bearer ${token}`,
+              'Content-Type': 'application/json',
+              'ngrok-skip-browser-warning': 'true'
+            };
+
+            const [recordsRes, reqsRes] = await Promise.all([
+              fetch(`${baseApi}/medical-records/patient/${patId}`, { headers: commonHeaders }),
+              fetch(`${baseApi}/lab-requests/patient/${patId}`, { headers: commonHeaders })
+            ]);
+
+            if (recordsRes.ok) {
+              const recordsData = await recordsRes.json();
+              const allRecords = Array.isArray(recordsData) ? recordsData : [];
+              setLabReports(allRecords.filter((r: any) => r.type === 'lab_tests'));
+              setClinicalRecords(allRecords.filter((r: any) => r.type !== 'lab_tests'));
+            }
+
+            if (reqsRes.ok) {
+              const reqsData = await reqsRes.json();
+              setLabRequests(Array.isArray(reqsData) ? reqsData : []);
+            }
+          }
+        } catch (err) {
+          console.error("Failed to load clinical/lab reports:", err);
+        }
+
       } else {
         Alert.alert("Error", "Record not found");
         router.back();
@@ -64,12 +272,7 @@ export default function RecordDetailsScreen() {
 
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
-        // ❌ REMOVE THIS (It caused the crash):
-        // mediaTypes: ImagePicker.MediaType.Images, 
-
-        // ✅ USE THIS (It works, ignore the warning for now):
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
-
         allowsEditing: true,
         aspect: [4, 3],
         quality: 0.5,
@@ -85,6 +288,7 @@ export default function RecordDetailsScreen() {
       Alert.alert("Error", "Could not pick image. Check logs.");
     }
   };
+
   const handleAddEntry = async () => {
     if (!entryImage && !entryNotes) {
       Alert.alert("Empty Entry", "Please add an image or notes.");
@@ -94,9 +298,6 @@ export default function RecordDetailsScreen() {
     setSubmitting(true);
     try {
       const token = await SecureStore.getItemAsync('token');
-
-      // 1. Log what we are sending
-      console.log("Sending Entry to:", `${API_URL}/${id}/entry`);
 
       const res = await fetch(`${API_URL}/${id}/entry`, {
         method: 'POST',
@@ -110,9 +311,7 @@ export default function RecordDetailsScreen() {
         })
       });
 
-      // 2. See what the server replies
       const text = await res.text();
-      console.log("SERVER RESPONSE:", text);
 
       if (res.ok) {
         Alert.alert("Success", "Entry Added!");
@@ -121,7 +320,6 @@ export default function RecordDetailsScreen() {
         setEntryImage(null);
         fetchRecordDetails();
       } else {
-        // Show the real error message from the server
         Alert.alert("Error", `Server says: ${text}`);
       }
     } catch (error) {
@@ -171,32 +369,146 @@ export default function RecordDetailsScreen() {
 
         {/* Card 1: Patient Details */}
         <View style={styles.card}>
-          <Text style={styles.cardTitle}>Patient Details</Text>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Text style={styles.cardTitle}>Patient Details</Text>
+            <TouchableOpacity 
+              style={styles.requestLabBtn} 
+              onPress={() => setShowLabModal(true)}
+            >
+              <Text style={styles.requestLabBtnText}>Request Lab</Text>
+            </TouchableOpacity>
+          </View>
           <View style={styles.divider} />
           <View style={styles.rowContainer}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.label}>Patient ID</Text>
+              <Text style={styles.value}>{record.patientId || "N/A"}</Text>
+            </View>
             <View style={{ flex: 1 }}>
               <Text style={styles.label}>Hospital</Text>
               <Text style={styles.value}>{record.hospital || "N/A"}</Text>
             </View>
+          </View>
+          <View style={[styles.rowContainer, { marginTop: 12 }]}>
             <View style={{ flex: 1 }}>
               <Text style={styles.label}>NIC</Text>
               <Text style={styles.value}>{record.nic || "N/A"}</Text>
             </View>
+            <View style={{ flex: 1 }} />
           </View>
         </View>
 
-        {/* Card 2: Main Surgery Card */}
+        {/* Card 2: Clinical Records & Prescriptions (Nurse / Doctor OPD entries) */}
         <View style={styles.card}>
-          <Text style={styles.cardTitle}>Surgery Card (Original)</Text>
+          <Text style={styles.cardTitle}>Clinical Records & Prescriptions</Text>
           <View style={styles.divider} />
-          <TouchableOpacity
-            activeOpacity={0.9}
-            onPress={() => setImageExpanded(!imageExpanded)}
-            style={[styles.imageContainer, imageExpanded && styles.imageContainerExpanded]}
-          >
-            <Image source={{ uri: record.surgeryCardImage }} style={styles.cardImage} resizeMode="cover" />
-          </TouchableOpacity>
+          {clinicalRecords.length > 0 ? (
+            clinicalRecords.map((cRec) => (
+              <View key={cRec._id} style={styles.labReportRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.labReportTitle}>{cRec.title} ({cRec.type})</Text>
+                  <Text style={styles.labReportDate}>
+                    {new Date(cRec.date || cRec.createdAt).toLocaleDateString()} • {cRec.doctorName || 'OPD'}
+                  </Text>
+                  {cRec.diagnosis ? (
+                    <Text style={[styles.labReportDesc, { fontStyle: 'normal', fontWeight: '600', color: '#334155', marginTop: 2 }]}>
+                      Diagnosis: {cRec.diagnosis}
+                    </Text>
+                  ) : null}
+                  {cRec.medications ? (
+                    <Text style={[styles.labReportDesc, { fontStyle: 'normal', color: '#475569', marginTop: 2 }]}>
+                      Rx: {cRec.medications}
+                    </Text>
+                  ) : null}
+                  {cRec.description ? (
+                    <Text style={styles.labReportDesc}>{cRec.description}</Text>
+                  ) : null}
+                </View>
+                <TouchableOpacity
+                  style={styles.viewReportBtn}
+                  onPress={() => handleViewRecord(cRec._id)}
+                >
+                  <Text style={styles.viewReportBtnText}>View</Text>
+                </TouchableOpacity>
+              </View>
+            ))
+          ) : (
+            <Text style={styles.noLabText}>No clinical records or prescriptions added yet.</Text>
+          )}
         </View>
+
+        {/* Card 3: Lab Requests & Completed Lab Reports */}
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Lab Requests & Reports</Text>
+          <View style={styles.divider} />
+          {labRequests.length > 0 && labRequests.map((req) => (
+            <View key={req._id} style={styles.labReportRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.labReportTitle}>{req.title}</Text>
+                <Text style={styles.labReportDate}>
+                  {new Date(req.createdAt).toLocaleDateString()} • Status: {req.status?.toUpperCase()}
+                </Text>
+                {req.description ? (
+                  <Text style={styles.labReportDesc}>{req.description}</Text>
+                ) : null}
+              </View>
+              {req.status === 'completed' && req.recordId ? (
+                <TouchableOpacity
+                  style={styles.viewReportBtn}
+                  onPress={() => handleViewRecord(req.recordId)}
+                >
+                  <Text style={styles.viewReportBtnText}>View Report</Text>
+                </TouchableOpacity>
+              ) : (
+                <View style={{ backgroundColor: '#fef3c7', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6 }}>
+                  <Text style={{ fontSize: 11, fontWeight: '700', color: '#d97706' }}>PENDING</Text>
+                </View>
+              )}
+            </View>
+          ))}
+          {labReports.length > 0 ? (
+            labReports
+              .filter((r) => !labRequests.some((req) => String(req.recordId) === String(r._id)))
+              .map((report) => (
+                <View key={report._id} style={styles.labReportRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.labReportTitle}>{report.title}</Text>
+                    <Text style={styles.labReportDate}>
+                      {new Date(report.date).toLocaleDateString()}
+                    </Text>
+                    {report.description && (
+                      <Text style={styles.labReportDesc}>{report.description}</Text>
+                    )}
+                  </View>
+                  <TouchableOpacity
+                    style={styles.viewReportBtn}
+                    onPress={() => handleViewRecord(report._id)}
+                  >
+                    <Text style={styles.viewReportBtnText}>View & Download</Text>
+                  </TouchableOpacity>
+                </View>
+              ))
+          ) : (
+            labRequests.length === 0 && (
+              <Text style={styles.noLabText}>No lab requests or reports for this patient yet.</Text>
+            )
+          )}
+        </View>
+
+        {/* Card 4: Main Surgery Card */}
+        {record.surgeryCardImage ? (
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>Surgery Card (Original)</Text>
+            <View style={styles.divider} />
+            <TouchableOpacity
+              activeOpacity={0.9}
+              onPress={() => setImageExpanded(!imageExpanded)}
+              style={[styles.imageContainer, imageExpanded && styles.imageContainerExpanded]}
+            >
+              <Image source={{ uri: record.surgeryCardImage }} style={styles.cardImage} resizeMode="cover" />
+            </TouchableOpacity>
+          </View>
+        ) : null}
 
         {/* SECTION: PROGRESS ENTRIES (Timeline) */}
         <View style={styles.timelineHeader}>
@@ -309,6 +621,141 @@ export default function RecordDetailsScreen() {
         </KeyboardAvoidingView>
       </Modal>
 
+      {/* --- REQUEST LAB MODAL --- */}
+      <Modal animationType="slide" transparent={true} visible={showLabModal} onRequestClose={() => setShowLabModal(false)}>
+        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            {/* Modal Header */}
+            <View style={styles.modalHeader}>
+              <TouchableOpacity onPress={() => setShowLabModal(false)}>
+                <Text style={styles.cancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <Text style={styles.modalTitle}>Request Lab Report</Text>
+              <View style={{ width: 50 }} />
+            </View>
+
+            <ScrollView contentContainerStyle={{ padding: 20 }}>
+              <Text style={styles.inputLabel}>Lab Test Title *</Text>
+              <TextInput 
+                style={styles.modalInput}
+                placeholder="e.g. Full Blood Count, Lipid Profile"
+                value={labTitle}
+                onChangeText={setLabTitle}
+              />
+
+              <Text style={styles.inputLabel}>Instructions / Notes (Optional)</Text>
+              <TextInput 
+                style={[styles.modalInput, styles.textArea]}
+                placeholder="Add details or special requirements here..."
+                multiline={true}
+                numberOfLines={3}
+                value={labDescription}
+                onChangeText={setLabDescription}
+              />
+            </ScrollView>
+
+            <View style={styles.modalFooter}>
+              <TouchableOpacity
+                style={[styles.saveBtn, submittingLab && styles.disabledBtn]}
+                onPress={handleRequestLab}
+                disabled={submittingLab}
+              >
+                {submittingLab ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveBtnText}>Submit Request</Text>}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {/* View Record Modal */}
+      <Modal
+        visible={showViewRecordModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowViewRecordModal(false)}
+      >
+        <View style={styles.recordModalOverlay}>
+          <View style={styles.recordModalContentCard}>
+            <View style={styles.recordModalHeaderRow}>
+              <Text style={styles.recordModalTitle} numberOfLines={1}>{selectedRecordData?.title || selectedRecordData?.fileName || 'Record Details'}</Text>
+              <TouchableOpacity onPress={() => setShowViewRecordModal(false)}>
+                <X size={24} color="#64748b" />
+              </TouchableOpacity>
+            </View>
+            
+            <ScrollView showsVerticalScrollIndicator={false}>
+              <View style={styles.recordDetailContainer}>
+                <View style={styles.recordMetaRow}>
+                  <Text style={styles.recordMetaText}>Type: {selectedRecordData?.type || selectedRecordData?.fileType || 'N/A'}</Text>
+                </View>
+                
+                {selectedRecordData?.diagnosis ? (
+                  <>
+                    <Text style={styles.recordModalLabel}>Diagnosis</Text>
+                    <Text style={styles.recordDescriptionText}>{selectedRecordData.diagnosis}</Text>
+                  </>
+                ) : null}
+
+                {selectedRecordData?.medications ? (
+                  <>
+                    <Text style={styles.recordModalLabel}>Prescribed Medications</Text>
+                    <Text style={styles.recordDescriptionText}>{selectedRecordData.medications}</Text>
+                  </>
+                ) : null}
+
+                <Text style={styles.recordModalLabel}>Clinical Notes / Description</Text>
+                <Text style={styles.recordDescriptionText}>
+                  {selectedRecordData?.description || 'No description provided.'}
+                </Text>
+
+                <Text style={styles.recordModalLabel}>Attachment</Text>
+                {selectedRecordData?.fileData ? (
+                  selectedRecordData.fileType?.startsWith('image/') || selectedRecordData.fileData?.startsWith('data:image/') ? (
+                    <View style={{ width: '100%', height: 300, borderRadius: 12, overflow: 'hidden', backgroundColor: '#000' }}>
+                      <Image 
+                        source={{ uri: selectedRecordData.fileData }} 
+                        style={{ width: '100%', height: '100%', resizeMode: 'contain' }} 
+                      />
+                    </View>
+                  ) : (
+                    <View style={[styles.reportImage, { justifyContent: 'center', alignItems: 'center' }]}>
+                      <FileText size={48} color="#fff" />
+                      <Text style={{ color: '#fff', marginTop: 8 }}>PDF Document</Text>
+                    </View>
+                  )
+                ) : (
+                  <Text style={styles.noImageText}>No file attachment available.</Text>
+                )}
+              </View>
+            </ScrollView>
+            
+            <View style={styles.recordModalButtonRow}>
+              {selectedRecordData?.fileData && (
+                <TouchableOpacity 
+                  style={[styles.recordModalButton, { backgroundColor: '#06b6d4' }]}
+                  onPress={() => handleDownloadFile(selectedRecordData.fileData, selectedRecordData.fileName || 'Report', selectedRecordData.fileType)}
+                >
+                  <Text style={{ color: '#fff', fontSize: 14, fontWeight: '600' }}>Download File</Text>
+                </TouchableOpacity>
+              )}
+              <TouchableOpacity 
+                style={[styles.recordModalButton, styles.recordModalButtonCancel]}
+                onPress={() => setShowViewRecordModal(false)}
+              >
+                <Text style={styles.recordModalButtonCancelText}>Close</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Fetching overlay */}
+      {fetchingRecord && (
+        <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.3)', justifyContent: 'center', alignItems: 'center', zIndex: 9999 }]}>
+          <ActivityIndicator size="large" color="#06b6d4" />
+        </View>
+      )}
+
     </SafeAreaView>
   );
 }
@@ -372,4 +819,161 @@ const styles = StyleSheet.create({
   saveBtn: { backgroundColor: '#06B6D4', paddingVertical: 16, borderRadius: 12, alignItems: 'center' },
   saveBtnText: { fontSize: 16, fontWeight: '700', color: '#fff' },
   disabledBtn: { backgroundColor: '#93c5fd', opacity: 0.8 },
+  requestLabBtn: {
+    backgroundColor: '#ecfeff',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  requestLabBtnText: {
+    fontSize: 12,
+    color: '#06b6d4',
+    fontWeight: '600',
+  },
+  modalInput: {
+    borderWidth: 1,
+    borderColor: '#cbd5e1',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 15,
+    backgroundColor: '#fff',
+    marginBottom: 20,
+  },
+  labReportRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f1f5f9',
+  },
+  labReportTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#0f172a',
+    marginBottom: 2,
+  },
+  labReportDate: {
+    fontSize: 11,
+    color: '#94a3b8',
+    marginBottom: 4,
+  },
+  labReportDesc: {
+    fontSize: 12,
+    color: '#64748b',
+    fontStyle: 'italic',
+  },
+  viewReportBtn: {
+    backgroundColor: '#06b6d4',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    marginLeft: 12,
+  },
+  viewReportBtnText: {
+    fontSize: 12,
+    color: '#fff',
+    fontWeight: '600',
+  },
+  noLabText: {
+    fontSize: 13,
+    color: '#94a3b8',
+    fontStyle: 'italic',
+    textAlign: 'center',
+    paddingVertical: 10,
+  },
+  recordModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  recordModalContentCard: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 20,
+    width: '100%',
+    maxHeight: '85%',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 5,
+  },
+  recordModalHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f1f5f9',
+    paddingBottom: 10,
+  },
+  recordModalTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#0f172a',
+  },
+  recordModalLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#334155',
+    marginBottom: 6,
+    marginTop: 12,
+  },
+  recordModalButtonRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 20,
+  },
+  recordModalButton: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  recordModalButtonCancel: {
+    backgroundColor: '#f1f5f9',
+  },
+  recordModalButtonCancelText: {
+    color: '#475569',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  recordDetailContainer: {
+    marginVertical: 8,
+  },
+  recordMetaRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+    backgroundColor: '#f8fafc',
+    padding: 10,
+    borderRadius: 8,
+  },
+  recordMetaText: {
+    fontSize: 12,
+    color: '#64748b',
+  },
+  recordDescriptionText: {
+    fontSize: 14,
+    color: '#334155',
+    lineHeight: 20,
+    marginBottom: 16,
+  },
+  reportImage: {
+    width: '100%',
+    height: 300,
+    borderRadius: 12,
+    resizeMode: 'contain',
+    backgroundColor: '#000',
+  },
+  noImageText: {
+    textAlign: 'center',
+    color: '#94a3b8',
+    fontStyle: 'italic',
+    padding: 20,
+  },
 });

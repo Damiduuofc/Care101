@@ -1,3 +1,4 @@
+import mongoose from "mongoose";
 import express from "express";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
@@ -8,8 +9,11 @@ import Appointment from "../models/Appointment.js";
 import HospitalStatus from "../models/HospitalStatus.js";
 import Bill from "../models/Bill.js";
 import HospitalFinance from "../models/Finance.js";
+import Notification from "../models/Notification.js";
+import ScheduleRequest from "../models/ScheduleRequest.js";
 import { protect, authorize } from "../middleware/authRole.js";
-
+import { sendBookingConfirmation, sendDoctorWelcomeEmail, sendDoctorApprovalEmail, sendAdminPasswordReset } from "../utils/emailService.js";
+import crypto from "crypto"; 
 const router = express.Router();
 
 // ==========================================
@@ -25,14 +29,13 @@ router.post("/login", async (req, res) => {
     const isMatch = await bcrypt.compare(password, admin.password);
     if (!isMatch) return res.status(400).json({ msg: "Invalid Credentials" });
 
-    const payload = { id: admin.id, role: admin.role };
-
     // Ensure JWT_SECRET exists
     if (!process.env.JWT_SECRET) {
       console.error("JWT_SECRET is missing in .env");
       return res.status(500).send("Server Configuration Error");
     }
 
+    const payload = { id: admin.id, role: admin.role };
     const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: "1d" });
 
     res.json({
@@ -52,19 +55,16 @@ router.post("/login", async (req, res) => {
 });
 
 // ==========================================
-// 2. DASHBOARD STATS (Merged: Counts + Status)
+// 2. DASHBOARD STATS
 // ==========================================
 router.get("/stats", protect, async (req, res) => {
   try {
-    // A. CALCULATE DASHBOARD COUNTS
     const totalDoctors = await Doctor.countDocuments();
     const pendingDoctors = await Doctor.countDocuments({ isApproved: false });
     const totalPatients = await Patient.countDocuments();
 
-    // Appointments Today
     const startOfDay = new Date();
     startOfDay.setHours(0, 0, 0, 0);
-
     const endOfDay = new Date();
     endOfDay.setHours(23, 59, 59, 999);
 
@@ -72,25 +72,29 @@ router.get("/stats", protect, async (req, res) => {
       date: { $gte: startOfDay, $lte: endOfDay }
     });
 
-    // Pending Appointments (Case Insensitive)
     const pendingAppointments = await Appointment.countDocuments({
       status: { $regex: /^pending$/i }
     });
 
-    // Revenue Calculation
-    const revenueResult = await Appointment.aggregate([
+    const appointmentRevenue = await Appointment.aggregate([
       { $match: { paymentStatus: { $regex: /^paid$/i } } },
       { $group: { _id: null, total: { $sum: "$amount" } } }
     ]);
-    const totalRevenue = revenueResult.length > 0 ? revenueResult[0].total : 0;
 
-    // B. FETCH HOSPITAL STATUS
+    const billRevenue = await Bill.aggregate([
+      { $match: { status: { $regex: /^paid$/i } } },
+      { $group: { _id: null, total: { $sum: "$amount" } } }
+    ]);
+
+    const appTotal = appointmentRevenue.length > 0 ? appointmentRevenue[0].total : 0;
+    const billTotal = billRevenue.length > 0 ? billRevenue[0].total : 0;
+    const totalRevenue = appTotal + billTotal;
+
     let status = await HospitalStatus.findOne();
     if (!status) {
       status = { generalWard: "Available", icuBeds: 0, emergencyUnit: "Normal", pharmacy: "Open" };
     }
 
-    // C. SEND COMBINED RESPONSE
     res.json({
       doctors: { total: totalDoctors, pending: pendingDoctors },
       patients: { total: totalPatients, today: appointmentsToday },
@@ -116,7 +120,6 @@ router.get("/stats", protect, async (req, res) => {
 router.put("/status", protect, authorize(["system_admin"]), async (req, res) => {
   try {
     const { generalWard, icuBeds, emergencyUnit, pharmacy } = req.body;
-
     let status = await HospitalStatus.findOne();
 
     if (status) {
@@ -130,10 +133,13 @@ router.put("/status", protect, authorize(["system_admin"]), async (req, res) => 
       status = new HospitalStatus({ generalWard, icuBeds, emergencyUnit, pharmacy });
       await status.save();
     }
-    res.json({ msg: "Status Updated", status });
 
+    if (req.io) {
+      req.io.emit("hospitalStatusUpdated", status);
+    }
+
+    res.json({ msg: "Status Updated", status });
   } catch (err) {
-    console.error("Status Update Error:", err);
     res.status(500).send("Server Error");
   }
 });
@@ -144,82 +150,418 @@ router.put("/status", protect, authorize(["system_admin"]), async (req, res) => 
 router.get("/appointments", protect, async (req, res) => {
   try {
     const appointments = await Appointment.find()
-      .populate("patientId", "fullName phone")
+      .populate("patientId", "fullName phone mobileNumber patientId nicNumber email dateOfBirth")
       .populate("doctorId", "name department")
-      .sort({ date: -1 });
-    res.json(appointments);
+      .sort({ createdAt: -1, date: -1 });
+
+    // Sanitize any existing records where payment is pending but status was set to confirmed
+    const sanitizedAppointments = appointments.map((appt) => {
+      const apptObj = appt.toObject();
+      if (
+        apptObj.paymentStatus?.toLowerCase() !== "paid" &&
+        apptObj.status?.toLowerCase() === "confirmed"
+      ) {
+        apptObj.status = "pending";
+      }
+      return apptObj;
+    });
+
+    res.json(sanitizedAppointments);
   } catch (err) {
-    console.error("Fetch Appointments Error:", err);
     res.status(500).send("Server Error");
+  }
+});
+
+// ==========================================
+// 4A. WALK-IN APPOINTMENT BOOKING
+// ==========================================
+router.post("/appointments/walkin", protect, async (req, res) => {
+  try {
+    const { patientDetails, appointmentDetails } = req.body;
+
+    if (!patientDetails || !appointmentDetails) {
+      return res.status(400).json({ msg: "Patient details and appointment details are required." });
+    }
+
+    const { fullName, nic, dob, phone, email, patientId } = patientDetails;
+    const { doctorId, doctorName, department, date, visitType, reason, paymentStatus, amount } = appointmentDetails;
+
+    if (!fullName || !phone) {
+      return res.status(400).json({ msg: "Patient Name and Phone number are required." });
+    }
+
+    if (!doctorId || !date) {
+      return res.status(400).json({ msg: "Doctor and Date are required." });
+    }
+
+    // --- 1. FIND OR CREATE PATIENT ---
+    let patient = null;
+    if (patientId && patientId.trim() !== "") {
+      patient = await Patient.findOne({ patientId: patientId.toUpperCase() });
+    }
+
+    const passwordPlain = "Walkin123!";
+
+    if (!patient) {
+      // Create new patient
+      const baseUsername = fullName.toLowerCase().replace(/\s+/g, "") || "patient";
+      const randomSuffix = Math.floor(1000 + Math.random() * 9000);
+      const username = `${baseUsername}${randomSuffix}`;
+
+      const salt = await bcrypt.genSalt(10);
+      const hashedPassword = await bcrypt.hash(passwordPlain, salt);
+
+      // Generate unique values for optional fields if not provided
+      const resolvedNic = (nic && nic.trim() !== "")
+        ? nic
+        : `WALKIN-NIC-${phone}-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`;
+      const resolvedEmail = (email && email.trim() !== "")
+        ? email.toLowerCase()
+        : `walkin-${phone}-${Date.now()}@care101.com`;
+      const resolvedDob = (dob && dob.trim() !== "")
+        ? new Date(dob)
+        : new Date("1970-01-01");
+
+      patient = new Patient({
+        fullName,
+        username,
+        email: resolvedEmail,
+        nicNumber: resolvedNic,
+        password: hashedPassword,
+        mobileNumber: phone,
+        dateOfBirth: resolvedDob,
+        gender: "Other", // Default for walk-in
+        district: "Colombo", // Default for walk-in
+        isRegistered: false
+      });
+
+      await patient.save();
+
+      // Send credentials to patient's mobile number via SMS
+      try {
+        const { sendWalkinPatientCredentials } = await import("../utils/emailService.js");
+        sendWalkinPatientCredentials(patient, passwordPlain).catch(err => {
+          console.error("Failed to send walkin credentials:", err);
+        });
+      } catch (err) {
+        console.error("Failed to import sendWalkinPatientCredentials:", err);
+      }
+    } else {
+      // Update missing/mock details if admin has now provided real data
+      let detailsUpdated = false;
+      if (nic && nic.trim() !== "" && patient.nicNumber.startsWith("WALKIN-NIC-")) {
+        patient.nicNumber = nic;
+        detailsUpdated = true;
+      }
+      if (email && email.trim() !== "" && (patient.email.startsWith("walkin-") || patient.email.endsWith("@care101.com"))) {
+        patient.email = email.toLowerCase();
+        detailsUpdated = true;
+      }
+      if (dob && dob.trim() !== "" && patient.dateOfBirth.getTime() === new Date("1970-01-01").getTime()) {
+        patient.dateOfBirth = new Date(dob);
+        detailsUpdated = true;
+      }
+
+      if (detailsUpdated) {
+        try {
+          await patient.save();
+        } catch (saveErr) {
+          console.error("Failed to update patient walkin details:", saveErr.message);
+        }
+      }
+    }
+
+    // --- 2. CHECK IF DOCTOR HAS AN APPROVED SCHEDULE ---
+    const bookingDate = new Date(date);
+    const startOfDay = new Date(bookingDate);
+    startOfDay.setHours(0, 0, 0, 0);
+    const endOfDay = new Date(bookingDate);
+    endOfDay.setHours(23, 59, 59, 999);
+
+    const approvedSchedule = await ScheduleRequest.findOne({
+      doctorId,
+      status: "approved",
+      date: { $gte: startOfDay, $lte: endOfDay }
+    });
+
+    if (!approvedSchedule) {
+      return res.status(400).json({ msg: "This doctor is not available on the selected date (No approved schedule)." });
+    }
+
+    // --- 2A. CHECK DOUBLE BOOKING ---
+    const existingBooking = await Appointment.findOne({
+      patientId: patient._id,
+      doctorId,
+      date: { $gte: startOfDay, $lte: endOfDay },
+      status: { $ne: "cancelled" }
+    });
+
+    if (existingBooking) {
+      return res.status(400).json({ msg: "This patient already has an active appointment with this doctor on the selected date." });
+    }
+
+    // --- 3. CHECK QUEUE LIMIT ---
+    const currentAppointmentCount = await Appointment.countDocuments({
+      doctorId,
+      date: { $gte: startOfDay, $lte: endOfDay },
+      status: { $ne: "cancelled" }
+    });
+
+    if (!approvedSchedule.isUnlimited && approvedSchedule.queueLimit) {
+      if (currentAppointmentCount >= approvedSchedule.queueLimit) {
+        return res.status(400).json({ msg: "Sorry, this session is full. Maximum patient count reached." });
+      }
+    }
+
+    // --- 4. GENERATE QUEUE NUMBER ---
+    const queueNumber = currentAppointmentCount + 1;
+    
+    // Set total amount (2000 Doctor + 1500 Hospital = 3500)
+    const totalAmount = amount || 3500; 
+
+    // --- 5. CREATE APPOINTMENT ---
+    const newAppointment = new Appointment({
+      patientId: patient._id,
+      doctorId,
+      doctorName,
+      department,
+      date,
+      queueNumber,
+      visitType: visitType || 'Consultation',
+      reason,
+      amount: totalAmount,
+      status: paymentStatus === 'paid' ? 'confirmed' : 'pending',
+      paymentStatus: paymentStatus || 'pending'
+    });
+
+    const savedAppointment = await newAppointment.save();
+
+    // --- 6. AUTOMATICALLY CREATE BILL ---
+    let createdBill = null;
+    try {
+      const newBill = new Bill({
+        patientId: patient._id,
+        appointmentId: savedAppointment._id,
+        title: `Consultation - ${doctorName}`,
+        type: "Appointment",
+        amount: totalAmount,
+        status: paymentStatus === 'paid' ? "Paid" : "Pending",
+        date: new Date()
+      });
+      createdBill = await newBill.save();
+    } catch (billError) {
+      console.error("Bill Creation Failed:", billError);
+    }
+
+    // --- 7. ADD TO CHANNELING INCOME (Split: 2000 Doctor, 1500 Hospital) ---
+    if (paymentStatus === 'paid') {
+      try {
+        const hospitalName = "Suwasevana";
+        
+        // Define the exact split
+        const hospitalIncome = 1500;
+        const doctorIncome = totalAmount > hospitalIncome ? (totalAmount - hospitalIncome) : 0;
+
+        // Update DOCTOR'S Finance Record
+        let doctorFinance = await HospitalFinance.findOne({
+          doctorId: doctorId,
+          name: hospitalName
+        });
+
+        if (!doctorFinance) {
+          doctorFinance = new HospitalFinance({
+            doctorId: doctorId,
+            name: hospitalName,
+            records: []
+          });
+        }
+
+        doctorFinance.records.unshift({
+          type: 'channeling',
+          date: new Date(date),
+          patients: 1,
+          income: doctorIncome
+        });
+
+        await doctorFinance.save();
+
+        // Update HOSPITAL'S Finance Record (doctorId is null)
+        let systemFinance = await HospitalFinance.findOne({
+          doctorId: null, 
+          name: hospitalName
+        });
+
+        if (!systemFinance) {
+          systemFinance = new HospitalFinance({
+            doctorId: null,
+            name: hospitalName,
+            records: []
+          });
+        }
+
+        systemFinance.records.unshift({
+          type: 'channeling',
+          date: new Date(date),
+          patients: 1,
+          income: hospitalIncome
+        });
+
+        await systemFinance.save();
+
+      } catch (financeError) {
+        console.error("Finance Update Failed:", financeError);
+      }
+    }
+
+    // --- 8. CREATE NOTIFICATIONS ---
+    try {
+      await Notification.create({
+        userId: patient._id,
+        type: 'appointment',
+        message: `Booking Confirmed! Queue #${queueNumber} for Dr. ${doctorName}.`
+      });
+
+      if (paymentStatus === 'paid') {
+        await Notification.create({
+          userId: patient._id,
+          type: 'payment',
+          message: `Payment of LKR ${totalAmount} received successfully.`
+        });
+      }
+    } catch (notifError) {
+      console.error("Notification Error:", notifError);
+    }
+
+    // --- 9. SEND EMAIL CONFIRMATION --- (Run asynchronously in the background)
+    (async () => {
+      try {
+        const doctorInfo = await Doctor.findById(doctorId);
+        let doctorRoom = doctorInfo ? doctorInfo.allocatedRoom : "TBA";
+        if (savedAppointment && savedAppointment.date && doctorInfo) {
+          try {
+            const startOfDay = new Date(savedAppointment.date);
+            startOfDay.setHours(0, 0, 0, 0);
+            const endOfDay = new Date(savedAppointment.date);
+            endOfDay.setHours(23, 59, 59, 999);
+            
+            const schedule = await ScheduleRequest.findOne({
+              doctorId: doctorInfo._id,
+              status: 'approved',
+              date: { $gte: startOfDay, $lte: endOfDay }
+            });
+            if (schedule && schedule.allocatedRoom) {
+              doctorRoom = schedule.allocatedRoom;
+            }
+          } catch (err) {
+            console.error("Failed to fetch room from schedule in admin routes:", err.message);
+          }
+        }
+        
+        let pdfBuffer = null;
+        if (paymentStatus === 'paid' && createdBill) {
+          try {
+            const { generateReceiptPdf } = await import("../utils/pdfService.js");
+            pdfBuffer = await generateReceiptPdf(createdBill, savedAppointment, doctorInfo, patient);
+          } catch (pdfErr) {
+            console.error("Failed to generate PDF receipt:", pdfErr);
+          }
+        }
+        
+        await sendBookingConfirmation(patient.email, savedAppointment, doctorRoom, pdfBuffer);
+      } catch (emailErr) {
+        console.error("Failed to send booking confirmation email:", emailErr);
+      }
+    })();
+
+    res.status(201).json(savedAppointment);
+
+  } catch (err) {
+    console.error("Walkin Booking Error:", err.message);
+    res.status(500).json({ msg: `Booking Failed: ${err.message}` });
   }
 });
 
 router.put("/appointments/:id", protect, async (req, res) => {
   try {
-    const { status, paymentStatus } = req.body;
+    const { status, paymentStatus, arrived } = req.body;
     let appointment = await Appointment.findById(req.params.id);
 
     if (!appointment) return res.status(404).json({ msg: "Not found" });
 
-    // Prevent editing cancelled appointments
     if (appointment.status && appointment.status.toLowerCase() === "cancelled") {
       return res.status(400).json({ msg: "Cannot edit a Cancelled appointment" });
     }
 
-    if (status) appointment.status = status;
+    if (status) {
+      if (status.toLowerCase() === "confirmed" && appointment.paymentStatus?.toLowerCase() !== "paid" && paymentStatus?.toLowerCase() !== "paid") {
+        return res.status(400).json({ msg: "Cannot set appointment status to Confirmed until payment is Paid." });
+      }
+      appointment.status = status;
+    }
 
-
+    if (arrived !== undefined) {
+      appointment.arrived = arrived;
+    }
 
     if (paymentStatus) {
-      // Check if status is changing TO paid FROM something else
       const isBecomingPaid = paymentStatus.toLowerCase() === "paid" && appointment.paymentStatus !== "paid";
-
       appointment.paymentStatus = paymentStatus;
 
-      // Sync with Bill & Finance if marked Paid
       if (isBecomingPaid) {
-        // 1. Update Bill
-        await Bill.findOneAndUpdate(
-          { appointmentId: appointment._id },
-          { status: "Paid" }
-        );
+        appointment.status = "confirmed";
+        const updatedBill = await Bill.findOneAndUpdate({ appointmentId: appointment._id }, { status: "Paid" }, { new: true });
 
-        // 2. ✅ Update Finance Record
+        // Generate and email PDF Receipt (Run asynchronously in the background)
+        (async () => {
+          try {
+            const patient = await Patient.findById(appointment.patientId);
+            if (patient) {
+              const doctorInfo = await Doctor.findById(appointment.doctorId);
+              const { generateReceiptPdf } = await import("../utils/pdfService.js");
+              const { sendPaymentReceipt } = await import("../utils/emailService.js");
+              let pdfBuffer = null;
+              try {
+                pdfBuffer = await generateReceiptPdf(updatedBill || {}, appointment, doctorInfo, patient);
+              } catch (pdfErr) {
+                console.error("Failed to generate PDF receipt on admin update:", pdfErr);
+              }
+              await sendPaymentReceipt(patient.email, updatedBill || { _id: appointment._id, amount: appointment.amount || 3500, title: `Consultation - ${appointment.doctorName}` }, pdfBuffer);
+            }
+          } catch (pdfEmailErr) {
+            console.error("Failed to generate/send PDF receipt on admin update:", pdfEmailErr);
+          }
+        })();
+
         try {
-          const hospitalName = "Suwasevana"; // Default
-          let hospitalFinance = await HospitalFinance.findOne({
-            doctorId: appointment.doctorId,
-            name: hospitalName
-          });
+          const hospitalName = "Suwasevana";
+          let hospitalFinance = await HospitalFinance.findOne({ doctorId: appointment.doctorId, name: hospitalName });
 
           if (!hospitalFinance) {
-            hospitalFinance = new HospitalFinance({
-              doctorId: appointment.doctorId,
-              name: hospitalName,
-              records: []
-            });
+            hospitalFinance = new HospitalFinance({ doctorId: appointment.doctorId, name: hospitalName, records: [] });
           }
 
           hospitalFinance.records.unshift({
             type: 'channeling',
-            date: new Date(appointment.date),
+            date: new Date(),
             patients: 1,
             income: appointment.amount || 2000
           });
 
           await hospitalFinance.save();
-          console.log(`✅ Finance Updated: ${appointment.amount} LKR added via Admin Panel`);
-
         } catch (finErr) {
-          console.error("Failed to update finance from admin:", finErr);
+          console.error("Finance Update Error:", finErr);
         }
       }
     }
 
     await appointment.save();
+
+    if (req.io) {
+      req.io.emit("appointmentUpdated", appointment);
+    }
+
     res.json(appointment);
   } catch (err) {
-    console.error("Update Appointment Error:", err);
     res.status(500).send("Server Error");
   }
 });
@@ -230,49 +572,273 @@ router.delete("/appointments/:id", protect, authorize(["system_admin", "receptio
     await Bill.findOneAndDelete({ appointmentId: req.params.id });
     res.json({ msg: "Appointment removed" });
   } catch (err) {
-    console.error("Delete Appointment Error:", err);
     res.status(500).send("Server Error");
   }
 });
 
 // ==========================================
-// 5. STAFF MANAGEMENT
+// 5. BILLING MANAGEMENT
+// ==========================================
+router.get("/patients/search/patientid/:patientId", protect, async (req, res) => {
+  try {
+    const patient = await Patient.findOne({ patientId: req.params.patientId.toUpperCase() }).select("-password");
+    if (!patient) return res.status(404).json({ msg: "Patient not found" });
+    res.json(patient);
+  } catch (err) {
+    res.status(500).send("Server Error");
+  }
+});
+
+router.get("/patients/search/mobile/:mobileNumber", protect, async (req, res) => {
+  try {
+    const { mobileNumber } = req.params;
+    const patients = await Patient.find({
+      mobileNumber: { $regex: mobileNumber, $options: "i" }
+    }).select("-password");
+    res.json(patients);
+  } catch (err) {
+    res.status(500).send("Server Error");
+  }
+});
+
+router.get("/bills/all", protect, authorize(["system_admin", "receptionist"]), async (req, res) => {
+  try {
+    const manualBills = await Bill.find().populate("patientId", "fullName nicNumber patientId").lean();
+    const appointments = await Appointment.find({ amount: { $gt: 0 } }).populate("patientId", "fullName nicNumber patientId").lean();
+
+    const appointmentBills = appointments.map(app => ({
+      _id: app._id,
+      patientId: app.patientId,
+      title: `Appointment Fee - ${app.status}`,
+      type: "Appointment",
+      amount: app.amount,
+      status: app.paymentStatus || "Pending",
+      date: app.date
+    }));
+
+    const combinedHistory = [...manualBills, ...appointmentBills].sort((a, b) => new Date(b.date) - new Date(a.date));
+    res.json(combinedHistory);
+  } catch (err) {
+    res.status(500).send("Server Error");
+  }
+});
+
+router.post("/bills/create", protect, authorize(["system_admin", "receptionist"]), async (req, res) => {
+  try {
+    // 1. Catch doctorId from the frontend request
+    const { patientId, doctorId, title, type, amount, status } = req.body;
+
+    const newBill = new Bill({
+      patientId: new mongoose.Types.ObjectId(patientId),
+      doctorId: doctorId ? new mongoose.Types.ObjectId(doctorId) : null, // Link doctor if provided
+      title,
+      type,
+      amount,
+      status: status || "Pending",
+      date: new Date()
+    });
+
+    await newBill.save();
+
+    if (status === "Paid") {
+      try {
+        // 2. Calculate the financial split based on Type
+        let hospitalIncome = amount;
+        let doctorIncome = 0;
+
+        if (type === "Surgery") {
+            hospitalIncome = amount * 0.25; // 25% to Hospital
+            doctorIncome = amount * 0.75;   // 75% to Doctor
+        }
+
+        // 3. Update HOSPITAL Finance
+        const hospitalName = "Suwasevana";
+        let hospitalFinance = await HospitalFinance.findOne({ name: hospitalName, doctorId: null });
+        if (!hospitalFinance) {
+          hospitalFinance = new HospitalFinance({ name: hospitalName, records: [], doctorId: null });
+        }
+        hospitalFinance.records.unshift({
+          type: type.toLowerCase() === 'appointment' ? 'channeling' : 'surgical',
+          date: new Date(),
+          patients: 1,
+          income: hospitalIncome // Uses the 25% calculated above
+        });
+        await hospitalFinance.save();
+
+        // 4. Update DOCTOR Finance (Only if it's Surgery & Doctor is selected)
+        if (type === "Surgery" && doctorId && doctorIncome > 0) {
+            let doctorFinance = await HospitalFinance.findOne({ doctorId: doctorId });
+            if (!doctorFinance) {
+                // Create a finance record for this doctor if they don't have one yet
+                doctorFinance = new HospitalFinance({ doctorId: doctorId, name: "Doctor Revenue", records: [] });
+            }
+            doctorFinance.records.unshift({
+                type: 'surgical',
+                date: new Date(),
+                patients: 1,
+                income: doctorIncome // Uses the 75% calculated above
+            });
+            await doctorFinance.save();
+        }
+
+      } catch (finErr) { 
+        console.error("Finance Error:", finErr); 
+      }
+    }
+
+    // Generate and email PDF Receipt if manual bill is paid immediately (Run asynchronously in the background)
+    if (status === "Paid") {
+      (async () => {
+        try {
+          const patient = await Patient.findById(newBill.patientId);
+          if (patient) {
+            let doctor = null;
+            if (doctorId) {
+              doctor = await Doctor.findById(doctorId);
+            }
+            const { generateReceiptPdf } = await import("../utils/pdfService.js");
+            const { sendPaymentReceipt } = await import("../utils/emailService.js");
+            let pdfBuffer = null;
+            try {
+              pdfBuffer = await generateReceiptPdf(newBill, null, doctor, patient);
+            } catch (pdfErr) {
+              console.error("Failed to generate PDF for manual bill:", pdfErr);
+            }
+            await sendPaymentReceipt(patient.email, newBill, pdfBuffer);
+          }
+        } catch (pdfEmailErr) {
+          console.error("Failed to generate/send PDF receipt for manual bill:", pdfEmailErr);
+        }
+      })();
+    }
+
+    await Notification.create({
+      userId: newBill.patientId,
+      type: "payment",
+      message: status === "Paid" 
+        ? `Receipt Confirmed! LKR ${amount} paid for ${title}.` 
+        : `New Bill Issued: LKR ${amount} due for ${title}.`
+    });
+
+    const populatedBill = await Bill.findById(newBill._id).populate("patientId", "fullName nicNumber patientId");
+    res.json({ msg: "Bill created successfully", bill: populatedBill });
+  } catch (err) {
+    console.error("Create Bill Error:", err);
+    res.status(500).send("Server Error");
+  }
+});
+
+router.put("/bills/pay/:billId", protect, authorize(["system_admin", "receptionist"]), async (req, res) => {
+  try {
+    const bill = await Bill.findById(req.params.billId);
+    if (!bill) {
+      return res.status(404).json({ msg: "Bill not found" });
+    }
+    
+    if (bill.status === "Paid") {
+      return res.status(400).json({ msg: "Bill is already paid" });
+    }
+
+    bill.status = "Paid";
+    await bill.save();
+
+    // 1. Calculate the financial split based on Type
+    try {
+      let hospitalIncome = bill.amount;
+      let doctorIncome = 0;
+
+      if (bill.type === "Surgery") {
+          hospitalIncome = bill.amount * 0.25;
+          doctorIncome = bill.amount * 0.75;
+      }
+
+      // 2. Update HOSPITAL Finance
+      const hospitalName = "Suwasevana";
+      let hospitalFinance = await HospitalFinance.findOne({ name: hospitalName, doctorId: null });
+      if (!hospitalFinance) {
+        hospitalFinance = new HospitalFinance({ name: hospitalName, records: [], doctorId: null });
+      }
+      hospitalFinance.records.unshift({
+        type: bill.type.toLowerCase() === 'appointment' ? 'channeling' : 'surgical',
+        date: new Date(),
+        patients: 1,
+        income: hospitalIncome
+      });
+      await hospitalFinance.save();
+
+      // 3. Update DOCTOR Finance (Only if it's Surgery & Doctor is selected)
+      if (bill.type === "Surgery" && bill.doctorId && doctorIncome > 0) {
+          let doctorFinance = await HospitalFinance.findOne({ doctorId: bill.doctorId });
+          if (!doctorFinance) {
+              doctorFinance = new HospitalFinance({ doctorId: bill.doctorId, name: "Doctor Revenue", records: [] });
+          }
+          doctorFinance.records.unshift({
+              type: 'surgical',
+              date: new Date(),
+              patients: 1,
+              income: doctorIncome
+          });
+          await doctorFinance.save();
+      }
+    } catch (finErr) {
+      console.error("Finance Error:", finErr);
+    }
+
+    // 4. Generate and email PDF Receipt (Run asynchronously in the background)
+    (async () => {
+      try {
+        const patient = await Patient.findById(bill.patientId);
+        if (patient) {
+          let doctor = null;
+          if (bill.doctorId) {
+            doctor = await Doctor.findById(bill.doctorId);
+          }
+          const { generateReceiptPdf } = await import("../utils/pdfService.js");
+          const { sendPaymentReceipt } = await import("../utils/emailService.js");
+          let pdfBuffer = null;
+          try {
+            pdfBuffer = await generateReceiptPdf(bill, null, doctor, patient);
+          } catch (pdfErr) {
+            console.error("Failed to generate PDF for manual bill:", pdfErr);
+          }
+          await sendPaymentReceipt(patient.email, bill, pdfBuffer);
+        }
+      } catch (pdfEmailErr) {
+        console.error("Failed to generate/send PDF receipt for manual bill:", pdfEmailErr);
+      }
+    })();
+
+    // 5. Create Notification
+    await Notification.create({
+      userId: bill.patientId,
+      type: "payment",
+      message: `Receipt Confirmed! LKR ${bill.amount} paid for ${bill.title}.`
+    });
+
+    const populatedBill = await Bill.findById(bill._id).populate("patientId", "fullName nicNumber patientId");
+    res.json({ msg: "Bill marked as paid successfully", bill: populatedBill });
+  } catch (err) {
+    console.error("Pay Bill Error:", err);
+    res.status(500).send("Server Error");
+  }
+});
+
+// ==========================================
+// 6. STAFF MANAGEMENT
 // ==========================================
 router.post("/create-staff", protect, authorize(["system_admin"]), async (req, res) => {
   try {
     const { name, email, password, role, department } = req.body;
-
-    // 1. Check for valid role
-    const validRoles = ["receptionist", "nurse", "system_admin"];
-    if (!validRoles.includes(role)) {
-      return res.status(400).json({ msg: "Invalid Role. Must be one of: " + validRoles.join(", ") });
-    }
-
-    // 2. Check if user already exists
     let user = await Admin.findOne({ email });
-    if (user) {
-      return res.status(400).json({ msg: "User with this email already exists" });
-    }
+    if (user) return res.status(400).json({ msg: "User exists" });
 
-    // 3. Hash Password
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
-    // 4. Save to DB
-    user = new Admin({
-      name,
-      email,
-      password: hashedPassword,
-      role,
-      department
-    });
-
+    user = new Admin({ name, email, password: hashedPassword, role, department });
     await user.save();
-
-    res.json({ msg: `New ${role} created successfully` });
-
+    res.json({ msg: `New ${role} created` });
   } catch (err) {
-    console.error("Create Staff Error:", err);
     res.status(500).send("Server Error");
   }
 });
@@ -282,47 +848,265 @@ router.get("/staff", protect, authorize(["system_admin", "receptionist"]), async
     const staff = await Admin.find().select("-password");
     res.json(staff);
   } catch (err) {
-    console.error("Fetch Staff Error:", err);
     res.status(500).send("Server Error");
   }
 });
 
-// ==========================================
-// 6. DELETE STAFF (System Admin Only)
-// ==========================================
 router.delete("/staff/:id", protect, authorize(["system_admin"]), async (req, res) => {
   try {
-    // Prevent deleting yourself
-    // Note: req.user.id comes from the token, req.params.id comes from the URL
-    if (req.params.id === req.user.id) {
-      return res.status(400).json({ msg: "You cannot delete your own account." });
-    }
-
-    const result = await Admin.findByIdAndDelete(req.params.id);
-    if (!result) {
-      return res.status(404).json({ msg: "Staff member not found" });
-    }
-
-    res.json({ msg: "Staff member removed" });
+    if (req.params.id === req.user.id) return res.status(400).json({ msg: "Cannot delete self" });
+    await Admin.findByIdAndDelete(req.params.id);
+    res.json({ msg: "Staff removed" });
   } catch (err) {
-    console.error("Delete Staff Error:", err);
     res.status(500).send("Server Error");
   }
 });
 
 // ==========================================
-// 7. RECEPTIONIST / NURSE DASHBOARD: DOCTORS STATUS
+// 7. DOCTOR MANAGEMENT
 // ==========================================
-router.get("/doctors", protect, authorize(["system_admin", "receptionist", "nurse"]), async (req, res) => {
+router.post("/create-doctor", protect, authorize(["system_admin"]), async (req, res) => {
   try {
-    const doctors = await Doctor.find().select("name specialization isArrived allocatedRoom allocatedNurse channelingTime channelingStatus phone profileImage sessionStarted currentQueueNumber");
+    const {
+      fullName,
+      nameWithInitials,
+      slmcRegistrationNumber,
+      specialization,
+      nicNumber,
+      email,
+      phoneNumber,
+      password
+    } = req.body;
+
+    // 1. Validation
+    if (!fullName || !nameWithInitials || !slmcRegistrationNumber || !specialization || !nicNumber || !email || !phoneNumber || !password) {
+      return res.status(400).json({ msg: "All fields are required." });
+    }
+
+    // 2. Uniqueness Checks
+    const existingDoctorEmail = await Doctor.findOne({ email });
+    const existingPatientEmail = await Patient.findOne({ email });
+    const existingAdminEmail = await Admin.findOne({ email });
+
+    if (existingDoctorEmail || existingPatientEmail || existingAdminEmail) {
+      return res.status(400).json({ msg: "A user with this email already exists." });
+    }
+
+    const existingSlmc = await Doctor.findOne({ slmcReg: slmcRegistrationNumber });
+    if (existingSlmc) {
+      return res.status(400).json({ msg: "A doctor with this SLMC registration number already exists." });
+    }
+
+    const existingNic = await Doctor.findOne({ nic: nicNumber });
+    if (existingNic) {
+      return res.status(400).json({ msg: "A doctor with this NIC number already exists." });
+    }
+
+    // 3. Hash Password
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
+
+    // 4. Create Doctor
+    const newDoctor = new Doctor({
+      name: fullName,
+      fullName,
+      email,
+      password: hashedPassword,
+      specialization,
+      nic: nicNumber,
+      phone: phoneNumber,
+      slmcReg: slmcRegistrationNumber,
+      nameWithInitials,
+      isApproved: true // Direct approval
+    });
+
+    await newDoctor.save();
+
+    // 5. Send Welcome Email
+    sendDoctorWelcomeEmail(email, fullName, password, slmcRegistrationNumber).catch(err => {
+      console.error("Failed to send welcome email to doctor", err);
+    });
+
+    // Return the created doctor without password
+    const docResponse = newDoctor.toObject();
+    delete docResponse.password;
+
+    res.status(201).json({ msg: "Doctor account created successfully and welcome email sent.", doctor: docResponse });
+
+  } catch (err) {
+    console.error("Create Doctor Error:", err);
+    res.status(500).send("Server Error");
+  }
+});
+
+router.get("/all-doctors", protect, authorize(["system_admin"]), async (req, res) => {
+  try {
+    const doctors = await Doctor.find().select("-password").sort({ createdAt: -1 });
     res.json(doctors);
   } catch (err) {
-    console.error("Fetch Doctors Error:", err);
     res.status(500).send("Server Error");
   }
 });
 
+router.put("/all-doctors/:id/approve", protect, authorize(["system_admin"]), async (req, res) => {
+  try {
+    const { isApproved } = req.body;
+    const doctor = await Doctor.findById(req.params.id);
+    if (!doctor) {
+      return res.status(404).json({ msg: "Doctor not found" });
+    }
+
+    const wasApproved = doctor.isApproved;
+    doctor.isApproved = isApproved;
+    await doctor.save();
+
+    // If newly approved, send automated notification email
+    if (isApproved && !wasApproved) {
+      sendDoctorApprovalEmail(doctor.email, doctor.name || doctor.fullName).catch(err => {
+        console.error("Failed to send approval email to doctor", err);
+      });
+    }
+
+    const docResponse = doctor.toObject();
+    delete docResponse.password;
+
+    res.json({ msg: isApproved ? "Doctor approved" : "Doctor rejected", doctor: docResponse });
+  } catch (err) {
+    console.error("Approve Doctor Error:", err);
+    res.status(500).send("Server Error");
+  }
+});
+
+const syncTodaySchedulesToDoctors = async () => {
+  try {
+    const now = new Date();
+    
+    // Define start and end of today in local/configured server time
+    const startOfDay = new Date(now);
+    startOfDay.setHours(0, 0, 0, 0);
+    const endOfDay = new Date(now);
+    endOfDay.setHours(23, 59, 59, 999);
+
+    // Fetch approved schedule requests for today
+    const todaySchedules = await ScheduleRequest.find({
+      status: "approved",
+      date: { $gte: startOfDay, $lte: endOfDay }
+    }).sort({ startTime: 1 });
+
+    // Group schedules by doctorId
+    const doctorSchedules = {};
+    todaySchedules.forEach(sched => {
+      if (!sched.doctorId) return;
+      const docIdStr = sched.doctorId.toString();
+      if (!doctorSchedules[docIdStr]) {
+        doctorSchedules[docIdStr] = [];
+      }
+      doctorSchedules[docIdStr].push(sched);
+    });
+
+    const doctors = await Doctor.find();
+
+    for (const doc of doctors) {
+      const docIdStr = doc._id.toString();
+      const schedules = doctorSchedules[docIdStr] || [];
+
+      // Check if arrival status is from a previous day and reset if needed
+      const arrivalDate = doc.lastArrivalDate ? new Date(doc.lastArrivalDate) : null;
+      const isNewDay = arrivalDate && arrivalDate.toDateString() !== now.toDateString();
+
+      if (isNewDay) {
+        let changed = false;
+        if (doc.isArrived) { doc.isArrived = false; changed = true; }
+        if (doc.sessionStarted) { doc.sessionStarted = false; changed = true; }
+        if (doc.sessionEndedToday) { doc.sessionEndedToday = false; changed = true; }
+        if (doc.currentQueueNumber !== 0) { doc.currentQueueNumber = 0; changed = true; }
+        if (changed) await doc.save();
+      }
+
+      // Filter out any schedules that have explicitly ended
+      const activeSchedules = schedules.filter(s => !s.sessionEnded);
+
+      // If doctor has an active or upcoming schedule today, reset sessionEndedToday
+      if (activeSchedules.length > 0) {
+        if (doc.sessionEndedToday) {
+          doc.sessionEndedToday = false;
+        }
+      } else if (doc.sessionEndedToday) {
+        // If doctor already ended their session today and has no more active schedules, ensure nurse is released
+        if (doc.allocatedNurse !== "") {
+          doc.allocatedNurse = "";
+          await doc.save();
+        }
+        continue;
+      }
+
+      let selectedSchedule = null;
+
+      if (activeSchedules.length > 0) {
+        // 1. Find currently active schedule: startTime <= now && endTime > now
+        selectedSchedule = activeSchedules.find(s => s.startTime <= now && s.endTime > now);
+
+        // 2. If no active schedule, find first upcoming schedule: startTime > now
+        if (!selectedSchedule) {
+          selectedSchedule = activeSchedules.find(s => s.startTime > now);
+        }
+
+        // 3. If doctor session has started or schedule is for today, keep the schedule
+        if (!selectedSchedule && (doc.sessionStarted || doc.isArrived)) {
+          selectedSchedule = activeSchedules[activeSchedules.length - 1]; // last unended schedule today
+        }
+
+        // 4. General fallback: if an approved schedule exists today and session hasn't ended, keep it
+        if (!selectedSchedule) {
+          selectedSchedule = activeSchedules[0];
+        }
+      }
+
+      if (selectedSchedule) {
+        const targetRoom = selectedSchedule.allocatedRoom || "";
+        const targetNurse = selectedSchedule.allocatedNurse || "";
+        let changed = false;
+
+        if (doc.sessionEndedToday) {
+          doc.sessionEndedToday = false;
+          changed = true;
+        }
+        if (targetRoom && doc.allocatedRoom !== targetRoom) {
+          doc.allocatedRoom = targetRoom;
+          changed = true;
+        }
+        if (targetNurse && doc.allocatedNurse !== targetNurse) {
+          doc.allocatedNurse = targetNurse;
+          changed = true;
+        }
+        if (changed) {
+          await doc.save();
+        }
+      } else {
+        // Only clear room and nurse if no active schedule exists and session is not started
+        if (!doc.sessionStarted && !doc.isArrived && (doc.allocatedRoom !== "" || doc.allocatedNurse !== "")) {
+          doc.allocatedRoom = "";
+          doc.allocatedNurse = "";
+          await doc.save();
+        }
+      }
+    }
+  } catch (err) {
+    console.error("Error in syncTodaySchedulesToDoctors:", err);
+  }
+};
+
+router.get("/doctors", protect, authorize(["system_admin", "receptionist", "nurse"]), async (req, res) => {
+  try {
+    await syncTodaySchedulesToDoctors();
+    const doctors = await Doctor.find().select("name specialization isArrived allocatedRoom allocatedNurse channelingTime channelingStatus phone profileImage sessionStarted sessionEndedToday currentQueueNumber");
+    res.json(doctors);
+  } catch (err) {
+    res.status(500).send("Server Error");
+  }
+});
+
+// Updated Doctor Status Route with Notification Trigger
 router.put("/doctors/:id/status", protect, authorize(["system_admin", "receptionist", "nurse"]), async (req, res) => {
   try {
     const { isArrived, allocatedRoom, allocatedNurse, channelingTime, channelingStatus, sessionStarted, currentQueueNumber } = req.body;
@@ -330,7 +1114,59 @@ router.put("/doctors/:id/status", protect, authorize(["system_admin", "reception
 
     if (!doctor) return res.status(404).json({ msg: "Doctor not found" });
 
-    if (isArrived !== undefined) doctor.isArrived = isArrived;
+    const prevArrived = !!doctor.isArrived;
+    const prevQueueNumber = doctor.currentQueueNumber || 0;
+    const prevStatus = doctor.channelingStatus;
+
+    // Handle Doctor Arrival and Patient Notifications
+    if (isArrived === true && !prevArrived) {
+      try {
+        const startOfDay = new Date();
+        startOfDay.setHours(0, 0, 0, 0);
+        const endOfDay = new Date();
+        endOfDay.setHours(23, 59, 59, 999);
+
+        const activeAppointments = await Appointment.find({
+          doctorId: doctor._id,
+          date: { $gte: startOfDay, $lte: endOfDay },
+          status: { $in: ["confirmed", "Confirmed", "pending", "Pending", "completed", "Completed"] }
+        });
+
+        if (activeAppointments.length > 0) {
+          const notificationPromises = activeAppointments.map(async (app) => {
+            const timeInfo = channelingTime || doctor.channelingTime 
+              ? `Sessions start around ${channelingTime || doctor.channelingTime}.` 
+              : "Sessions will begin shortly.";
+
+            const createdNotif = await Notification.create({
+              userId: app.patientId,
+              type: 'arrival',
+              title: "Doctor Arrived",
+              message: `Dr. ${doctor.name} has arrived at the hospital. ${timeInfo} Please proceed to ${allocatedRoom || doctor.allocatedRoom || 'Room TBA'}.`,
+              metadata: { doctorId: doctor._id, appointmentId: app._id }
+            });
+            if (req.io && createdNotif) {
+              req.io.emit("newNotification", createdNotif);
+            }
+            return createdNotif;
+          });
+          await Promise.all(notificationPromises);
+        }
+      } catch (err) { console.error("Notification trigger error:", err); }
+    }
+
+    // Update Doctor Fields
+    if (isArrived !== undefined) {
+      doctor.isArrived = isArrived;
+      if (isArrived === true) {
+        doctor.lastArrivalDate = new Date();
+        doctor.sessionEndedToday = false;
+        // When doctor arrives, clear pre-arrival delay unless explicitly setting a new delay status
+        if (channelingStatus === undefined && doctor.channelingStatus && doctor.channelingStatus.toLowerCase() !== "on time") {
+          doctor.channelingStatus = "On Time";
+        }
+      }
+    }
     if (allocatedRoom !== undefined) doctor.allocatedRoom = allocatedRoom;
     if (allocatedNurse !== undefined) doctor.allocatedNurse = allocatedNurse;
     if (channelingTime !== undefined) doctor.channelingTime = channelingTime;
@@ -339,10 +1175,314 @@ router.put("/doctors/:id/status", protect, authorize(["system_admin", "reception
     if (currentQueueNumber !== undefined) doctor.currentQueueNumber = currentQueueNumber;
 
     await doctor.save();
+
+    // Notify patients if delay status changed
+    if (channelingStatus !== undefined && channelingStatus !== prevStatus) {
+      try {
+        const startOfDay = new Date();
+        startOfDay.setHours(0, 0, 0, 0);
+        const endOfDay = new Date();
+        endOfDay.setHours(23, 59, 59, 999);
+
+        const activeAppointments = await Appointment.find({
+          doctorId: doctor._id,
+          date: { $gte: startOfDay, $lte: endOfDay },
+          status: { $in: ["confirmed", "Confirmed", "pending", "Pending"] }
+        });
+
+        const msg = channelingStatus === "On Time"
+          ? `Good news! Dr. ${doctor.name} is now on schedule.`
+          : `Dr. ${doctor.name} is ${channelingStatus.toLowerCase()}. Please plan accordingly.`;
+
+        await Promise.all(activeAppointments.map(async (appt) => {
+          const notif = await Notification.create({
+            userId: appt.patientId,
+            type: 'doctor_status',
+            title: 'Clinic Delay Update',
+            message: msg,
+            metadata: { doctorId: doctor._id, appointmentId: appt._id, status: channelingStatus }
+          });
+          if (req.io && notif) {
+            req.io.emit("newNotification", notif);
+          }
+        }));
+      } catch (err) {
+        console.error("Delay notification error:", err);
+      }
+    }
+
+    // Trigger queue notifications on queue number increment
+    if (currentQueueNumber !== undefined && currentQueueNumber > prevQueueNumber) {
+      try {
+        const startOfDay = new Date();
+        startOfDay.setHours(0, 0, 0, 0);
+        const endOfDay = new Date();
+        endOfDay.setHours(23, 59, 59, 999);
+
+        const appointments = await Appointment.find({
+          doctorId: doctor._id,
+          date: { $gte: startOfDay, $lte: endOfDay },
+          status: { $in: ["confirmed", "Confirmed", "pending", "Pending"] }
+        });
+
+        const notifyPromises = [];
+        for (const appt of appointments) {
+          const patientToken = appt.queueNumber || 0;
+          const diff = patientToken - currentQueueNumber;
+
+          if (diff === 3) {
+            notifyPromises.push((async () => {
+              const notif = await Notification.create({
+                userId: appt.patientId,
+                type: 'reminder',
+                title: "Queue Alert: 3 Patients Ahead",
+                message: `Only 3 patients ahead of you (Token #${patientToken}) for Dr. ${doctor.name}. Please prepare.`,
+                metadata: { doctorId: doctor._id, appointmentId: appt._id, currentQueue: currentQueueNumber }
+              });
+              if (req.io && notif) req.io.emit("newNotification", notif);
+            })());
+          } else if (diff === 1) {
+            notifyPromises.push((async () => {
+              const notif = await Notification.create({
+                userId: appt.patientId,
+                type: 'reminder',
+                title: "You Are Next in Queue!",
+                message: `Token #${currentQueueNumber} is ongoing. Please proceed to ${doctor.allocatedRoom || 'the consultation room'} for Dr. ${doctor.name}.`,
+                metadata: { doctorId: doctor._id, appointmentId: appt._id, currentQueue: currentQueueNumber }
+              });
+              if (req.io && notif) req.io.emit("newNotification", notif);
+            })());
+          } else if (diff === 0) {
+            notifyPromises.push((async () => {
+              const notif = await Notification.create({
+                userId: appt.patientId,
+                type: 'reminder',
+                title: "Your Turn Now!",
+                message: `Token #${patientToken} is now being called by Dr. ${doctor.name} in ${doctor.allocatedRoom || 'the room'}.`,
+                metadata: { doctorId: doctor._id, appointmentId: appt._id, currentQueue: currentQueueNumber }
+              });
+              if (req.io && notif) req.io.emit("newNotification", notif);
+            })());
+          }
+        }
+        await Promise.all(notifyPromises);
+      } catch (err) {
+        console.error("Queue notification trigger error:", err);
+      }
+    }
+
+    if (req.io) {
+      req.io.emit("doctorStatusUpdated", doctor);
+      if (isArrived !== undefined && isArrived !== prevArrived) {
+        req.io.emit("doctorArrivalAlert", {
+          doctorId: doctor._id,
+          doctorName: doctor.name,
+          specialization: doctor.specialization,
+          isArrived: doctor.isArrived,
+          allocatedNurse: doctor.allocatedNurse,
+          allocatedRoom: doctor.allocatedRoom,
+          channelingTime: doctor.channelingTime,
+          timestamp: new Date()
+        });
+      }
+      if (channelingStatus !== undefined && channelingStatus !== prevStatus) {
+        req.io.emit("doctorDelayAlert", {
+          doctorId: doctor._id,
+          doctorName: doctor.name,
+          specialization: doctor.specialization,
+          channelingStatus: doctor.channelingStatus,
+          status: doctor.channelingStatus,
+          previousStatus: prevStatus,
+          allocatedNurse: doctor.allocatedNurse,
+          allocatedRoom: doctor.allocatedRoom,
+          channelingTime: doctor.channelingTime,
+          timestamp: new Date()
+        });
+      }
+      if (currentQueueNumber !== undefined && currentQueueNumber !== prevQueueNumber) {
+        req.io.emit("queueUpdated", {
+          doctorId: doctor._id,
+          currentServingNumber: doctor.currentQueueNumber,
+          currentToken: doctor.currentQueueNumber,
+          isArrived: doctor.isArrived,
+          sessionStarted: doctor.sessionStarted,
+          allocatedRoom: doctor.allocatedRoom,
+          lastUpdated: new Date()
+        });
+      }
+    }
+
     res.json(doctor);
   } catch (err) {
     console.error("Update Doctor Status Error:", err);
     res.status(500).send("Server Error");
+  }
+});
+
+// ==========================================
+// 1A. FORGOT PASSWORD (ADMIN)
+// ==========================================
+router.post("/forgot-password", async (req, res) => {
+  try {
+    const { email } = req.body;
+    const admin = await Admin.findOne({ email });
+
+    // Security check: Don't reveal if the email exists
+    if (!admin) {
+      return res.json({ msg: "If that email exists, a reset link has been sent." });
+    }
+
+    // 1. Generate a random reset token
+    const resetToken = crypto.randomBytes(32).toString("hex");
+
+    // 2. Hash the token and set expiration (15 minutes) to save in DB
+    admin.resetPasswordToken = crypto.createHash("sha256").update(resetToken).digest("hex");
+    admin.resetPasswordExpire = Date.now() + 15 * 60 * 1000;
+    await admin.save();
+
+    // 3. Create the reset URL (Points to your Next.js frontend)
+    // Make sure NEXT_PUBLIC_FRONTEND_URL or a similar variable exists in your .env
+    const frontendUrl = process.env.FRONTEND_URL || "http://localhost:3000";
+    const resetUrl = `${frontendUrl}/admin/reset-password/${resetToken}`;
+
+    // 4. Send the Email using our service
+    await sendAdminPasswordReset(admin, resetUrl);
+    res.json({ msg: "If that email exists, a reset link has been sent." });
+
+  } catch (err) {
+    console.error("Forgot Password Error:", err);
+    res.status(500).send("Server Error");
+  }
+});
+
+// ==========================================
+// 1B. RESET PASSWORD WITH TOKEN (ADMIN)
+// ==========================================
+router.put("/reset-password/:token", async (req, res) => {
+  try {
+    const { newPassword } = req.body;
+
+    // 1. Re-hash the token from the URL so we can compare it to the DB
+    const resetPasswordToken = crypto
+      .createHash("sha256")
+      .update(req.params.token)
+      .digest("hex");
+
+    // 2. Find the admin with this token AND ensure it hasn't expired
+    const admin = await Admin.findOne({
+      resetPasswordToken,
+      resetPasswordExpire: { $gt: Date.now() }
+    });
+
+    if (!admin) {
+      return res.status(400).json({ msg: "Invalid or expired reset token." });
+    }
+
+    // 3. Hash the new password
+    const salt = await bcrypt.genSalt(10);
+    admin.password = await bcrypt.hash(newPassword, salt);
+
+    // 4. Clear the reset token fields so they can't be used again
+    admin.resetPasswordToken = undefined;
+    admin.resetPasswordExpire = undefined;
+    await admin.save();
+
+    res.json({ msg: "Password successfully reset. You can now log in." });
+
+  } catch (err) {
+    console.error("Reset Password Error:", err);
+    res.status(500).send("Server Error");
+  }
+});
+
+// ==========================================
+// 6A. RESET STAFF PASSWORD (ADMIN OVERRIDE)
+// ==========================================
+router.post("/staff/:id/reset-password", protect, authorize(["system_admin"]), async (req, res) => {
+  try {
+    // Find the staff member (Admins, Nurses, Receptionists are in Admin model)
+    const staff = await Admin.findById(req.params.id);
+    if (!staff) return res.status(404).json({ msg: "Staff member not found" });
+
+    // 1. Generate a temporary password (e.g., Care101@4928)
+    const randomPin = Math.floor(1000 + Math.random() * 9000);
+    const tempPassword = `Care101@${randomPin}`;
+
+    // 2. Hash the temporary password
+    const salt = await bcrypt.genSalt(10);
+    staff.password = await bcrypt.hash(tempPassword, salt);
+
+    // Optional: If you added the requiresPasswordChange flag to your schema earlier
+    // staff.requiresPasswordChange = true;
+
+    await staff.save();
+
+    // 3. Return the RAW password to the admin frontend
+    res.json({
+      msg: "Password reset successfully",
+      tempPassword: tempPassword
+    });
+
+  } catch (err) {
+    console.error("Reset Staff Password Error:", err.message);
+    res.status(500).send("Server Error");
+  }
+});
+
+// ==========================================
+// 1C. CHANGE OWN PASSWORD (LOGGED IN USER)
+// ==========================================
+router.put("/change-password", protect, async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+
+    // 1. Find the logged-in user (req.user.id comes from your 'protect' middleware)
+    const admin = await Admin.findById(req.user.id);
+    if (!admin) {
+      return res.status(404).json({ msg: "User not found" });
+    }
+
+    // 2. Check if the current password provided matches the database
+    const isMatch = await bcrypt.compare(currentPassword, admin.password);
+    if (!isMatch) {
+      return res.status(400).json({ msg: "Incorrect current password." });
+    }
+
+    // 3. Hash the new password
+    const salt = await bcrypt.genSalt(10);
+    admin.password = await bcrypt.hash(newPassword, salt);
+
+    // 4. Save the updated user
+    await admin.save();
+
+    res.json({ msg: "Password successfully updated." });
+
+  } catch (err) {
+    console.error("Change Password Error:", err.message);
+    res.status(500).send("Server Error");
+  }
+});
+
+// ==========================================
+// TEST NOTIFICATIONS (Email & SMS Diagnostic)
+// ==========================================
+router.post("/test-notifications", async (req, res) => {
+  try {
+    const { email, phone } = req.body || {};
+    const targetEmail = email || process.env.EMAIL_USER;
+    const targetPhone = phone;
+
+    const { testNotifications } = await import("../utils/emailService.js");
+    const results = await testNotifications({ email: targetEmail, phone: targetPhone });
+
+    res.json({
+      msg: "Notification diagnostic test executed",
+      targets: { email: targetEmail, phone: targetPhone },
+      results
+    });
+  } catch (err) {
+    console.error("Test Notifications Error:", err);
+    res.status(500).json({ error: err.message });
   }
 });
 

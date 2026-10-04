@@ -8,6 +8,7 @@ import { UserCheck, CalendarRange, Building, Clock, ChevronRight, Activity } fro
 import Link from "next/link";
 
 import { useRouter } from "next/navigation";
+import { clearAdminSession, getAdminUser } from "@/lib/adminSession";
 
 export default function ReceptionistDashboard() {
     const router = useRouter();
@@ -15,15 +16,15 @@ export default function ReceptionistDashboard() {
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        const storedUser = localStorage.getItem("adminUser");
-        if (storedUser) {
-            const parsedUser = JSON.parse(storedUser);
+        const parsedUser = getAdminUser();
+        if (parsedUser) {
             if (parsedUser.role !== "receptionist") {
                 router.push("/admin/dashboard");
                 return;
             }
             setUser(parsedUser);
         } else {
+            clearAdminSession();
             router.push("/admin/login");
             return;
         }

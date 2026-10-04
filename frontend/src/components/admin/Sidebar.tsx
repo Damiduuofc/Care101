@@ -2,10 +2,11 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ElementType } from "react";
 import { menuItems } from "@/lib/adminMenu";
 import { LogOut, Shield } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { clearAdminSession, getAdminUser } from "@/lib/adminSession";
 
 export default function Sidebar() {
   const pathname = usePathname();
@@ -14,18 +15,18 @@ export default function Sidebar() {
   const [userName, setUserName] = useState<string>("");
 
   useEffect(() => {
-    // 1. Get User Info from LocalStorage
-    const storedUser = localStorage.getItem("adminUser");
-    if (storedUser) {
-      const user = JSON.parse(storedUser);
+    const user = getAdminUser();
+    if (user) {
       setRole(user.role || "receptionist"); // Default fallback
       setUserName(user.name || "Staff Member");
+    } else {
+      clearAdminSession();
+      router.push("/admin/login");
     }
-  }, []);
+  }, [router]);
 
   const handleLogout = () => {
-    localStorage.removeItem("adminToken");
-    localStorage.removeItem("adminUser");
+    clearAdminSession();
     router.push("/admin/login");
   };
 
@@ -52,7 +53,7 @@ export default function Sidebar() {
       {/* MENU */}
       <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
         {filteredMenu.map((item) => {
-          const Icon = item.icon;
+          const Icon = item.icon as ElementType;
           const isActive = pathname === item.href;
 
           return (

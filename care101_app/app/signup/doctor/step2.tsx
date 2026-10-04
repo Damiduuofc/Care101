@@ -78,8 +78,9 @@ export default function DoctorSignupStep2() {
 
       // Call Backend
       await signUp(fullData);
-      
-      // Note: Redirect to dashboard happens inside AuthProvider upon success
+
+      // Navigate to success screen after registration
+      router.replace('/signup/doctor/success' as any);
     } catch (error: any) {
       Alert.alert("Signup Failed", error.message || "An error occurred during registration.");
     } finally {

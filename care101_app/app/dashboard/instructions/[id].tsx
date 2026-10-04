@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, ActivityIndicator, StatusBar, Modal, Linking
+  View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, ActivityIndicator, StatusBar, Modal, Linking, Share
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { ArrowLeft, Trash2, Video, Mic, FileText, CloudUpload, QrCode, Eye, X } from 'lucide-react-native'; // Removed Lock icon
+import { ArrowLeft, Trash2, Video, Mic, FileText, CloudUpload, QrCode, Eye, X, Share2, ExternalLink } from 'lucide-react-native';
 import * as SecureStore from 'expo-secure-store';
 import * as DocumentPicker from 'expo-document-picker';
 import QRCode from 'react-native-qrcode-svg'; 
@@ -19,6 +19,11 @@ export default function InstructionDetailScreen() {
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [qrVisible, setQrVisible] = useState(false);
+  const [shareToken, setShareToken] = useState<string | null>(null);
+  const [expiresAtDate, setExpiresAtDate] = useState<string | null>(null);
+  const [showExpireSelect, setShowExpireSelect] = useState(false);
+  const [generatingShare, setGeneratingShare] = useState(false);
+  const [selectedSection, setSelectedSection] = useState<'preOp' | 'postOp' | null>(null);
 
   useEffect(() => { fetchData(); }, [id]);
 
@@ -44,7 +49,7 @@ export default function InstructionDetailScreen() {
       { text: "Cancel", style: "cancel" },
       { text: "Delete", style: "destructive", onPress: async () => {
           const token = await SecureStore.getItemAsync('token');
-          await fetch(`${API_URL}/api/instructions/${id}`, {
+          await fetch(`${API_URL}/instructions/${id}`, {
             method: 'DELETE', headers: { Authorization: `Bearer ${token}` }
           });
           router.back();
@@ -59,7 +64,7 @@ export default function InstructionDetailScreen() {
         { text: "Remove", style: "destructive", onPress: async () => {
             try {
                 const token = await SecureStore.getItemAsync('token');
-                const res = await fetch(`${API_URL}/api/instructions/${id}/${section}/${type}`, {
+                const res = await fetch(`${API_URL}/instructions/${id}/${section}/${type}`, {
                     method: 'DELETE',
                     headers: { Authorization: `Bearer ${token}` }
                 });
@@ -92,9 +97,9 @@ export default function InstructionDetailScreen() {
           uri: file.uri, name: file.name, type: file.mimeType || 'application/octet-stream',
         } as any);
 
-        const res = await fetch(`${API_URL}/api/instructions/${id}/${section}/${type}`, {
+        const res = await fetch(`${API_URL}/instructions/${id}/${section}/${type}`, {
           method: 'PUT',
-          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'multipart/form-data' },
+          headers: { Authorization: `Bearer ${token}` },
           body: formData
         });
 
@@ -110,8 +115,77 @@ export default function InstructionDetailScreen() {
 
   if (loading) return <ActivityIndicator style={{marginTop:50}} size="large" color="#0891b2" />;
   if (!data) return <Text>Not Found</Text>;
+  const getFrontendUrl = () => {
+    if (process.env.EXPO_PUBLIC_FRONTEND_URL) {
+      return process.env.EXPO_PUBLIC_FRONTEND_URL.replace(/\/+$/, '');
+    }
+    if (API_URL) {
+      let url = API_URL.replace(/\/api\/?$/, '');
+      // If it's a tunnel/public domain like ngrok, backend directly serves /patient/instructions/:token
+      if (url.includes('.ngrok') || url.includes('.dev') || url.includes('.app')) {
+        return url;
+      }
+      // If it points to localhost/127.0.0.1, replace with the machine's LAN IP so real devices can open it
+      if (url.includes('localhost') || url.includes('127.0.0.1')) {
+        url = url.replace('localhost', '10.44.41.232').replace('127.0.0.1', '10.44.41.232');
+      }
+      return url.replace(/:[0-9]+$/, ':9002');
+    }
+    return 'http://10.44.41.232:9002';
+  };
 
-  const patientViewUrl = `https://carelink.health/patient/instructions/${id}`;
+  const patientViewUrl = shareToken 
+    ? `${getFrontendUrl()}/patient/instructions/${shareToken}`
+    : '';
+
+  const handleShareLink = async () => {
+    if (!patientViewUrl) return;
+    try {
+      const typeLabel = selectedSection === 'preOp' ? 'Pre-Operative' : 'Post-Operative';
+      await Share.share({
+        title: `${data?.surgeryName || 'Surgery'} - ${typeLabel} Instructions`,
+        message: `Here are your ${typeLabel} instructions for ${data?.surgeryName || 'your surgery'}:\n\n${patientViewUrl}\n\nPlease review carefully before and after your procedure.`,
+        url: patientViewUrl,
+      });
+    } catch (err) {
+      console.error('Error sharing link:', err);
+    }
+  };
+
+  const handleQrPress = (section: 'preOp' | 'postOp') => {
+    setSelectedSection(section);
+    setShowExpireSelect(true);
+  };
+
+  const handleSelectExpiry = async (days: number) => {
+    setShowExpireSelect(false);
+    setGeneratingShare(true);
+    try {
+      const token = await SecureStore.getItemAsync('token');
+      const res = await fetch(`${API_URL}/instructions/${id}/share`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({ expireDays: days, section: selectedSection })
+      });
+      if (res.ok) {
+        const shareData = await res.json();
+        setShareToken(shareData.token);
+        const dateObj = new Date(shareData.expiresAt);
+        setExpiresAtDate(dateObj.toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' }));
+        setQrVisible(true);
+      } else {
+        Alert.alert("Error", "Failed to generate share link");
+      }
+    } catch (error) {
+      console.error(error);
+      Alert.alert("Error", "Network error. Please try again.");
+    } finally {
+      setGeneratingShare(false);
+    }
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -137,7 +211,7 @@ export default function InstructionDetailScreen() {
         {/* PRE-OP */}
         <InstructionSection 
             title="Pre-Operative" color="#3b82f6"
-            onQrPress={() => setQrVisible(true)}
+            onQrPress={() => handleQrPress('preOp')}
             files={data.preOp}
             onUpload={(type: any) => handleUpload('preOp', type)}
             onRemove={(type: any) => handleRemoveFile('preOp', type)}
@@ -147,7 +221,7 @@ export default function InstructionDetailScreen() {
         {/* POST-OP */}
         <InstructionSection 
             title="Post-Operative" color="#10b981"
-            onQrPress={() => setQrVisible(true)}
+            onQrPress={() => handleQrPress('postOp')}
             files={data.postOp}
             onUpload={(type: any) => handleUpload('postOp', type)}
             onRemove={(type: any) => handleRemoveFile('postOp', type)}
@@ -156,24 +230,68 @@ export default function InstructionDetailScreen() {
 
       </ScrollView>
 
-      {uploading && (
+      {(uploading || generatingShare) && (
         <View style={styles.loadingOverlay}>
             <ActivityIndicator size="large" color="#fff" />
-            <Text style={{color:'#fff', marginTop:10}}>Uploading file...</Text>
+            <Text style={{color:'#fff', marginTop:10}}>{uploading ? "Uploading file..." : "Generating share code..."}</Text>
         </View>
       )}
 
-      {/* QR Modal */}
+      {/* QR & Share Modal */}
       <Modal visible={qrVisible} transparent animationType="fade" onRequestClose={() => setQrVisible(false)}>
         <View style={styles.modalOverlay}>
             <View style={styles.modalContent}>
                 <TouchableOpacity style={styles.closeModal} onPress={() => setQrVisible(false)}>
                     <X size={24} color="#64748b" />
                 </TouchableOpacity>
-                <Text style={styles.qrTitle}>Patient Access Code</Text>
-                <Text style={styles.qrSub}>Scan to view instructions</Text>
+                <Text style={styles.qrTitle}>Patient Access Link & QR</Text>
+                <Text style={styles.qrSub}>
+                  {selectedSection === 'preOp' ? 'Pre-Operative' : 'Post-Operative'} instructions
+                </Text>
+
                 <View style={styles.qrWrapper}>
-                    <QRCode value={patientViewUrl} size={200} />
+                    {patientViewUrl ? <QRCode value={patientViewUrl} size={180} /> : null}
+                </View>
+
+                {expiresAtDate && (
+                  <Text style={styles.expiryText}>Expires on: {expiresAtDate}</Text>
+                )}
+
+                <Text numberOfLines={1} ellipsizeMode="middle" style={styles.urlPreviewText}>
+                  {patientViewUrl}
+                </Text>
+
+                <View style={styles.linkActionsContainer}>
+                  <TouchableOpacity style={styles.shareBtnPrimary} onPress={handleShareLink}>
+                    <Share2 size={18} color="#fff" />
+                    <Text style={styles.shareBtnText}>Share Link</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity style={styles.openBtnSecondary} onPress={() => Linking.openURL(patientViewUrl)}>
+                    <ExternalLink size={18} color="#0891b2" />
+                    <Text style={styles.openBtnText}>Open Page</Text>
+                  </TouchableOpacity>
+                </View>
+            </View>
+        </View>
+      </Modal>
+
+      {/* Expiration Selection Modal */}
+      <Modal visible={showExpireSelect} transparent animationType="slide" onRequestClose={() => setShowExpireSelect(false)}>
+        <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+                <TouchableOpacity style={styles.closeModal} onPress={() => setShowExpireSelect(false)}>
+                    <X size={24} color="#64748b" />
+                </TouchableOpacity>
+                <Text style={styles.modalTitle}>Share Instructions</Text>
+                <Text style={styles.modalSub}>Select access expiration time frame for the QR code:</Text>
+                
+                <View style={styles.optionsWrapper}>
+                  {[30, 60, 90].map((days) => (
+                    <TouchableOpacity key={days} style={styles.optionBtn} onPress={() => handleSelectExpiry(days)}>
+                      <Text style={styles.optionText}>{days} Days</Text>
+                    </TouchableOpacity>
+                  ))}
                 </View>
             </View>
         </View>
@@ -268,4 +386,16 @@ const styles = StyleSheet.create({
   qrTitle: { fontSize: 20, fontWeight: '700', color: '#0f172a', marginBottom: 4 },
   qrSub: { fontSize: 14, color: '#64748b', marginBottom: 30 },
   qrWrapper: { padding: 10, backgroundColor: '#fff', borderRadius: 12 },
+  modalTitle: { fontSize: 20, fontWeight: '700', color: '#0f172a', marginBottom: 8, textAlign: 'center' },
+  modalSub: { fontSize: 14, color: '#64748b', marginBottom: 24, textAlign: 'center', paddingHorizontal: 10 },
+  optionsWrapper: { width: '100%', gap: 12, marginBottom: 10 },
+  optionBtn: { width: '100%', paddingVertical: 14, backgroundColor: '#0891b2', borderRadius: 12, alignItems: 'center' },
+  optionText: { color: '#fff', fontSize: 16, fontWeight: '600' },
+  expiryText: { fontSize: 13, color: '#ef4444', marginTop: 12, fontWeight: '600', textAlign: 'center' },
+  urlPreviewText: { fontSize: 11, color: '#64748b', backgroundColor: '#f1f5f9', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, marginTop: 10, maxWidth: '100%', textAlign: 'center' },
+  linkActionsContainer: { flexDirection: 'row', gap: 10, marginTop: 16, width: '100%' },
+  shareBtnPrimary: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: '#0891b2', paddingVertical: 12, borderRadius: 12 },
+  shareBtnText: { color: '#fff', fontWeight: '600', fontSize: 14 },
+  openBtnSecondary: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: '#e0f2fe', borderWidth: 1, borderColor: '#bae6fd', paddingVertical: 12, borderRadius: 12 },
+  openBtnText: { color: '#0891b2', fontWeight: '600', fontSize: 14 },
 });

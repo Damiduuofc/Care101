@@ -28,7 +28,12 @@ const AppointmentSchema = new mongoose.Schema({
     default: "pending"
   },
 
+  arrived: { type: Boolean, default: false },
+
   createdAt: { type: Date, default: Date.now }
 });
+
+AppointmentSchema.index({ patientId: 1, date: -1 });
+AppointmentSchema.index({ doctorId: 1, date: 1, status: 1 });
 
 export default mongoose.model("Appointment", AppointmentSchema);

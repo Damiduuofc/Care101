@@ -13,11 +13,15 @@ const ScheduleRequestSchema = new mongoose.Schema({
   
   status: {
     type: String,
-    enum: ['pending', 'approved', 'rejected'],
+    enum: ['pending', 'approved', 'rejected', 'cancelled'],
     default: 'pending'
   },
-  
-  createdAt: { type: Date, default: Date.now }
+  allocatedRoom: { type: String, default: "" },
+  allocatedNurse: { type: String, default: "" },
+  sessionEnded: { type: Boolean, default: false },
+  createdAt: { type: Date, default: Date.now },
 });
+
+ScheduleRequestSchema.index({ doctorId: 1, status: 1, date: 1 });
 
 export default mongoose.model('ScheduleRequest', ScheduleRequestSchema);

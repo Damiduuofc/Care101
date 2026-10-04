@@ -5,9 +5,12 @@ import {
   CalendarCheck,
   Activity,
   ShieldCheck,
+  Stethoscope,
   UserCheck,
   Building,
-  Clock
+  Clock,
+  Lock,
+  FileText
 } from "lucide-react";
 
 export const menuItems = [
@@ -77,5 +80,31 @@ export const menuItems = [
     icon: Activity,
     roles: ["nurse"],
   },
+  {
+    title: "Patient Arrival",
+    href: "/admin/queue/patient-arrival",
+    icon: UserCheck,
+    roles: ["nurse"],
+  },
+  {
+    title: "Doctor Arrival",
+    href: "/admin/queue/doctor-arrival",
+    icon: Stethoscope,
+    roles: ["nurse"],
+  },
+
+  // --- LAB ASSISTANT ---
+  {
+    title: "Upload Records",
+    href: "/admin/lab-assistant-dashboard",
+    icon: FileText,
+    roles: ["lab_assistant"],
+  },
+  {
+    title: "Password",
+    href: "/admin/forget-password",
+    icon: Lock,
+    roles: [ "nurse", "receptionist", "lab_assistant"]
+  }
 
 ];

@@ -23,6 +23,7 @@ import {
   ArrowLeft,
   ChevronLeft,
   ChevronRight,
+  Trash2,
 } from 'lucide-react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import * as SecureStore from 'expo-secure-store';
@@ -48,8 +49,107 @@ export default function AppointmentScreen() {
   // Submit State
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // Schedule History State
+  const [schedules, setSchedules] = useState<any[]>([]);
+  const [loadingHistory, setLoadingHistory] = useState(true);
+
   // Calendar State
   const [currentMonth, setCurrentMonth] = useState(new Date());
+
+  useEffect(() => {
+    fetchSchedules();
+  }, []);
+
+  const fetchSchedules = async () => {
+    try {
+      const token = await SecureStore.getItemAsync('token');
+      const response = await fetch(`${API_URL}/schedule-requests/my-requests`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setSchedules(data);
+      }
+    } catch (error) {
+      console.error("Fetch Schedules Error:", error);
+    } finally {
+      setLoadingHistory(false);
+    }
+  };
+
+  const handleCancelRequest = (schedId: string, isApproved: boolean) => {
+    Alert.alert(
+      isApproved ? "Cancel Approved Schedule" : "Cancel Schedule Request",
+      isApproved 
+        ? "Are you sure you want to cancel this approved schedule? Any booked appointments will be cancelled and room/nurse resources will be released."
+        : "Are you sure you want to cancel this pending schedule request?",
+      [
+        { text: "No", style: "cancel" },
+        {
+          text: "Yes, Cancel",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              const token = await SecureStore.getItemAsync('token');
+              const response = await fetch(`${API_URL}/schedule-requests/${schedId}/status`, {
+                method: 'PUT',
+                headers: {
+                  'Content-Type': 'application/json',
+                  Authorization: `Bearer ${token}`
+                },
+                body: JSON.stringify({ status: 'cancelled' })
+              });
+              if (response.ok) {
+                Alert.alert("Success", "Schedule has been cancelled.");
+                fetchSchedules();
+              } else {
+                const errData = await response.json();
+                Alert.alert("Error", errData.msg || "Failed to cancel schedule.");
+              }
+            } catch (err) {
+              console.error("Cancel Error:", err);
+              Alert.alert("Error", "Could not connect to server.");
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  const handleDeleteRequest = (schedId: string) => {
+    Alert.alert(
+      "Delete Schedule",
+      "Are you sure you want to permanently delete this schedule from your history?",
+      [
+        { text: "No", style: "cancel" },
+        {
+          text: "Yes, Delete",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              const token = await SecureStore.getItemAsync('token');
+              const response = await fetch(`${API_URL}/schedule-requests/${schedId}`, {
+                method: 'DELETE',
+                headers: {
+                  Authorization: `Bearer ${token}`
+                }
+              });
+              if (response.ok) {
+                Alert.alert("Success", "Schedule deleted.");
+                fetchSchedules();
+              } else {
+                const errData = await response.json();
+                Alert.alert("Error", errData.msg || "Failed to delete schedule.");
+              }
+            } catch (err) {
+              console.error("Delete Error:", err);
+              Alert.alert("Error", "Could not connect to server.");
+            }
+          }
+        }
+      ]
+    );
+  };
 
   // Helper for Formatting
   const formatDate = (date: Date) => {
@@ -146,6 +246,7 @@ export default function AppointmentScreen() {
       router.back();
     } finally {
       setIsSubmitting(false);
+      fetchSchedules();
     }
   };
 
@@ -168,7 +269,11 @@ export default function AppointmentScreen() {
       >
         <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
 
-          <Text style={styles.sectionHeading}>Select Date</Text>
+          <View style={styles.container}>
+            <Text style={styles.sectionHeading}>Update Schedule</Text>
+          </View>
+
+          <Text style={styles.sectionHeadingSmall}>Select Date</Text>
 
           {/* CUSTOM CALENDAR */}
           <View style={styles.calendarContainer}>
@@ -307,6 +412,82 @@ export default function AppointmentScreen() {
               </View>
             </View>
 
+          </View>
+
+
+          {/* SCHEDULE HISTORY SECTION */}
+          <Text style={styles.sectionHeading}>Approved & Pending Schedules</Text>
+          <View style={styles.historyContainer}>
+            {loadingHistory ? (
+              <ActivityIndicator color="#06B6D4" style={{ marginVertical: 20 }} />
+            ) : schedules.length === 0 ? (
+              <View style={styles.emptyHistory}>
+                <Text style={styles.emptyHistoryText}>No requests found</Text>
+              </View>
+            ) : (
+              schedules.map((sched) => (
+                <View key={sched._id} style={styles.historyCard}>
+                  <View style={styles.historyCardHeader}>
+                    <Text style={styles.historyDate}>{new Date(sched.date).toDateString()}</Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <View style={[
+                        styles.statusBadge,
+                        sched.status === 'approved' ? styles.statusApproved : 
+                        sched.status === 'rejected' ? styles.statusRejected : 
+                        sched.status === 'cancelled' ? styles.statusCancelled :
+                        styles.statusPending
+                      ]}>
+                        <Text style={[
+                          styles.statusText,
+                          sched.status === 'approved' ? { color: '#059669' } : 
+                          sched.status === 'rejected' ? { color: '#dc2626' } : 
+                          sched.status === 'cancelled' ? { color: '#d97706' } :
+                          { color: '#b45309' }
+                        ]}>
+                          {sched.status.toUpperCase()}
+                        </Text>
+                      </View>
+                      {(sched.status === 'rejected' || sched.status === 'cancelled') && (
+                        <TouchableOpacity 
+                          onPress={() => handleDeleteRequest(sched._id)}
+                          style={styles.deleteIconBtn}
+                          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        >
+                          <Trash2 size={16} color="#94a3b8" />
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                  </View>
+                  <View style={styles.historyCardBody}>
+                    <View style={styles.historyRow}>
+                      <Clock size={14} color="#64748b" />
+                      <Text style={styles.historyTime}>
+                        {new Date(sched.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - 
+                        {new Date(sched.endTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </Text>
+                    </View>
+                    {sched.status === 'approved' && (
+                      <View style={styles.allocationBox}>
+                        <Text style={styles.allocationText}>Room: {sched.allocatedRoom || 'TBD'}</Text>
+                        <Text style={styles.allocationText}>Nurse: {sched.allocatedNurse || 'TBD'}</Text>
+                      </View>
+                    )}
+                    {(sched.status === 'approved' || sched.status === 'pending') && (
+                      <View style={styles.cardActionsRow}>
+                        <TouchableOpacity
+                          style={styles.cancelBtn}
+                          onPress={() => handleCancelRequest(sched._id, sched.status === 'approved')}
+                        >
+                          <Text style={styles.cancelBtnText}>
+                            {sched.status === 'approved' ? 'Cancel Approved Slot' : 'Cancel Request'}
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
+                    )}
+                  </View>
+                </View>
+              ))
+            )}
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -591,5 +772,112 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: '700',
+  },
+  sectionHeadingSmall: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#64748b',
+    marginHorizontal: 20,
+    marginTop: 8,
+    marginBottom: 8
+  },
+  historyContainer: {
+    paddingHorizontal: 20,
+    marginTop: 8,
+  },
+  historyCard: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  historyCardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  historyDate: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#0f172a',
+  },
+  statusBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  statusPending: { backgroundColor: '#fef3c7' },
+  statusApproved: { backgroundColor: '#d1fae5' },
+  statusRejected: { backgroundColor: '#fee2e2' },
+  statusCancelled: { backgroundColor: '#ffedd5' },
+  statusText: {
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  deleteIconBtn: {
+    padding: 4,
+  },
+  historyCardBody: {
+    gap: 8,
+  },
+  historyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  historyTime: {
+    fontSize: 14,
+    color: '#64748b',
+    fontWeight: '500',
+  },
+  allocationBox: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 4,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#f1f5f9',
+  },
+  allocationText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#06B6D4',
+  },
+  cardActionsRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    marginTop: 4,
+    paddingTop: 6,
+    borderTopWidth: 1,
+    borderTopColor: '#f1f5f9',
+  },
+  cancelBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#fca5a5',
+    backgroundColor: '#fff1f2',
+  },
+  cancelBtnText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#e11d48',
+  },
+  emptyHistory: {
+    backgroundColor: '#fff',
+    padding: 30,
+    borderRadius: 16,
+    alignItems: 'center',
+    borderStyle: 'dashed',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  emptyHistoryText: {
+    color: '#94a3b8',
+    fontSize: 14,
   },
 });

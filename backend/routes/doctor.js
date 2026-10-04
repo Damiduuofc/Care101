@@ -1,11 +1,29 @@
 import express from "express";
-import bcrypt from "bcryptjs"; // ✅ Essential for password changing
+import mongoose from "mongoose";
+import bcrypt from "bcryptjs"; 
 import Doctor from "../models/Doctor.js";
-import SurgeryRecord from "../models/SurgeryRecord.js"; 
 import HospitalFinance from "../models/Finance.js"; 
+import Appointment from "../models/Appointment.js";
+import SurgeryRecord from "../models/SurgeryRecord.js"; 
+import { createNotification } from "../utils/notificationHelper.js";
 import { auth } from "../middleware/auth.js";
 
 const router = express.Router();
+
+// HELPER FUNCTION: Calculate Total Income from Finance Records
+const calculateTotalIncome = async (doctorId) => {
+  const hospitals = await HospitalFinance.find({ doctorId });
+  let totalIncome = 0;
+  hospitals.forEach(hospital => {
+    if (hospital.records && hospital.records.length > 0) {
+      hospital.records.forEach(rec => {
+        if (rec.type === 'channeling') totalIncome += (rec.income || 0);
+        else if (rec.type === 'surgical') totalIncome += (rec.amount || 0);
+      });
+    }
+  });
+  return Math.round(totalIncome);
+};
 
 // ---------------------------------------------
 // 1. DASHBOARD STATS
@@ -14,38 +32,68 @@ router.get("/dashboard-stats", auth, async (req, res) => {
   try {
     const doctorId = req.user.id;
 
-    // Get Doctor
-    const doctor = await Doctor.findById(doctorId).select("name fullName specialization channelingTime isArrived channelingStatus currentQueueNumber allocatedRoom");
+    let doctor = await Doctor.findById(doctorId).select("name fullName specialization channelingTime isArrived channelingStatus currentQueueNumber allocatedRoom");
     if (!doctor) return res.status(404).json({ msg: "Doctor not found" });
 
-    // Count Records
-    const recordCount = await SurgeryRecord.countDocuments({ doctorId });
+    let channelingTime = doctor.channelingTime;
+    let allocatedRoom = doctor.allocatedRoom;
 
-    // Calculate Income
-    const hospitals = await HospitalFinance.find({ doctorId });
-    let totalIncome = 0;
+    if (!channelingTime || !allocatedRoom) {
+      try {
+        const ScheduleRequest = mongoose.model('ScheduleRequest');
+        const startOfDay = new Date();
+        startOfDay.setHours(0, 0, 0, 0);
+        const endOfDay = new Date();
+        endOfDay.setHours(23, 59, 59, 999);
 
-    hospitals.forEach(hospital => {
-      let hospitalIncome = 0;
-      if (hospital.records && hospital.records.length > 0) {
-        hospital.records.forEach(rec => {
-          if (rec.type === 'channeling') hospitalIncome += (rec.income || 0);
-          else if (rec.type === 'surgical') hospitalIncome += (rec.amount || 0);
-        });
+        const todaySchedule = await ScheduleRequest.findOne({
+          doctorId,
+          status: 'approved',
+          date: { $gte: startOfDay, $lte: endOfDay }
+        }).sort({ startTime: 1 });
+
+        if (todaySchedule) {
+          channelingTime = channelingTime || new Date(todaySchedule.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+          allocatedRoom = allocatedRoom || todaySchedule.allocatedRoom;
+        }
+      } catch (err) {
+        console.error("Schedule search failed:", err.message);
       }
-      totalIncome += hospitalIncome;
+    }
+
+    const recordCount = await SurgeryRecord.countDocuments({ doctorId }).catch(() => 0);
+    const totalIncome = await calculateTotalIncome(doctorId);
+
+    const startOfDay = new Date();
+    startOfDay.setHours(0, 0, 0, 0);
+    const endOfDay = new Date();
+    endOfDay.setHours(23, 59, 59, 999);
+
+    const todayAppointmentsCount = await Appointment.countDocuments({
+      doctorId,
+      date: { $gte: startOfDay, $lte: endOfDay },
+      status: { $ne: "cancelled" }
+    });
+
+    const todayArrivalsCount = await Appointment.countDocuments({
+      doctorId,
+      date: { $gte: startOfDay, $lte: endOfDay },
+      status: { $ne: "cancelled" },
+      arrived: true
     });
 
     res.json({
       name: doctor.name || doctor.fullName || "Doctor",
       specialization: doctor.specialization || "Specialist",
-      channelingTime: doctor.channelingTime,
+      channelingTime,
       channelingStatus: doctor.channelingStatus,
-      currentQueueNumber: doctor.currentQueueNumber,
-      allocatedRoom: doctor.allocatedRoom,
+      currentQueueNumber: doctor.currentQueueNumber || 0,
+      allocatedRoom: allocatedRoom || "TBA",
       isArrived: doctor.isArrived,
-      income: Math.round(totalIncome),
-      records: recordCount
+      income: totalIncome,
+      records: recordCount,
+      todayAppointmentsCount,
+      todayArrivalsCount
     });
 
   } catch (err) {
@@ -55,12 +103,14 @@ router.get("/dashboard-stats", auth, async (req, res) => {
 });
 
 // ---------------------------------------------
-// 2. GET PROFILE (View)
+// 2. GET PROFILE
 // ---------------------------------------------
 router.get("/profile", auth, async (req, res) => {
   try {
     const doctor = await Doctor.findById(req.user.id).select("-password");
     if (!doctor) return res.status(404).json({ msg: "Doctor not found" });
+
+    const totalEarnings = await calculateTotalIncome(req.user.id);
 
     res.json({
       fullName: doctor.fullName || doctor.name,
@@ -70,37 +120,29 @@ router.get("/profile", auth, async (req, res) => {
       email: doctor.email,
       specialization: doctor.specialization || "General Physician",
       profileImage: doctor.profileImage || null,
-subscription: doctor.subscription || { plan: 'free', status: 'active' },
+      hospital: doctor.hospital || "SUWASEWANA HOSPITAL",
+      subscription: doctor.subscription || { plan: 'free', status: 'active' },
+      totalEarnings: totalEarnings
     });
-
   } catch (err) {
-    console.error("Profile Fetch Error:", err.message);
     res.status(500).send("Server Error");
   }
 });
 
 // ---------------------------------------------
-// 3. UPDATE PROFILE (Edit)
+// 3. UPDATE PROFILE
 // ---------------------------------------------
 router.put("/profile", auth, async (req, res) => {
   try {
-    const { fullName, nameWithInitials, nic, phone,  profileImage } = req.body;
+    const { fullName, nameWithInitials, nic, phone, profileImage } = req.body;
+    const updatedDoctor = await Doctor.findByIdAndUpdate(
+      req.user.id,
+      { $set: { fullName, nameWithInitials, nic, phone, profileImage } },
+      { new: true }
+    ).select("-password");
 
-    const doctor = await Doctor.findById(req.user.id);
-    if (!doctor) return res.status(404).json({ msg: "Doctor not found" });
-
-    // Update fields if provided
-    if (fullName) doctor.fullName = fullName;
-    if (nameWithInitials) doctor.nameWithInitials = nameWithInitials;
-    if (nic) doctor.nic = nic;
-    if (phone) doctor.phone = phone;
-    if (profileImage) doctor.profileImage = profileImage; 
-
-    await doctor.save();
-    res.json({ msg: "Profile Updated", doctor });
-
+    res.json({ msg: "Profile Updated", doctor: updatedDoctor });
   } catch (err) {
-    console.error("Profile Update Error:", err.message);
     res.status(500).send("Server Error");
   }
 });
@@ -113,40 +155,158 @@ router.put("/change-password", auth, async (req, res) => {
     const { currentPassword, newPassword } = req.body;
     const doctor = await Doctor.findById(req.user.id);
 
-    // Verify Current Password
     const isMatch = await bcrypt.compare(currentPassword, doctor.password);
     if (!isMatch) return res.status(400).json({ msg: "Incorrect current password" });
 
-    // Hash New Password
     const salt = await bcrypt.genSalt(10);
     doctor.password = await bcrypt.hash(newPassword, salt);
 
     await doctor.save();
     res.json({ msg: "Password Changed Successfully" });
-
   } catch (err) {
-    console.error("Password Change Error:", err.message);
     res.status(500).send("Server Error");
   }
 });
 
 // ---------------------------------------------
-// 5. UPDATE DELAY STATUS
+// 5. UPDATE DELAY STATUS (Improved Notification Logic)
 // ---------------------------------------------
 router.put("/delay-status", auth, async (req, res) => {
   try {
     const { status } = req.body;
     const doctor = await Doctor.findById(req.user.id);
-    
     if (!doctor) return res.status(404).json({ msg: "Doctor not found" });
 
+    const previousStatus = doctor.channelingStatus;
     doctor.channelingStatus = status;
     await doctor.save();
-    
-    res.json({ msg: "Delay Status Updated", status: doctor.channelingStatus });
 
+    // Notify if status has changed to ANY delay or back to On Time
+    if (status !== previousStatus) {
+      const startOfDay = new Date();
+      startOfDay.setHours(0, 0, 0, 0);
+      const endOfDay = new Date();
+      endOfDay.setHours(23, 59, 59, 999);
+
+      const activeAppointments = await Appointment.find({
+        doctorId: doctor._id,
+        date: { $gte: startOfDay, $lte: endOfDay },
+        status: { $in: ["confirmed", "Confirmed", "pending", "Pending", "completed", "Completed"] }
+      });
+
+      if (activeAppointments.length > 0) {
+        const message = status === "On Time" 
+            ? `Good news! Dr. ${doctor.name} is now on time.` 
+            : `Dr. ${doctor.name} is now ${status.toLowerCase()}. Please plan accordingly.`;
+
+        const notificationPromises = activeAppointments.map(async (app) => {
+          const notif = await createNotification(
+            app.patientId,
+            'doctor_status',
+            message,
+            { doctorId: doctor._id, appointmentId: app._id, status: status },
+            'Clinic Status Update'
+          );
+          if (req.io && notif) {
+            req.io.emit("newNotification", notif);
+          }
+          return notif;
+        });
+        await Promise.all(notificationPromises);
+      }
+    }
+    
+    if (req.io) {
+      req.io.emit("doctorStatusUpdated", doctor);
+      req.io.emit("doctorDelayAlert", {
+        doctorId: doctor._id,
+        doctorName: doctor.name,
+        specialization: doctor.specialization,
+        channelingStatus: doctor.channelingStatus,
+        status: doctor.channelingStatus,
+        previousStatus,
+        allocatedNurse: doctor.allocatedNurse,
+        allocatedRoom: doctor.allocatedRoom,
+        channelingTime: doctor.channelingTime,
+        timestamp: new Date()
+      });
+    }
+
+    res.json({ msg: "Delay Status Updated", status: doctor.channelingStatus });
   } catch (err) {
-    console.error("Delay Status Update Error:", err.message);
+    res.status(500).send("Server Error");
+  }
+});
+
+// ---------------------------------------------
+// 6. UPDATE ARRIVAL STATUS
+// ---------------------------------------------
+router.put("/arrival-status", auth, async (req, res) => {
+  try {
+    const { isArrived } = req.body;
+    const doctor = await Doctor.findById(req.user.id);
+    if (!doctor) return res.status(404).json({ msg: "Doctor not found" });
+
+    const previousArrived = doctor.isArrived;
+    doctor.isArrived = isArrived;
+    if (isArrived === true) {
+      doctor.lastArrivalDate = new Date();
+      if (doctor.channelingStatus && doctor.channelingStatus.toLowerCase() !== "on time") {
+        doctor.channelingStatus = "On Time";
+      }
+    }
+    await doctor.save();
+
+    if (isArrived === true && !previousArrived) {
+      const startOfDay = new Date();
+      startOfDay.setHours(0, 0, 0, 0);
+      const endOfDay = new Date();
+      endOfDay.setHours(23, 59, 59, 999);
+
+      const activeAppointments = await Appointment.find({
+        doctorId: doctor._id,
+        date: { $gte: startOfDay, $lte: endOfDay },
+        status: { $in: ["confirmed", "Confirmed", "pending", "Pending"] }
+      });
+
+      if (activeAppointments.length > 0) {
+        const notificationPromises = activeAppointments.map(async (app) => {
+          const timeInfo = doctor.channelingTime 
+            ? `Sessions start around ${doctor.channelingTime}.` 
+            : "Sessions will begin shortly.";
+
+          const notif = await createNotification(
+            app.patientId,
+            'arrival',
+            `Dr. ${doctor.name} has arrived at the clinic (${doctor.allocatedRoom || 'Room TBA'}). ${timeInfo}`,
+            { doctorId: doctor._id, appointmentId: app._id },
+            'Doctor Arrived'
+          );
+          if (req.io && notif) {
+            req.io.emit("newNotification", notif);
+          }
+          return notif;
+        });
+        await Promise.all(notificationPromises);
+      }
+    }
+    
+    if (req.io) {
+      req.io.emit("doctorStatusUpdated", doctor);
+      req.io.emit("doctorArrivalAlert", {
+        doctorId: doctor._id,
+        doctorName: doctor.name,
+        specialization: doctor.specialization,
+        isArrived: doctor.isArrived,
+        allocatedNurse: doctor.allocatedNurse,
+        allocatedRoom: doctor.allocatedRoom,
+        channelingTime: doctor.channelingTime,
+        timestamp: new Date()
+      });
+    }
+
+    res.json({ msg: "Arrival Status Updated", isArrived: doctor.isArrived });
+  } catch (err) {
     res.status(500).send("Server Error");
   }
 });

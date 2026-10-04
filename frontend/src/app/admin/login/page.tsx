@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Lock, Mail, Loader2, ShieldCheck, ArrowLeft } from "lucide-react";
+import { Lock, Mail, Loader2, ShieldCheck, Eye, EyeOff } from "lucide-react";
+import { getAdminLandingPath, saveAdminSession } from "@/lib/adminSession";
 
 export default function AdminLogin() {
   const router = useRouter();
@@ -10,6 +11,7 @@ export default function AdminLogin() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -40,16 +42,8 @@ export default function AdminLogin() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.msg || "Login failed");
 
-      localStorage.setItem("adminToken", data.token);
-      localStorage.setItem("adminUser", JSON.stringify(data.admin));
-
-      if (data.admin.role === "receptionist") {
-        router.push("/admin/receptionist-dashboard");
-      } else if (data.admin.role === "nurse") {
-        router.push("/admin/queue");
-      } else {
-        router.push("/admin/dashboard");
-      }
+      saveAdminSession(data.token, data.admin);
+      router.push(getAdminLandingPath(data.admin));
     } catch (err: any) {
       setError(err.message || "Invalid credentials. Access denied.");
     } finally {
@@ -64,16 +58,7 @@ export default function AdminLogin() {
       <div className="absolute -top-32 left-1/3 w-96 h-96 bg-cyan-500/10 rounded-full blur-[120px]" />
       <div className="absolute -bottom-32 right-1/3 w-96 h-96 bg-blue-500/10 rounded-full blur-[120px]" />
 
-      {/* Back Button */}
-      <div className="absolute top-8 left-8 z-10">
-        <button
-          onClick={() => router.push("/")}
-          className="text-slate-500 hover:text-cyan-400 text-sm flex items-center gap-2 transition-colors group"
-        >
-          <ArrowLeft className="h-4 w-4 group-hover:-translate-x-1 transition-transform" />
-          Back to Hospital Home
-        </button>
-      </div>
+
 
       {/* Login Card */}
       <div className="w-full max-w-[400px] relative z-10">
@@ -136,23 +121,33 @@ export default function AdminLogin() {
               </div>
 
               {/* Password */}
-              <div>
-                <label className="text-xs font-semibold text-slate-500 uppercase">
-                  Password
-                </label>
-                <div className="relative mt-2">
-                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
-                  <input
-                    type="password"
-                    className="w-full h-11 pl-10 pr-4 bg-slate-950 border border-slate-800 text-white rounded-xl focus:ring-2 focus:ring-cyan-500/40 outline-none"
-                    placeholder="••••••••"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    required
-                  />
-                </div>
-              </div>
-
+<div>
+  <label className="text-xs font-semibold text-slate-500 uppercase">
+    Password
+  </label>
+  <div className="relative mt-2">
+    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
+    <input
+      type={showPassword ? "text" : "password"}
+      className="w-full h-11 pl-10 pr-12 bg-slate-950 border border-slate-800 text-white rounded-xl focus:ring-2 focus:ring-cyan-500/40 outline-none"
+      placeholder="••••••••"
+      value={password}
+      onChange={(e) => setPassword(e.target.value)}
+      required
+    />
+    <button
+      type="button"
+      onClick={() => setShowPassword(!showPassword)}
+      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-cyan-400 transition-colors"
+    >
+      {showPassword ? (
+        <EyeOff className="h-4 w-4" />
+      ) : (
+        <Eye className="h-4 w-4" />
+      )}
+    </button>
+  </div>
+</div>
               {/* Submit */}
               <button
                 type="submit"

@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect, useRef } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -7,7 +7,6 @@ import {
   FlatList,
   Modal,
   TextInput,
-  Switch,
   StatusBar,
   KeyboardAvoidingView,
   Platform,
@@ -17,7 +16,7 @@ import {
 } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Plus, Trash2, ChevronRight, CheckCircle2, X } from 'lucide-react-native';
+import { Plus, Trash2, ChevronRight, X } from 'lucide-react-native';
 import BottomNavBar from '../../components/BottomNavBar';
 import * as SecureStore from 'expo-secure-store';
 
@@ -27,10 +26,10 @@ const REFRESH_INTERVAL = 30000; // Auto-refresh every 30 seconds
 export default function FinanceScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Data State
-  const [hospitals, setHospitals] = useState([]);
+  // Added <any[]> to fix TypeScript errors
+  const [hospitals, setHospitals] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -41,17 +40,14 @@ export default function FinanceScreen() {
   // Form State
   const [newHospitalName, setNewHospitalName] = useState('');
 
-  // Auto-refresh when screen is focused
   useFocusEffect(
     useCallback(() => {
       fetchData();
 
-      // Start polling when screen is focused
       intervalRef.current = setInterval(() => {
-        fetchData(true); // Silent refresh (no loading indicator)
+        fetchData(true); 
       }, REFRESH_INTERVAL);
 
-      // Cleanup interval when screen loses focus
       return () => {
         if (intervalRef.current) {
           clearInterval(intervalRef.current);
@@ -63,13 +59,9 @@ export default function FinanceScreen() {
 
   const fetchData = async (silent = false) => {
     try {
-      if (!silent) {
-        setLoading(true);
-      }
+      if (!silent) setLoading(true);
 
       const token = await SecureStore.getItemAsync('token');
-
-      console.log('Fetching finance data from:', `${API_URL}/finance`);
 
       const resFinance = await fetch(`${API_URL}/finance`, {
         headers: {
@@ -78,11 +70,8 @@ export default function FinanceScreen() {
         }
       });
 
-      console.log('Finance API response status:', resFinance.status);
-
       if (resFinance.ok) {
         const data = await resFinance.json();
-        console.log('Finance data fetched:', data);
         setHospitals(data);
       } else {
         const errorText = await resFinance.text();
@@ -91,9 +80,7 @@ export default function FinanceScreen() {
     } catch (error) {
       console.error("Network Error:", error);
     } finally {
-      if (!silent) {
-        setLoading(false);
-      }
+      if (!silent) setLoading(false);
       setRefreshing(false);
     }
   };
@@ -114,28 +101,22 @@ export default function FinanceScreen() {
     try {
       const token = await SecureStore.getItemAsync('token');
 
-      const response = await fetch(`${API_URL}/api/finance/add-hospital`, {
+      const response = await fetch(`${API_URL}/finance/add-hospital`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`
         },
-        body: JSON.stringify({
-          name: newHospitalName
-        })
+        body: JSON.stringify({ name: newHospitalName })
       });
 
-      // Parse the response to get the specific error message
       const resData = await response.json();
 
       if (response.ok) {
-        // Success: Refresh data and close modal
         await fetchData();
         setModalVisible(false);
         setNewHospitalName('');
       } else {
-        // Failure: Show the actual message from backend
-        console.error("Server Error:", resData);
         Alert.alert("Error", resData.message || resData.error || "Failed to add hospital.");
       }
 
@@ -147,14 +128,15 @@ export default function FinanceScreen() {
     }
   };
 
-  const handleDelete = async (id) => {
+  // Added type definition for 'id'
+  const handleDelete = async (id: string) => {
     Alert.alert("Delete Hospital", "Are you sure? This will delete all financial records for this hospital.", [
       { text: "Cancel", style: "cancel" },
       {
         text: "Delete", style: 'destructive', onPress: async () => {
           try {
             const token = await SecureStore.getItemAsync('token');
-            await fetch(`${API_URL}/api/finance/${id}`, {
+            await fetch(`${API_URL}/finance/${id}`, {
               method: 'DELETE',
               headers: { Authorization: `Bearer ${token}` }
             });
@@ -165,7 +147,14 @@ export default function FinanceScreen() {
     ]);
   };
 
-  const renderHospitalCard = ({ item }) => {
+  // Added type definition for 'item'
+  const renderHospitalCard = ({ item }: { item: any }) => {
+    
+    // BULLETPROOF MATH: Frontend forces the calculation so it's always right
+    const safeChanneling = item.channelingIncome || 0;
+    const safeSurgical = item.surgicalIncome || 0;
+    const safeTotal = safeChanneling + safeSurgical;
+
     return (
       <View style={styles.card}>
         <View style={styles.cardHeader}>
@@ -185,12 +174,12 @@ export default function FinanceScreen() {
         <View style={styles.statsGrid}>
           <View style={styles.statCol}>
             <Text style={styles.statLabel}>Channeling</Text>
-            <Text style={styles.statValueBlue}>{item.channelingIncome?.toLocaleString() || 0} LKR</Text>
+            <Text style={styles.statValueBlue}>{safeChanneling.toLocaleString()} LKR</Text>
           </View>
           <View style={styles.statDivider} />
           <View style={styles.statCol}>
             <Text style={styles.statLabel}>Surgical</Text>
-            <Text style={styles.statValueBlue}>{item.surgicalIncome?.toLocaleString() || 0} LKR</Text>
+            <Text style={styles.statValueBlue}>{safeSurgical.toLocaleString()} LKR</Text>
           </View>
         </View>
 
@@ -198,12 +187,12 @@ export default function FinanceScreen() {
           <View>
             <Text style={styles.totalLabel}>Total Payable</Text>
           </View>
-          <Text style={styles.totalValue}>{Math.round(item.totalPayable || 0).toLocaleString()} LKR</Text>
+          <Text style={styles.totalValue}>{Math.round(safeTotal).toLocaleString()} LKR</Text>
         </View>
 
         <TouchableOpacity
           style={styles.cardFooter}
-          onPress={() => router.push(`/dashboard/finance/${item.id}`)}
+          onPress={() => router.push(`/dashboard/finance/${item.id}` as any)}
         >
           <Text style={styles.footerLink}>View & Add Records</Text>
           <ChevronRight size={16} color="#06B6D4" />
@@ -245,7 +234,6 @@ export default function FinanceScreen() {
         />
       )}
 
-      {/* FAB */}
       <TouchableOpacity
         style={[
           styles.fab,
@@ -257,7 +245,6 @@ export default function FinanceScreen() {
         <Plus size={32} color="#fff" />
       </TouchableOpacity>
 
-      {/* Add Hospital Modal */}
       <Modal animationType="fade" transparent={true} visible={modalVisible} onRequestClose={() => setModalVisible(false)}>
         <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.modalOverlay}>
           <View style={styles.modalContent}>
@@ -300,7 +287,6 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f8fafc' },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 16, backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#f1f5f9' },
   headerTitle: { fontSize: 22, fontWeight: '700', color: '#0f172a' },
-
   listContent: { paddingTop: 20, paddingBottom: 150 },
   card: { backgroundColor: '#fff', borderRadius: 16, padding: 16, marginBottom: 16, marginHorizontal: 20, borderWidth: 1, borderColor: '#e2e8f0', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 2 },
   cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 },
@@ -316,9 +302,7 @@ const styles = StyleSheet.create({
   totalValue: { fontSize: 20, fontWeight: '800', color: '#1e3a8a' },
   cardFooter: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', borderTopWidth: 1, borderTopColor: '#f1f5f9', paddingTop: 16 },
   footerLink: { color: '#06B6D4', fontWeight: '600', marginRight: 4, fontSize: 14 },
-
   fab: { position: 'absolute', right: 24, width: 56, height: 56, borderRadius: 28, backgroundColor: '#06B6D4', alignItems: 'center', justifyContent: 'center', elevation: 6, shadowColor: "#06B6D4", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 4 },
-
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', padding: 20 },
   modalContent: { backgroundColor: '#fff', borderRadius: 24, padding: 24, elevation: 5 },
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 },
