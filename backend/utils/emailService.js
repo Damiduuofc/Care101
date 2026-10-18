@@ -32,6 +32,10 @@ export const isSmsConfigured = () => {
   return Boolean(password && password !== 'your_password_here');
 };
 
+let lastSmsError = null;
+
+export const getLastSmsError = () => lastSmsError;
+
 // Helper to send SMS via Android SMS Gateway
 export const sendSms = async (to, content) => {
   const login = process.env.SMS_GATEWAY_LOGIN || '';
@@ -39,6 +43,7 @@ export const sendSms = async (to, content) => {
   let baseUrl = process.env.SMS_GATEWAY_BASE_URL;
 
   if (!isSmsConfigured()) {
+    lastSmsError = "Android SMS Gateway configuration missing (SMS_GATEWAY_PASSWORD missing or placeholder).";
     console.log("⚠️ Android SMS Gateway configuration missing or placeholder detected, skipping SMS send.");
     return false;
   }
@@ -52,6 +57,7 @@ export const sendSms = async (to, content) => {
 
   const formattedTo = formatPhoneNumber(to);
   if (!formattedTo) {
+    lastSmsError = `Recipient phone number "${to}" is invalid.`;
     console.log("⚠️ Recipient phone number is invalid, skipping SMS send.");
     return false;
   }
@@ -59,18 +65,61 @@ export const sendSms = async (to, content) => {
   const simNumberRaw = process.env.SMS_GATEWAY_SIM_NUMBER;
   const simNumber = simNumberRaw !== undefined && simNumberRaw !== '' ? parseInt(simNumberRaw, 10) : undefined;
 
+  const httpClient = {
+    post: async (url, body, headers) => {
+      const response = await fetch(url, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(10000)
+      });
+      if (response.status === 204) return null;
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(`HTTP error ${response.status}: ${text}`);
+      }
+      const contentType = response.headers.get("Content-Type");
+      if (contentType && contentType.includes("application/json")) {
+        return await response.json();
+      }
+      return await response.text();
+    },
+    get: async (url, headers) => {
+      const response = await fetch(url, { method: "GET", headers, signal: AbortSignal.timeout(10000) });
+      if (response.status === 204) return null;
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(`HTTP error ${response.status}: ${text}`);
+      }
+      const contentType = response.headers.get("Content-Type");
+      if (contentType && contentType.includes("application/json")) {
+        return await response.json();
+      }
+      return await response.text();
+    },
+    delete: async (url, headers) => {
+      const response = await fetch(url, { method: "DELETE", headers, signal: AbortSignal.timeout(10000) });
+      return response.ok;
+    }
+  };
+
   try {
-    const client = new Client(login, password, undefined, baseUrl || undefined);
+    lastSmsError = null;
+    const client = new Client(login, password, httpClient, baseUrl || undefined);
     console.log(`✉️ Sending SMS to ${formattedTo} via ${baseUrl || 'default gateway'} (SIM: ${simNumber ?? 'auto'})...`);
     const messageState = await client.send({
       message: content,
       phoneNumbers: [formattedTo],
       ...(simNumber !== undefined && !isNaN(simNumber) ? { simNumber } : {})
     });
-    console.log(`✅ SMS sent successfully to ${formattedTo}: Message ID ${messageState.id}`);
+    console.log(`✅ SMS sent successfully to ${formattedTo}: Message ID ${messageState?.id || 'OK'}`);
     return true;
   } catch (err) {
-    console.error(`❌ Error sending SMS via Android SMS Gateway to ${formattedTo}:`, err.message || err);
+    const causeCode = err?.cause?.code || '';
+    const causeMsg = err?.cause?.message || '';
+    const detail = causeCode || causeMsg ? `${err.message} (${causeCode || causeMsg})` : (err.message || String(err));
+    lastSmsError = `Failed to connect to SMS Gateway at ${baseUrl || 'gateway'}: ${detail}`;
+    console.error(`❌ Error sending SMS via Android SMS Gateway to ${formattedTo}:`, detail);
     return false;
   }
 };
@@ -1102,7 +1151,7 @@ export const testNotifications = async ({ email, phone }) => {
       const success = await sendSms(phone, `Care101 Diagnostic: SMS gateway is working! Time: ${new Date().toLocaleTimeString()}`);
       results.sms.success = success;
       if (!success) {
-        results.sms.error = "SMS gateway failed to process the request. Check gateway logs.";
+        results.sms.error = getLastSmsError() || "SMS gateway failed to process the request. Check gateway logs.";
       }
     } catch (err) {
       results.sms.error = err.message || String(err);

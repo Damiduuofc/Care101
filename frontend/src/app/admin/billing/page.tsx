@@ -734,9 +734,7 @@ fetch(`${API_URL}/admin/doctors`, { headers })
         className="pl-9 h-9 w-full border-slate-200 focus-visible:ring-cyan-500 bg-white"
       />
     </div>
-    <Button variant="ghost" className="h-8 text-xs text-[#06b6d4] hidden sm:flex" onClick={fetchHistoryAndDoctors}>
-      <Clock className="mr-2 h-3 w-3" /> Refresh history
-    </Button>
+
   </div>
 </CardHeader>
 
