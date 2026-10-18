@@ -589,16 +589,7 @@ export default function NurseQueueDashboard() {
                     <p className="text-slate-500 mt-1">Manage doctor sessions and update patient queue numbers.</p>
                 </div>
                 <div className="flex items-center gap-3">
-                    <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => playDingSound()}
-                        title="Test Alert Chime (plays sound and unlocks browser audio)"
-                        className="bg-white border-slate-200 text-slate-700 hover:text-cyan-700 shadow-sm rounded-xl h-10 px-3 flex items-center gap-1.5 font-bold text-xs"
-                    >
-                        <Volume2 className="h-4 w-4 text-cyan-600" />
-                        <span>Test Alert Sound</span>
-                    </Button>
+
                     <div className="bg-blue-50 text-blue-700 px-4 py-2 rounded-xl font-semibold flex items-center gap-2 text-sm">
                         <Users className="h-5 w-5" />
                         Nurse: {user.name}

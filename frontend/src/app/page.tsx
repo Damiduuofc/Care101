@@ -1,9 +1,5 @@
-import React from 'react'
-import AdminGatekeeper from './admin/page'
+import { redirect } from "next/navigation";
 
-export default function page() {
-  return (
-    <div><AdminGatekeeper/>
-    </div>
-  )
+export default function RootPage() {
+  redirect("/admin");
 }

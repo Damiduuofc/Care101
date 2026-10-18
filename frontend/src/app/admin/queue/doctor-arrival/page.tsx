@@ -261,23 +261,7 @@ export default function NurseDoctorArrivals() {
                     
                     <div className="flex items-center gap-3">
                         {/* Sound Toggle & Test */}
-                        <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => {
-                                if (!soundEnabled) setSoundEnabled(true);
-                                playDingSound();
-                            }}
-                            title="Test alert sound chime (unlocks audio in your browser)"
-                            className="bg-white border-slate-200 text-slate-700 hover:text-cyan-700 shadow-sm rounded-xl h-10 px-3 flex items-center gap-1.5"
-                        >
-                            {soundEnabled ? (
-                                <Volume2 className="h-4 w-4 text-cyan-600" />
-                            ) : (
-                                <VolumeX className="h-4 w-4 text-slate-400" />
-                            )}
-                            <span className="text-xs font-semibold hidden sm:inline">Test Sound</span>
-                        </Button>
+                   
 
                         {/* Notification Bell with Dropdown */}
                         <div className="relative" ref={dropdownRef}>

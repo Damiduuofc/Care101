@@ -13,11 +13,25 @@ export default function AdminGatekeeper() {
 
     if (token && user) {
       router.replace(getAdminLandingPath(user));
-      return;
+    } else {
+      clearAdminSession();
+      router.replace("/admin/login");
     }
 
-    clearAdminSession();
-    router.replace("/admin/login");
+    // Safety fallback: if client-side navigation stalls, hard redirect
+    const timer = setTimeout(() => {
+      if (typeof window !== "undefined") {
+        const currentToken = getAdminToken();
+        const currentUser = getAdminUser();
+        if (currentToken && currentUser) {
+          window.location.replace(getAdminLandingPath(currentUser));
+        } else {
+          window.location.replace("/admin/login");
+        }
+      }
+    }, 1000);
+
+    return () => clearTimeout(timer);
   }, [router]);
 
   return (
