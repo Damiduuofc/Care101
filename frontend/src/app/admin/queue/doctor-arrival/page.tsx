@@ -20,6 +20,8 @@ import { useRouter } from "next/navigation";
 import { clearAdminSession, getAdminToken, getAdminUser } from "@/lib/adminSession";
 import { io, Socket } from "socket.io-client";
 import { playDingSound } from "@/lib/soundUtils";
+import NurseHeader from "@/components/admin/NurseHeader";
+import { useSidebar } from "@/components/admin/SidebarContext";
 
 interface DelayAlert {
     id: string;
@@ -37,6 +39,7 @@ interface DelayAlert {
 
 export default function NurseDoctorArrivals() {
     const router = useRouter();
+    const { contentMarginClass } = useSidebar();
     const [doctors, setDoctors] = useState<any[]>([]);
     const [user, setUser] = useState<any>(null);
     const [searchQuery, setSearchQuery] = useState("");
@@ -51,10 +54,19 @@ export default function NurseDoctorArrivals() {
     const [highlightedDoctorId, setHighlightedDoctorId] = useState<string | null>(null);
 
     const dropdownRef = useRef<HTMLDivElement>(null);
+    const soundEnabledRef = useRef(soundEnabled);
 
-    // Audio chime player using Ding.mp3
+    useEffect(() => {
+        soundEnabledRef.current = soundEnabled;
+    }, [soundEnabled]);
+
+    // Audio chime player using Web Audio & /Ding.wav
     const playAlertChime = () => {
-        if (!soundEnabled) return;
+        if (!soundEnabledRef.current) {
+            console.log("🔇 Doctor delay alert chime skipped (sound is muted)");
+            return;
+        }
+        console.log("🔔 Triggering doctor delay alert chime...");
         playDingSound();
     };
 
@@ -150,7 +162,7 @@ export default function NurseDoctorArrivals() {
         return () => {
             socket.disconnect();
         };
-    }, [soundEnabled]);
+    }, []);
 
     const fetchDoctors = async () => {
         try {
@@ -246,128 +258,207 @@ export default function NurseDoctorArrivals() {
         }, 3000);
     };
 
+    const simulateTestDelayAlert = () => {
+        const targetDoctor = assignedDoctors[0] || doctors[0] || {
+            _id: "6a6a27b42eb04bbca54291ce",
+            name: "Prof. K. M. W. Wijerathne",
+            specialization: "Restorative Dentists",
+            allocatedRoom: "Room 14",
+            allocatedNurse: user?.name || "jithmi",
+            channelingTime: "06:30 PM"
+        };
+
+        const testAlert: DelayAlert = {
+            id: `test-delay-${Date.now()}`,
+            doctorId: targetDoctor._id,
+            doctorName: targetDoctor.name,
+            specialization: targetDoctor.specialization || "Restorative Dentists",
+            status: "Delayed 20 mins",
+            previousStatus: "On Time",
+            allocatedNurse: targetDoctor.allocatedNurse || user?.name || "jithmi",
+            allocatedRoom: targetDoctor.allocatedRoom || "Room 14",
+            channelingTime: targetDoctor.channelingTime || "06:30 PM",
+            timestamp: new Date(),
+            read: false
+        };
+
+        setNotifications(prev => [testAlert, ...prev]);
+        setActiveModalAlert(testAlert);
+        playAlertChime();
+    };
+
     return (
         <div className="flex bg-slate-50 min-h-screen">
             <Sidebar />
-            <main className="flex-1 p-4 md:p-8 ml-0 md:ml-64 transition-all">
-                {/* Header Section */}
-                <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-6">
-                    <div>
-                        <div className="flex items-center gap-2 mb-1">
-                            <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Doctor Arrivals</h1>
-                        </div>
-                        <p className="text-slate-500 text-sm">Manage daily attendance and receive real-time doctor delay alerts.</p>
-                    </div>
-                    
-                    <div className="flex items-center gap-3">
-                        {/* Sound Toggle & Test */}
-                   
-
-                        {/* Notification Bell with Dropdown */}
-                        <div className="relative" ref={dropdownRef}>
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => {
-                                    setShowNotificationsDropdown(!showNotificationsDropdown);
-                                    if (!showNotificationsDropdown) markAllNotificationsAsRead();
-                                }}
-                                className="relative bg-white border-slate-200 text-slate-700 hover:bg-slate-50 shadow-sm rounded-xl h-10 px-3 flex items-center gap-2"
-                            >
-                                {unreadCount > 0 ? (
-                                    <BellRing className="h-4 w-4 text-amber-500 animate-bounce" />
-                                ) : (
-                                    <Bell className="h-4 w-4 text-slate-500" />
-                                )}
-                                <span className="text-xs font-semibold hidden sm:inline">Alerts</span>
-                                {unreadCount > 0 && (
-                                    <span className="absolute -top-1.5 -right-1.5 bg-rose-500 text-white text-[10px] font-bold h-5 w-5 rounded-full flex items-center justify-center border-2 border-white shadow-sm">
-                                        {unreadCount}
-                                    </span>
-                                )}
-                            </Button>
-
-                            {/* Dropdown Menu */}
-                            {showNotificationsDropdown && (
-                                <div className="absolute right-0 mt-2 w-80 sm:w-96 bg-white rounded-2xl shadow-xl border border-slate-200 z-50 overflow-hidden animate-in fade-in-50 zoom-in-95">
-                                    <div className="p-3.5 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
-                                        <div className="flex items-center gap-2">
-                                            <AlertTriangle className="h-4 w-4 text-amber-500" />
-                                            <span className="font-bold text-sm text-slate-800">Doctor Delay Alerts</span>
+            <main className={`flex-1 min-w-0 transition-all duration-300 p-3 sm:p-4 md:p-6 ${contentMarginClass}`}>
+                {/* Unified Tablet-Optimized Nurse Header */}
+                <NurseHeader
+                    title="Doctor Arrivals"
+                    subtitle="Manage daily attendance and receive real-time doctor delay alerts."
+                    userName={user?.name}
+                    alertCount={unreadCount}
+                    rightSlot={
+                        <div className="flex items-center gap-2 sm:gap-3">
+                            {/* Sound Alert Toggle & Test */}
+                            <div className="flex items-center bg-white border border-slate-200 shadow-sm rounded-xl p-0.5">
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => {
+                                        const next = !soundEnabled;
+                                        setSoundEnabled(next);
+                                        if (next) {
+                                            playDingSound();
+                                        }
+                                    }}
+                                    className={`h-8 px-2.5 rounded-lg text-xs font-bold transition-all active:scale-95 ${
+                                        soundEnabled 
+                                            ? "bg-emerald-50 text-emerald-700 hover:bg-emerald-100" 
+                                            : "text-slate-400 hover:text-slate-600"
+                                    }`}
+                                    title={soundEnabled ? "Doctor delay chime enabled. Tap to mute." : "Doctor delay chime muted. Tap to enable."}
+                                >
+                                    {soundEnabled ? (
+                                        <div className="flex items-center gap-1.5">
+                                            <Volume2 className="h-3.5 w-3.5 text-emerald-600" />
+                                            <span className="hidden sm:inline">Chime ON</span>
                                         </div>
-                                        {notifications.length > 0 && (
-                                            <button 
-                                                onClick={() => setNotifications([])}
-                                                className="text-xs text-slate-400 hover:text-slate-600 transition-colors"
-                                            >
-                                                Clear all
-                                            </button>
-                                        )}
-                                    </div>
-
-                                    <div className="max-h-80 overflow-y-auto divide-y divide-slate-100">
-                                        {notifications.length === 0 ? (
-                                            <div className="p-6 text-center text-slate-400">
-                                                <Clock className="h-8 w-8 mx-auto mb-2 text-slate-300" />
-                                                <p className="text-xs font-medium">No delay notifications received yet</p>
-                                                <p className="text-[11px] text-slate-400 mt-0.5">When doctors push delays, they will appear here</p>
-                                            </div>
-                                        ) : (
-                                            notifications.map((n) => (
-                                                <div 
-                                                    key={n.id}
-                                                    onClick={() => handleLocateDoctor(n.doctorId)}
-                                                    className="p-3.5 hover:bg-slate-50/80 transition-colors cursor-pointer text-left"
-                                                >
-                                                    <div className="flex items-start justify-between gap-2">
-                                                        <div>
-                                                            <p className="text-sm font-bold text-slate-800">{n.doctorName}</p>
-                                                            <p className="text-xs text-slate-500">{n.specialization || "General"}</p>
-                                                        </div>
-                                                        <Badge className={`text-[11px] font-bold ${
-                                                            n.status === "On Time" 
-                                                                ? "bg-emerald-50 text-emerald-700 border-emerald-200" 
-                                                                : "bg-amber-50 text-amber-700 border-amber-200"
-                                                        }`}>
-                                                            {n.status}
-                                                        </Badge>
-                                                    </div>
-                                                    <div className="mt-2 flex items-center justify-between text-[11px] text-slate-400">
-                                                        <span>{n.allocatedRoom ? `Room ${n.allocatedRoom}` : "Room TBD"}</span>
-                                                        <span>{new Date(n.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                                                    </div>
-                                                </div>
-                                            ))
-                                        )}
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-
-                        {/* Status Card */}
-                        <Card className="px-4 py-2 flex items-center gap-3 bg-white shadow-sm border-slate-200">
-                            <Users className="text-cyan-600 h-5 w-5" />
-                            <div>
-                                <p className="text-[10px] uppercase font-bold text-slate-400 leading-none">Attendance</p>
-                                <p className="text-sm font-bold text-slate-700">
-                                    {arrivedCount} / {assignedDoctorsCount} Present
-                                </p>
+                                    ) : (
+                                        <div className="flex items-center gap-1.5">
+                                            <VolumeX className="h-3.5 w-3.5 text-slate-400" />
+                                            <span className="hidden sm:inline">Muted</span>
+                                        </div>
+                                    )}
+                                </Button>
+                        
                             </div>
-                        </Card>
-                    </div>
-                </div>
+
+                            {/* Notification Bell with Dropdown */}
+                            <div className="relative" ref={dropdownRef}>
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => {
+                                        setShowNotificationsDropdown(!showNotificationsDropdown);
+                                        if (!showNotificationsDropdown) markAllNotificationsAsRead();
+                                    }}
+                                    className="relative bg-white border-slate-200 text-slate-700 hover:bg-slate-50 shadow-sm rounded-xl h-9 px-3 flex items-center gap-1.5 active:scale-95"
+                                >
+                                    {unreadCount > 0 ? (
+                                        <BellRing className="h-4 w-4 text-amber-500 animate-bounce" />
+                                    ) : (
+                                        <Bell className="h-4 w-4 text-slate-500" />
+                                    )}
+                                    <span className="text-xs font-bold hidden sm:inline">Alerts</span>
+                                    {unreadCount > 0 && (
+                                        <span className="absolute -top-1 -right-1 bg-rose-500 text-white text-[10px] font-black h-4.5 w-4.5 rounded-full flex items-center justify-center border-2 border-white shadow-sm">
+                                            {unreadCount}
+                                        </span>
+                                    )}
+                                </Button>
+
+                                {/* Dropdown Menu */}
+                                {showNotificationsDropdown && (
+                                    <div className="absolute right-0 mt-2 w-[calc(100vw-2rem)] sm:w-96 max-w-[92vw] bg-white rounded-2xl shadow-xl border border-slate-200 z-50 overflow-hidden animate-in fade-in-50 zoom-in-95">
+                                        <div className="p-3.5 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
+                                            <div className="flex items-center gap-2">
+                                                <AlertTriangle className="h-4 w-4 text-amber-500" />
+                                                <span className="font-bold text-sm text-slate-800">Doctor Delay Alerts</span>
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                                <button
+                                                    type="button"
+                                                    onClick={simulateTestDelayAlert}
+                                                    className="text-[11px] text-amber-700 hover:text-amber-900 bg-amber-50 hover:bg-amber-100 border border-amber-200/80 px-2 py-0.5 rounded-lg font-bold flex items-center gap-1 transition-all active:scale-95"
+                                                    title="Simulate delay alert popup & chime for nurse"
+                                                >
+                                                    <Sparkles className="h-3 w-3 text-amber-600" />
+                                                    <span>Simulate Alert</span>
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => playDingSound()}
+                                                    className="text-xs text-cyan-600 hover:text-cyan-800 font-bold flex items-center gap-1"
+                                                    title="Test alert chime sound"
+                                                >
+                                                    <Volume2 className="h-3 w-3" />
+                                                    <span>Test Sound</span>
+                                                </button>
+                                                {notifications.length > 0 && (
+                                                    <button 
+                                                        onClick={() => setNotifications([])}
+                                                        className="text-xs text-slate-400 hover:text-slate-600 transition-colors font-semibold"
+                                                    >
+                                                        Clear
+                                                    </button>
+                                                )}
+                                            </div>
+                                        </div>
+
+                                        <div className="max-h-80 overflow-y-auto divide-y divide-slate-100">
+                                            {notifications.length === 0 ? (
+                                                <div className="p-6 text-center text-slate-400">
+                                                    <Clock className="h-8 w-8 mx-auto mb-2 text-slate-300" />
+                                                    <p className="text-xs font-medium">No delay notifications received yet</p>
+                                                    <p className="text-[11px] text-slate-400 mt-0.5">When doctors push delays, they will appear here</p>
+                                                </div>
+                                            ) : (
+                                                notifications.map((n) => (
+                                                    <div 
+                                                        key={n.id}
+                                                        onClick={() => handleLocateDoctor(n.doctorId)}
+                                                        className="p-3 hover:bg-slate-50/80 transition-colors cursor-pointer text-left"
+                                                    >
+                                                        <div className="flex items-start justify-between gap-2">
+                                                            <div>
+                                                                <p className="text-sm font-bold text-slate-800">{n.doctorName}</p>
+                                                                <p className="text-xs text-slate-500">{n.specialization || "General"}</p>
+                                                            </div>
+                                                            <Badge className={`text-[10px] font-bold ${
+                                                                n.status === "On Time" 
+                                                                    ? "bg-emerald-50 text-emerald-700 border-emerald-200" 
+                                                                    : "bg-amber-50 text-amber-700 border-amber-200"
+                                                            }`}>
+                                                                {n.status}
+                                                            </Badge>
+                                                        </div>
+                                                        <div className="mt-1.5 flex items-center justify-between text-[11px] text-slate-400">
+                                                            <span>{n.allocatedRoom ? `Room ${n.allocatedRoom}` : "Room TBD"}</span>
+                                                            <span>{new Date(n.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                                                        </div>
+                                                    </div>
+                                                ))
+                                            )}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Status Card */}
+                            <Card className="px-3 sm:px-4 py-1.5 flex items-center gap-2.5 bg-white shadow-sm border-slate-200">
+                                <Users className="text-cyan-600 h-4 w-4 shrink-0" />
+                                <div>
+                                    <p className="text-[10px] uppercase font-bold text-slate-400 leading-none">Attendance</p>
+                                    <p className="text-xs sm:text-sm font-bold text-slate-700">
+                                        {arrivedCount} / {assignedDoctorsCount} Present
+                                    </p>
+                                </div>
+                            </Card>
+                        </div>
+                    }
+                />
 
                 {/* Active Delays Alert Banner */}
                 {delayedDoctors.length > 0 && (
-                    <div className="mb-6 p-4 bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200/80 rounded-2xl flex items-center gap-3 shadow-sm">
-                        <div className="h-10 w-10 rounded-xl bg-amber-500/10 border border-amber-300 flex items-center justify-center shrink-0">
+                    <div className="mb-4 sm:mb-5 p-3.5 sm:p-4 bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200/80 rounded-2xl flex items-center gap-3 shadow-sm">
+                        <div className="h-9 w-9 sm:h-10 sm:w-10 rounded-xl bg-amber-500/10 border border-amber-300 flex items-center justify-center shrink-0">
                             <Clock className="h-5 w-5 text-amber-600 animate-pulse" />
                         </div>
-                        <div>
-                            <h4 className="text-sm font-bold text-amber-900">
+                        <div className="min-w-0">
+                            <h4 className="text-xs sm:text-sm font-bold text-amber-900 truncate">
                                 {delayedDoctors.length} {delayedDoctors.length === 1 ? "Doctor is" : "Doctors are"} currently delayed
                             </h4>
-                            <p className="text-xs text-amber-700 mt-0.5">
+                            <p className="text-xs text-amber-700 mt-0.5 truncate">
                                 {delayedDoctors.map(d => `${d.name} (${d.channelingStatus})`).join(" • ")}
                             </p>
                         </div>
@@ -375,11 +466,11 @@ export default function NurseDoctorArrivals() {
                 )}
 
                 {/* Search Filter */}
-                <div className="relative mb-6 max-w-md">
+                <div className="relative mb-4 sm:mb-5 max-w-md">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
                     <Input 
                         placeholder="Search assigned doctors by name, specialty, room..." 
-                        className="pl-10 bg-white border-slate-200 focus-visible:ring-cyan-500 shadow-sm rounded-xl"
+                        className="pl-9 h-10 bg-white border-slate-200 focus-visible:ring-cyan-500 shadow-sm rounded-xl text-xs sm:text-sm"
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
                     />
@@ -391,7 +482,7 @@ export default function NurseDoctorArrivals() {
                         <p className="text-sm font-medium">Loading medical staff...</p>
                     </div>
                 ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5 sm:gap-4">
                         {filteredDoctors.map(doc => {
                             const isDelayed = doc.channelingStatus && doc.channelingStatus !== "On Time";
                             const isHighlighted = highlightedDoctorId === doc._id;
@@ -531,7 +622,7 @@ export default function NurseDoctorArrivals() {
 
                 {/* DOCTOR DELAY ALERT POPUP (MODAL) */}
                 <Dialog open={!!activeModalAlert} onOpenChange={(open) => { if (!open) setActiveModalAlert(null); }}>
-                    <DialogContent className="sm:max-w-[480px] rounded-2xl p-6 bg-white border border-slate-100 shadow-2xl">
+                    <DialogContent className="w-[95vw] sm:max-w-[480px] rounded-2xl p-4 sm:p-6 bg-white border border-slate-100 shadow-2xl max-h-[90vh] overflow-y-auto">
                         <div className="flex items-start gap-4">
                             <div className="w-12 h-12 rounded-2xl bg-amber-50 border border-amber-100 flex items-center justify-center text-amber-600 shrink-0">
                                 <Clock className="w-6 h-6 text-amber-600" />
@@ -589,7 +680,17 @@ export default function NurseDoctorArrivals() {
                                 )}
 
                                 {/* Action Buttons */}
-                                <div className="flex gap-3 pt-2">
+                                <div className="flex gap-2 sm:gap-3 pt-2">
+                                    <Button 
+                                        type="button"
+                                        variant="outline" 
+                                        size="icon"
+                                        className="h-10 w-10 shrink-0 rounded-xl border-slate-200 text-slate-600 hover:text-cyan-700 hover:bg-cyan-50"
+                                        onClick={() => playDingSound()}
+                                        title="Replay alert chime"
+                                    >
+                                        <Volume2 className="h-4 w-4" />
+                                    </Button>
                                     <Button 
                                         variant="outline" 
                                         className="flex-1 rounded-xl border-slate-200 text-slate-700 hover:bg-slate-50 font-semibold"

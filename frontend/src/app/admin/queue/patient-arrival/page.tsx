@@ -14,9 +14,12 @@ import { useRouter } from "next/navigation";
 import { clearAdminSession, getAdminToken, getAdminUser } from "@/lib/adminSession";
 import { io } from "socket.io-client";
 import { playDingSound } from "@/lib/soundUtils";
+import NurseHeader from "@/components/admin/NurseHeader";
+import { useSidebar } from "@/components/admin/SidebarContext";
 
 export default function NursePatientArrivals() {
     const router = useRouter();
+    const { contentMarginClass } = useSidebar();
     const [appointments, setAppointments] = useState<any[]>([]);
     const [doctors, setDoctors] = useState<any[]>([]);
     const [user, setUser] = useState<any>(null);
@@ -281,77 +284,75 @@ export default function NursePatientArrivals() {
     return (
         <div className="flex bg-slate-50 min-h-screen">
             <Sidebar />
-            <main className="flex-1 p-4 md:p-8 ml-0 md:ml-64 transition-all">
-                {/* Header Section */}
-                <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-8">
-                    <div>
-                        <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Patient Arrivals</h1>
-                        <p className="text-slate-500 mt-1">Manage and confirm patient arrivals for your assigned sessions.</p>
-                    </div>
-                    
-                    <div className="flex gap-3">
-                        <Card className="px-4 py-2 flex items-center gap-3 bg-white shadow-sm border-slate-200">
-                            <Activity className="text-cyan-600 h-5 w-5 animate-pulse" />
+            <main className={`flex-1 min-w-0 transition-all duration-300 p-3 sm:p-4 md:p-6 ${contentMarginClass}`}>
+                {/* Unified Tablet-Optimized Nurse Header */}
+                <NurseHeader
+                    title="Patient Arrivals"
+                    subtitle="Manage and confirm patient arrivals for your assigned sessions."
+                    userName={user?.name}
+                    rightSlot={
+                        <Card className="px-3 sm:px-4 py-1.5 flex items-center gap-2.5 bg-white shadow-sm border-slate-200">
+                            <Activity className="text-cyan-600 h-4 w-4 animate-pulse shrink-0" />
                             <div>
                                 <p className="text-[10px] uppercase font-bold text-slate-400 leading-none">Today's Patients</p>
-                                <p className="text-sm font-bold text-slate-700">
+                                <p className="text-xs sm:text-sm font-bold text-slate-700">
                                     {arrivedTodayCount} / {todayAppointments.length} Arrived
                                 </p>
                             </div>
                         </Card>
-                    </div>
-                </div>
+                    }
+                />
 
                 {/* Controls Section (Search + Tabs) */}
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 sm:mb-5">
                     <div className="relative flex-1 max-w-md">
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
                         <Input 
                             placeholder="Search patient name, ID, or doctor..." 
-                            className="pl-10 bg-white border-slate-200 focus-visible:ring-cyan-500 shadow-sm"
+                            className="pl-9 h-10 bg-white border-slate-200 focus-visible:ring-cyan-500 shadow-sm rounded-xl text-xs sm:text-sm"
                             value={searchTerm}
                             onChange={(e) => setSearchTerm(e.target.value)}
                         />
                     </div>
 
                     {/* Filter Tabs */}
-                    <div className="flex bg-slate-200/60 p-1 rounded-xl shadow-inner max-w-fit border border-slate-200/40">
+                    <div className="flex bg-slate-200/70 p-1 rounded-xl shadow-inner max-w-full sm:max-w-fit border border-slate-200/50 overflow-x-auto no-scrollbar">
                         <button
                             onClick={() => setFilterTab("today")}
-                            className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                            className={`px-3.5 sm:px-4 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap min-h-[34px] ${
                                 filterTab === "today"
                                 ? "bg-white text-slate-900 shadow-sm"
-                                : "text-slate-500 hover:text-slate-800"
+                                : "text-slate-600 hover:text-slate-900"
                             }`}
                         >
                             Today
                         </button>
                         <button
                             onClick={() => setFilterTab("pending")}
-                            className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                            className={`px-3.5 sm:px-4 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap min-h-[34px] ${
                                 filterTab === "pending"
                                 ? "bg-white text-slate-900 shadow-sm"
-                                : "text-slate-500 hover:text-slate-800"
+                                : "text-slate-600 hover:text-slate-900"
                             }`}
                         >
                             Not Arrived
                         </button>
                         <button
                             onClick={() => setFilterTab("arrived")}
-                            className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                            className={`px-3.5 sm:px-4 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap min-h-[34px] ${
                                 filterTab === "arrived"
                                 ? "bg-white text-slate-900 shadow-sm"
-                                : "text-slate-500 hover:text-slate-800"
+                                : "text-slate-600 hover:text-slate-900"
                             }`}
                         >
                             Arrived
                         </button>
                         <button
                             onClick={() => setFilterTab("all")}
-                            className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                            className={`px-3.5 sm:px-4 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap min-h-[34px] ${
                                 filterTab === "all"
                                 ? "bg-white text-slate-900 shadow-sm"
-                                : "text-slate-500 hover:text-slate-800"
+                                : "text-slate-600 hover:text-slate-900"
                             }`}
                         >
                             All
@@ -360,9 +361,9 @@ export default function NursePatientArrivals() {
                 </div>
 
                 {/* Table Section */}
-                <Card className="border-slate-200 shadow-sm overflow-hidden bg-white">
-                    <CardHeader className="bg-slate-50/50 border-b border-slate-100 py-4 flex flex-row justify-between items-center">
-                        <CardTitle className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                <Card className="border-slate-200 shadow-sm overflow-hidden bg-white rounded-2xl">
+                    <CardHeader className="bg-slate-50/60 border-b border-slate-100 py-3.5 px-4 flex flex-row justify-between items-center">
+                        <CardTitle className="text-xs font-bold text-slate-500 uppercase tracking-wider">
                             Appointments list ({filteredAppointments.length})
                         </CardTitle>
                     </CardHeader>
@@ -378,90 +379,90 @@ export default function NursePatientArrivals() {
                                 <p className="text-sm font-medium">No appointments found matching this criteria.</p>
                             </div>
                         ) : (
-                            <div className="overflow-x-auto">
-                                <table className="w-full text-left border-collapse">
+                            <div className="overflow-x-auto w-full">
+                                <table className="w-full text-left border-collapse min-w-[680px]">
                                     <thead>
-                                        <tr className="border-b border-slate-100 text-slate-600 text-sm bg-slate-50/30">
-                                            <th className="p-4 font-semibold cursor-pointer select-none group hover:text-slate-900 transition-colors" onClick={() => handleSort("patient")}>
+                                        <tr className="border-b border-slate-100 text-slate-600 text-xs sm:text-sm bg-slate-50/40">
+                                            <th className="p-3 sm:p-3.5 font-bold cursor-pointer select-none group hover:text-slate-900 transition-colors" onClick={() => handleSort("patient")}>
                                                 Patient {renderSortIcon("patient")}
                                             </th>
-                                            <th className="p-4 font-semibold cursor-pointer select-none group hover:text-slate-900 transition-colors" onClick={() => handleSort("date")}>
+                                            <th className="p-3 sm:p-3.5 font-bold cursor-pointer select-none group hover:text-slate-900 transition-colors" onClick={() => handleSort("date")}>
                                                 Date & Time {renderSortIcon("date")}
                                             </th>
-                                            <th className="p-4 font-semibold cursor-pointer select-none group hover:text-slate-900 transition-colors" onClick={() => handleSort("doctor")}>
+                                            <th className="p-3 sm:p-3.5 font-bold cursor-pointer select-none group hover:text-slate-900 transition-colors" onClick={() => handleSort("doctor")}>
                                                 Doctor {renderSortIcon("doctor")}
                                             </th>
-                                            <th className="p-4 font-semibold">Queue No</th>
-                                            <th className="p-4 font-semibold">Payment Status</th>
-                                            <th className="p-4 font-semibold cursor-pointer select-none group hover:text-slate-900 transition-colors" onClick={() => handleSort("arrived")}>
-                                                Arrival Status {renderSortIcon("arrived")}
+                                            <th className="p-3 sm:p-3.5 font-bold">Queue No</th>
+                                            <th className="p-3 sm:p-3.5 font-bold">Payment</th>
+                                            <th className="p-3 sm:p-3.5 font-bold cursor-pointer select-none group hover:text-slate-900 transition-colors" onClick={() => handleSort("arrived")}>
+                                                Arrival {renderSortIcon("arrived")}
                                             </th>
-                                            <th className="p-4 font-semibold text-center">Action</th>
+                                            <th className="p-3 sm:p-3.5 font-bold text-center">Action</th>
                                         </tr>
                                     </thead>
-                                    <tbody className="divide-y divide-slate-100 text-slate-700">
+                                    <tbody className="divide-y divide-slate-100 text-slate-700 text-xs sm:text-sm">
                                         {filteredAppointments.map((appt) => (
-                                            <tr key={appt._id} className="hover:bg-slate-50/40 transition-colors">
-                                                <td className="p-4">
+                                            <tr key={appt._id} className="hover:bg-slate-50/60 transition-colors">
+                                                <td className="p-3 sm:p-3.5">
                                                     <div>
                                                         <p className="font-bold text-slate-900 leading-tight">
                                                             {appt.patientId?.fullName || "Walk-in Patient"}
                                                         </p>
-                                                        <p className="text-xs text-slate-400 mt-0.5">
+                                                        <p className="text-[11px] text-slate-400 mt-0.5">
                                                             ID: {appt.patientId?.patientId || appt.patientId?._id?.substring(0, 8) || "N/A"}
                                                         </p>
                                                     </div>
                                                 </td>
-                                                <td className="p-4">
+                                                <td className="p-3 sm:p-3.5">
                                                     <div>
-                                                        <p className="font-semibold text-slate-800 text-sm leading-tight flex items-center gap-1.5">
-                                                            <Calendar className="w-3.5 h-3.5 text-slate-400" /> {formatDate(appt.date)}
+                                                        <p className="font-semibold text-slate-800 text-xs sm:text-sm leading-tight flex items-center gap-1.5">
+                                                            <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" /> {formatDate(appt.date)}
                                                         </p>
-                                                        <p className="text-xs text-slate-500 mt-1 flex items-center gap-1.5">
-                                                            <Clock className="w-3.5 h-3.5 text-slate-400" /> {formatTime(appt.timeSlot || appt.time || "N/A")}
+                                                        <p className="text-[11px] text-slate-500 mt-1 flex items-center gap-1.5">
+                                                            <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0" /> {formatTime(appt.timeSlot || appt.time || "N/A")}
                                                         </p>
                                                     </div>
                                                 </td>
-                                                <td className="p-4">
+                                                <td className="p-3 sm:p-3.5">
                                                     <div>
-                                                        <p className="font-semibold text-slate-800 text-sm">
+                                                        <p className="font-semibold text-slate-800 text-xs sm:text-sm truncate max-w-[150px]">
                                                             {appt.doctorName || "General Staff"}
                                                         </p>
-                                                        <p className="text-xs text-cyan-600 capitalize">
+                                                        <p className="text-[11px] text-cyan-600 capitalize">
                                                             {appt.department || "OPD"}
                                                         </p>
                                                     </div>
                                                 </td>
-                                                <td className="p-4 font-bold text-slate-700">
+                                                <td className="p-3 sm:p-3.5 font-bold text-slate-800 text-sm sm:text-base">
                                                     #{appt.queueNumber || "N/A"}
                                                 </td>
-                                                <td className="p-4">
-                                                    <Badge variant="outline" className={
+                                                <td className="p-3 sm:p-3.5">
+                                                    <Badge variant="outline" className={`text-[10px] sm:text-xs font-bold ${
                                                         appt.paymentStatus?.toLowerCase() === "paid"
-                                                        ? "bg-emerald-50 text-emerald-700 border-emerald-100"
-                                                        : "bg-amber-50 text-amber-700 border-amber-100"
-                                                    }>
+                                                        ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                                        : "bg-amber-50 text-amber-700 border-amber-200"
+                                                    }`}>
                                                         {appt.paymentStatus || "Pending"}
                                                     </Badge>
                                                 </td>
-                                                <td className="p-4">
+                                                <td className="p-3 sm:p-3.5">
                                                     <div className="flex items-center gap-1.5">
-                                                        <span className={`w-2.5 h-2.5 rounded-full ${appt.arrived ? "bg-emerald-500" : "bg-slate-300"}`}></span>
-                                                        <span className="text-sm font-medium text-slate-600">
+                                                        <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${appt.arrived ? "bg-emerald-500" : "bg-slate-300"}`}></span>
+                                                        <span className="text-xs sm:text-sm font-semibold text-slate-600">
                                                             {appt.arrived ? "Present" : "Absent"}
                                                         </span>
                                                     </div>
                                                 </td>
-                                                <td className="p-4 text-center">
+                                                <td className="p-3 sm:p-3.5 text-center">
                                                     <Button
                                                         variant="ghost"
                                                         size="sm"
                                                         disabled={updatingId === appt._id}
                                                         onClick={() => toggleArrival(appt._id, appt.arrived)}
-                                                        className={`rounded-xl px-4 py-1.5 transition-all text-xs font-semibold ${
+                                                        className={`rounded-xl px-3.5 py-1.5 transition-all text-xs font-bold min-h-[36px] active:scale-95 ${
                                                             appt.arrived 
-                                                            ? "bg-rose-50 text-rose-600 hover:bg-rose-100 hover:text-rose-700" 
-                                                            : "bg-cyan-50 text-cyan-700 hover:bg-cyan-100 hover:text-cyan-800"
+                                                            ? "bg-rose-50 text-rose-600 hover:bg-rose-100 hover:text-rose-700 border border-rose-100" 
+                                                            : "bg-cyan-50 text-cyan-700 hover:bg-cyan-100 hover:text-cyan-800 border border-cyan-100"
                                                         }`}
                                                     >
                                                         {updatingId === appt._id ? (

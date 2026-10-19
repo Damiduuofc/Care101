@@ -10,9 +10,12 @@ import { useRouter } from "next/navigation";
 import { clearAdminSession, getAdminToken, getAdminUser } from "@/lib/adminSession";
 import { io } from "socket.io-client";
 import { playDingSound } from "@/lib/soundUtils";
+import NurseHeader from "@/components/admin/NurseHeader";
+import { useSidebar } from "@/components/admin/SidebarContext";
 
 export default function NurseQueueDashboard() {
     const router = useRouter();
+    const { contentMarginClass } = useSidebar();
     const [user, setUser] = useState<any>(null);
     const [doctors, setDoctors] = useState<any[]>([]);
     const [appointments, setAppointments] = useState<any[]>([]);
@@ -580,94 +583,95 @@ export default function NurseQueueDashboard() {
     });
 
     return (
-        <div className="space-y-6 max-w-7xl mx-auto p-4 md:p-8 ml-0 md:ml-64">
+        <div className="flex bg-slate-50 min-h-screen">
             <Sidebar />
+            <main className={`flex-1 min-w-0 transition-all duration-300 p-3 sm:p-4 md:p-6 ${contentMarginClass}`}>
+                {/* Unified Tablet-Optimized Nurse Header */}
+                <NurseHeader
+                    title="Nurse OPD Queue"
+                    subtitle="Manage doctor sessions and update patient queue numbers."
+                    userName={user?.name}
+                    rightSlot={
+                        <div className="flex items-center gap-2">
+                            <div className="bg-emerald-50 text-emerald-800 border border-emerald-200/80 px-3 py-1.5 rounded-xl font-bold flex items-center gap-1.5 text-xs">
+                                <Activity className="h-3.5 w-3.5 text-emerald-600 animate-pulse shrink-0" />
+                                <span>{assignedDoctors.filter(d => d.sessionStarted).length} / {assignedDoctors.length} Active Sessions</span>
+                            </div>
+                        </div>
+                    }
+                />
 
-            <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex justify-between items-center">
-                <div>
-                    <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">Nurse OPD Queue</h1>
-                    <p className="text-slate-500 mt-1">Manage doctor sessions and update patient queue numbers.</p>
-                </div>
-                <div className="flex items-center gap-3">
-
-                    <div className="bg-blue-50 text-blue-700 px-4 py-2 rounded-xl font-semibold flex items-center gap-2 text-sm">
-                        <Users className="h-5 w-5" />
-                        Nurse: {user.name}
-                    </div>
-                </div>
-            </div>
-
-            {assignedDoctors.length === 0 ? (
-                <Card className="bg-slate-50 border-dashed border-2 text-center p-12">
-                    <CardContent>
-                        <Users className="h-12 w-12 text-slate-300 mx-auto mb-4" />
-                        <h2 className="text-xl font-bold text-slate-700">No Doctors Assigned</h2>
-                        <p className="text-slate-500 mt-2">No doctors are assigned to you currently.</p>
-                    </CardContent>
-                </Card>
-            ) : (
-                <div className="grid grid-cols-1 gap-6">
-                    {assignedDoctors.map(doc => (
-                        <Card key={doc._id} className="border-slate-200 overflow-hidden shadow-sm transition-all">
-                            <div className={`h-2 w-full ${doc.sessionStarted ? "bg-emerald-500" : "bg-slate-300"}`}></div>
-                            <CardHeader className="bg-slate-50/50 border-b border-slate-100 flex flex-row items-center justify-between pb-4">
-                                <div className="flex items-center gap-4">
-                                    <div className="h-14 w-14 bg-white border border-slate-200 shadow-sm rounded-full flex items-center justify-center font-bold text-slate-500 overflow-hidden">
-                                        {doc.profileImage ? <img src={doc.profileImage} alt="" className="w-full h-full object-cover" /> : doc.name.charAt(0)}
+                {assignedDoctors.length === 0 ? (
+                    <Card className="bg-slate-50 border-dashed border-2 text-center p-8 sm:p-12 rounded-2xl">
+                        <CardContent>
+                            <Users className="h-12 w-12 text-slate-300 mx-auto mb-4" />
+                            <h2 className="text-xl font-bold text-slate-700">No Doctors Assigned</h2>
+                            <p className="text-slate-500 mt-2 text-sm">No doctors are assigned to you currently.</p>
+                        </CardContent>
+                    </Card>
+                ) : (
+                    <div className="grid grid-cols-1 gap-4 sm:gap-6">
+                        {assignedDoctors.map(doc => (
+                            <Card key={doc._id} className="border-slate-200 overflow-hidden shadow-sm transition-all rounded-2xl">
+                                <div className={`h-2 w-full ${doc.sessionStarted ? "bg-emerald-500" : "bg-slate-300"}`}></div>
+                                <CardHeader className="bg-slate-50/60 border-b border-slate-100 p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                                    <div className="flex items-center gap-3 sm:gap-4 min-w-0">
+                                        <div className="h-12 w-12 sm:h-14 sm:w-14 bg-white border border-slate-200 shadow-sm rounded-full flex items-center justify-center font-bold text-slate-600 overflow-hidden shrink-0">
+                                            {doc.profileImage ? <img src={doc.profileImage} alt="" className="w-full h-full object-cover" /> : doc.name.charAt(0)}
+                                        </div>
+                                        <div className="min-w-0">
+                                            <CardTitle className="text-lg sm:text-xl text-slate-800 font-bold truncate">{doc.name}</CardTitle>
+                                            <CardDescription className="text-xs sm:text-sm font-semibold text-slate-500 truncate">
+                                                {doc.specialization} • Room: {doc.allocatedRoom || "Unassigned"}
+                                            </CardDescription>
+                                        </div>
                                     </div>
-                                    <div>
-                                        <CardTitle className="text-xl text-slate-800 font-bold">{doc.name}</CardTitle>
-                                        <CardDescription className="text-sm font-semibold text-slate-500">
-                                            {doc.specialization} • Room: {doc.allocatedRoom || "Unassigned"}
-                                        </CardDescription>
-                                    </div>
-                                </div>
 
-                                <div className="text-right flex flex-col sm:flex-row items-end sm:items-center gap-2">
-                                    {!doc.isArrived ? (
-                                        <div className="flex items-center gap-2">
-                                            <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200 flex gap-1">
-                                                <AlertCircle className="h-3.5 w-3.5" /> Doctor Not Arrived
-                                            </Badge>
-                                            <Button
-                                                size="sm"
-                                                disabled={saving[doc._id]}
-                                                onClick={() => handleToggleDoctorArrival(doc)}
-                                                className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold h-8 px-3 rounded-lg text-xs shadow-sm flex items-center gap-1"
-                                            >
-                                                {saving[doc._id] ? <Loader2 className="h-3 w-3 animate-spin" /> : "Check In"}
-                                            </Button>
-                                        </div>
-                                    ) : doc.sessionStarted ? (
-                                        <div className="bg-emerald-50 text-emerald-700 px-4 py-1.5 rounded-full text-sm font-bold border border-emerald-200 animate-pulse">
-                                            Session Active
-                                        </div>
-                                    ) : doc.sessionEndedToday ? (
-                                        <div className="bg-rose-50 text-rose-700 px-4 py-1.5 rounded-full text-sm font-bold border border-rose-200">
-                                            Session Ended
-                                        </div>
-                                    ) : (
-                                        <div className="flex items-center gap-2">
-                                            <div className="bg-emerald-50 text-emerald-700 px-3 py-1 rounded-full text-xs font-bold border border-emerald-200 flex items-center gap-1">
-                                                <span className="h-2 w-2 rounded-full bg-emerald-500"></span> Arrived
+                                    <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto shrink-0">
+                                        {!doc.isArrived ? (
+                                            <div className="flex items-center gap-2">
+                                                <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200 flex gap-1 text-[11px] font-bold">
+                                                    <AlertCircle className="h-3.5 w-3.5 shrink-0" /> Doctor Not Arrived
+                                                </Badge>
+                                                <Button
+                                                    size="sm"
+                                                    disabled={saving[doc._id]}
+                                                    onClick={() => handleToggleDoctorArrival(doc)}
+                                                    className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold h-8 px-3 rounded-lg text-xs shadow-sm flex items-center gap-1 active:scale-95"
+                                                >
+                                                    {saving[doc._id] ? <Loader2 className="h-3 w-3 animate-spin" /> : "Check In"}
+                                                </Button>
                                             </div>
-                                            <Button
-                                                size="sm"
-                                                variant="ghost"
-                                                disabled={saving[doc._id]}
-                                                onClick={() => handleToggleDoctorArrival(doc)}
-                                                className="text-slate-400 hover:text-rose-600 h-7 px-2 text-[11px]"
-                                            >
-                                                Mark Away
-                                            </Button>
-                                        </div>
-                                    )}
-                                </div>
-                            </CardHeader>
+                                        ) : doc.sessionStarted ? (
+                                            <div className="bg-emerald-50 text-emerald-700 px-3.5 py-1.5 rounded-full text-xs font-bold border border-emerald-200 animate-pulse">
+                                                Session Active
+                                            </div>
+                                        ) : doc.sessionEndedToday ? (
+                                            <div className="bg-rose-50 text-rose-700 px-3.5 py-1.5 rounded-full text-xs font-bold border border-rose-200">
+                                                Session Ended
+                                            </div>
+                                        ) : (
+                                            <div className="flex items-center gap-2">
+                                                <div className="bg-emerald-50 text-emerald-700 px-3 py-1 rounded-full text-xs font-bold border border-emerald-200 flex items-center gap-1.5">
+                                                    <span className="h-2 w-2 rounded-full bg-emerald-500"></span> Arrived
+                                                </div>
+                                                <Button
+                                                    size="sm"
+                                                    variant="ghost"
+                                                    disabled={saving[doc._id]}
+                                                    onClick={() => handleToggleDoctorArrival(doc)}
+                                                    className="text-slate-500 hover:text-rose-600 h-8 px-2 text-xs font-semibold"
+                                                >
+                                                    Mark Away
+                                                </Button>
+                                            </div>
+                                        )}
+                                    </div>
+                                </CardHeader>
 
-                            <CardContent className="p-6 md:p-8 flex flex-col md:flex-row items-center justify-between gap-8">
-                                <div className="flex-1 w-full border-r-0 md:border-r border-slate-200 pr-0 md:pr-8 space-y-4 text-center md:text-left">
-                                    <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-2">Session Control</h3>
+                            <CardContent className="p-4 sm:p-6 grid grid-cols-1 md:grid-cols-2 items-center gap-6 md:gap-8">
+                                <div className="border-b md:border-b-0 md:border-r border-slate-200 pb-5 md:pb-0 md:pr-6 space-y-3 sm:space-y-4 text-center md:text-left">
+                                    <h3 className="text-xs sm:text-sm font-bold text-slate-400 uppercase tracking-wider mb-1 sm:mb-2">Session Control</h3>
 
                                     {doc.sessionStarted ? (
                                         <Button
@@ -678,23 +682,23 @@ export default function NurseQueueDashboard() {
                                             }}
                                             disabled={saving[doc._id]}
                                             variant="destructive"
-                                            className="w-full md:w-auto font-bold h-12 px-6"
+                                            className="w-full md:w-auto font-bold h-11 sm:h-12 px-6 rounded-xl shadow-sm active:scale-95"
                                         >
-                                            {saving[doc._id] ? <Loader2 className="animate-spin h-5 w-5 mx-auto" /> : <><Square className="mr-2 h-5 w-5" /> End Session</>}
+                                            {saving[doc._id] ? <Loader2 className="animate-spin h-5 w-5 mx-auto" /> : <><Square className="mr-2 h-4 w-4 sm:h-5 sm:w-5" /> End Session</>}
                                         </Button>
                                     ) : (
                                         <div className="space-y-2">
                                             <Button
                                                 onClick={() => handleUpdateDoctor(doc, { sessionStarted: true, currentQueueNumber: 1 }, "start")}
                                                 disabled={saving[doc._id] || !doc.isArrived || doc.sessionEndedToday}
-                                                className={`w-full md:w-auto font-bold h-12 px-8 shadow-md ${(!doc.isArrived || doc.sessionEndedToday) ? 'bg-slate-300' : 'bg-blue-600 hover:bg-blue-700'}`}
+                                                className={`w-full md:w-auto font-bold h-11 sm:h-12 px-6 sm:px-8 rounded-xl shadow-md active:scale-95 ${(!doc.isArrived || doc.sessionEndedToday) ? 'bg-slate-300' : 'bg-cyan-600 hover:bg-cyan-700 text-white'}`}
                                             >
-                                                {saving[doc._id] ? <Loader2 className="animate-spin h-5 w-5 mx-auto" /> : <><Play className="mr-2 h-5 w-5 fill-white" /> Start Session</>}
+                                                {saving[doc._id] ? <Loader2 className="animate-spin h-5 w-5 mx-auto" /> : <><Play className="mr-2 h-4 w-4 sm:h-5 sm:w-5 fill-white" /> Start Session</>}
                                             </Button>
                                             {doc.sessionEndedToday ? (
                                                 <p className="text-[11px] text-rose-600 font-bold italic">Session has already been completed today and cannot be restarted.</p>
                                             ) : !doc.isArrived ? (
-                                                <div className="flex items-center gap-2">
+                                                <div className="flex flex-wrap items-center justify-center md:justify-start gap-1.5">
                                                     <p className="text-[11px] text-amber-600 font-bold italic">Doctor must be checked in to start session.</p>
                                                     <button
                                                         type="button"
@@ -710,22 +714,22 @@ export default function NurseQueueDashboard() {
                                 </div>
 
                                 {/* Right Side: Queue Counter */}
-                                <div className="flex-1 w-full pl-0 md:pl-4 text-center">
-                                    <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-4">Current Patient Queue</h3>
+                                <div className="pl-0 md:pl-4 text-center">
+                                    <h3 className="text-xs sm:text-sm font-bold text-slate-400 uppercase tracking-wider mb-3">Current Patient Queue</h3>
 
-                                    <div className={`inline-flex items-center gap-6 p-4 rounded-3xl ${doc.sessionStarted ? 'bg-slate-50 border border-slate-200' : 'opacity-40 pointer-events-none'}`}>
+                                    <div className={`inline-flex items-center justify-center gap-4 sm:gap-6 p-3 sm:p-4 rounded-3xl ${doc.sessionStarted ? 'bg-slate-50 border border-slate-200 shadow-sm' : 'opacity-40 pointer-events-none'}`}>
                                         <Button
                                             onClick={() => handleUpdateDoctor(doc, { currentQueueNumber: Math.max(0, (doc.currentQueueNumber || 0) - 1) }, "decrement")}
                                             variant="outline"
                                             size="icon"
-                                            className="h-14 w-14 rounded-full border-2 border-slate-200 hover:bg-slate-100"
+                                            className="h-12 w-12 sm:h-14 sm:w-14 rounded-full border-2 border-slate-200 hover:bg-slate-100 active:scale-95 shrink-0"
                                             disabled={!doc.sessionStarted || saving[doc._id]}
                                         >
-                                            <Minus className="h-6 w-6 text-slate-600" />
+                                            <Minus className="h-5 w-5 sm:h-6 sm:w-6 text-slate-600" />
                                         </Button>
 
-                                        <div className="w-24 text-center">
-                                            <span className="text-6xl font-black text-slate-800 tracking-tighter">
+                                        <div className="w-20 sm:w-24 text-center">
+                                            <span className="text-5xl sm:text-6xl font-black text-slate-800 tracking-tighter">
                                                 {doc.currentQueueNumber || 0}
                                             </span>
                                         </div>
@@ -736,14 +740,14 @@ export default function NurseQueueDashboard() {
                                                 const currentApptId = getActiveAppointmentId(doc._id, doc.currentQueueNumber);
                                                 handleUpdateDoctor(doc, { currentQueueNumber: nextQ }, "complete", currentApptId);
                                             }}
-                                            className="h-14 w-14 rounded-full bg-slate-900 hover:bg-slate-800 text-white shadow-lg shadow-slate-200"
+                                            className="h-12 w-12 sm:h-14 sm:w-14 rounded-full bg-slate-900 hover:bg-slate-800 text-white shadow-lg shadow-slate-200 active:scale-95 shrink-0"
                                             size="icon"
                                             disabled={!doc.sessionStarted || saving[doc._id]}
                                         >
-                                            <Plus className="h-6 w-6" />
+                                            <Plus className="h-5 w-5 sm:h-6 sm:w-6" />
                                         </Button>
                                     </div>
-                                    <p className="text-xs font-semibold text-slate-400 mt-4">
+                                    <p className="text-xs font-semibold text-slate-400 mt-3">
                                       Update Number for Next Patient {getMaxQueueNumber(doc._id) > 0 ? `(Scheduled: ${getMaxQueueNumber(doc._id)})` : ''}
                                     </p>
                                 </div>
@@ -754,38 +758,38 @@ export default function NurseQueueDashboard() {
                                 const todayDoctorAppts = getDoctorTodayAppointments(doc._id);
                                 const activeAppt = getActiveAppointment(doc._id, doc.currentQueueNumber);
                                 return (
-                                    <div className="border-t border-slate-100 bg-slate-50/50 p-6 md:p-8 space-y-6">
-                                        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                                    <div className="border-t border-slate-100 bg-slate-50/50 p-4 sm:p-6 md:p-7 space-y-5">
+                                        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
                                             <div>
                                                 <span className="text-xs font-bold text-cyan-600 uppercase tracking-widest">
                                                     {doc.sessionStarted ? "Currently Serving" : "Next / Selected Patient in Queue"}
                                                 </span>
                                                 {activeAppt ? (
                                                     <div className="mt-1">
-                                                        <h4 className="text-xl font-bold text-slate-800 flex items-center gap-2">
-                                                            {activeAppt.patientId?.fullName || "Walk-in Patient"}
+                                                        <h4 className="text-lg sm:text-xl font-bold text-slate-800 flex items-center gap-2 flex-wrap">
+                                                            <span>{activeAppt.patientId?.fullName || "Walk-in Patient"}</span>
                                                             <Badge className="bg-slate-200 text-slate-700 font-bold text-xs hover:bg-slate-200">
                                                                 Token #{activeAppt.queueNumber || activeAppt.effectiveQueueNumber}
                                                             </Badge>
                                                         </h4>
-                                                        <p className="text-xs text-slate-500 mt-1">
+                                                        <p className="text-xs text-slate-500 mt-0.5">
                                                             Patient ID: <span className="font-semibold text-slate-700">{activeAppt.patientId?.patientId || activeAppt.patientId?._id?.substring(0, 8) || "N/A"}</span>
                                                         </p>
                                                     </div>
                                                 ) : (
                                                     <div className="mt-1">
-                                                        <h4 className="text-lg font-bold text-slate-500 italic">No patient currently scheduled for today</h4>
+                                                        <h4 className="text-base sm:text-lg font-bold text-slate-500 italic">No patient currently scheduled for today</h4>
                                                         <p className="text-xs text-slate-400 mt-0.5">Patients with appointments today will appear below.</p>
                                                     </div>
                                                 )}
                                             </div>
 
                                             {activeAppt && (
-                                                <div className="flex flex-wrap gap-2.5">
+                                                <div className="flex flex-wrap gap-2">
                                                     <Button 
                                                         variant="outline" 
                                                         size="sm"
-                                                        className="bg-white border-slate-200 text-slate-700 font-semibold text-xs hover:bg-slate-50 flex items-center gap-1.5 h-9 rounded-lg"
+                                                        className="bg-white border-slate-200 text-slate-700 font-bold text-xs hover:bg-slate-50 flex items-center gap-1.5 h-9 px-3 rounded-xl shadow-sm active:scale-95"
                                                         onClick={() => {
                                                             const patId = activeAppt.patientId?._id || activeAppt.patientId;
                                                             setSelectedPatient({
@@ -806,7 +810,7 @@ export default function NurseQueueDashboard() {
                                                     <Button 
                                                         variant="outline" 
                                                         size="sm"
-                                                        className="bg-white border-slate-200 text-slate-700 font-semibold text-xs hover:bg-slate-50 flex items-center gap-1.5 h-9 rounded-lg"
+                                                        className="bg-white border-slate-200 text-slate-700 font-bold text-xs hover:bg-slate-50 flex items-center gap-1.5 h-9 px-3 rounded-xl shadow-sm active:scale-95"
                                                         onClick={() => {
                                                             setEditingRecordId(null);
                                                             setNewRecordData({
@@ -835,7 +839,7 @@ export default function NurseQueueDashboard() {
                                                     <Button 
                                                         variant="outline" 
                                                         size="sm"
-                                                        className="bg-white border-slate-200 text-slate-700 font-semibold text-xs hover:bg-slate-50 flex items-center gap-1.5 h-9 rounded-lg"
+                                                        className="bg-white border-slate-200 text-slate-700 font-bold text-xs hover:bg-slate-50 flex items-center gap-1.5 h-9 px-3 rounded-xl shadow-sm active:scale-95"
                                                         onClick={() => {
                                                             const patId = activeAppt.patientId?._id || activeAppt.patientId;
                                                             setSelectedPatient({
@@ -856,31 +860,31 @@ export default function NurseQueueDashboard() {
                                         </div>
 
                                         {/* Full Today's Queue List for this Doctor with Quick Clinical Actions */}
-                                        <div className="pt-4 border-t border-slate-100">
-                                            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-widest block mb-3 font-semibold">Today&apos;s Patients in Queue</span>
+                                        <div className="pt-3 border-t border-slate-100">
+                                            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-widest block mb-2.5">Today&apos;s Patients in Queue</span>
                                             {todayDoctorAppts.length === 0 ? (
                                                 <p className="text-xs text-slate-400 italic">No appointments scheduled for this doctor today.</p>
                                             ) : (
-                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+                                                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2.5">
                                                     {todayDoctorAppts.map(appt => {
                                                         const patId = appt.patientId?._id || appt.patientId;
                                                         const isCurrent = activeAppt && activeAppt._id === appt._id;
                                                         return (
-                                                            <div key={appt._id} className={`bg-white border rounded-xl px-3.5 py-2.5 flex items-center justify-between gap-2 text-xs transition-all ${isCurrent ? 'border-cyan-400 ring-1 ring-cyan-100' : 'border-slate-200/80'}`}>
-                                                                <div className="flex items-center gap-2.5 min-w-0">
-                                                                    <span className={`font-black h-6 w-6 rounded-full flex items-center justify-center text-[11px] shrink-0 ${isCurrent ? 'bg-cyan-600 text-white' : 'bg-slate-100 text-slate-700'}`}>
+                                                            <div key={appt._id} className={`bg-white border rounded-xl p-2.5 sm:p-3 flex items-center justify-between gap-2 text-xs transition-all ${isCurrent ? 'border-cyan-400 ring-2 ring-cyan-100 shadow-sm' : 'border-slate-200/80 hover:border-slate-300'}`}>
+                                                                <div className="flex items-center gap-2 min-w-0">
+                                                                    <span className={`font-black h-6 w-6 sm:h-7 sm:w-7 rounded-full flex items-center justify-center text-[11px] shrink-0 ${isCurrent ? 'bg-cyan-600 text-white shadow-sm' : 'bg-slate-100 text-slate-700'}`}>
                                                                         {appt.queueNumber || appt.effectiveQueueNumber}
                                                                     </span>
                                                                     <div className="min-w-0">
-                                                                        <p className="font-bold text-slate-800 truncate">{appt.patientId?.fullName || "Walk-in"}</p>
-                                                                        <p className="text-[10px] text-slate-400 mt-0.5">ID: {appt.patientId?.patientId || appt.patientId?._id?.substring(0, 8) || "N/A"}</p>
+                                                                        <p className="font-bold text-slate-800 truncate text-xs sm:text-sm">{appt.patientId?.fullName || "Walk-in"}</p>
+                                                                        <p className="text-[10px] text-slate-400 mt-0.5 truncate">ID: {appt.patientId?.patientId || appt.patientId?._id?.substring(0, 8) || "N/A"}</p>
                                                                     </div>
                                                                 </div>
                                                                 <div className="flex items-center gap-1 shrink-0">
                                                                     <Button
                                                                         variant="ghost"
                                                                         size="sm"
-                                                                        className="h-7 px-2 text-[11px] font-semibold text-slate-600 hover:text-cyan-700 hover:bg-cyan-50"
+                                                                        className="h-7 px-2 text-[11px] font-bold text-slate-600 hover:text-cyan-700 hover:bg-cyan-50"
                                                                         onClick={() => {
                                                                             setSelectedPatient({
                                                                                 id: patId,
@@ -893,12 +897,12 @@ export default function NurseQueueDashboard() {
                                                                             setIsMedicalBookOpen(true);
                                                                         }}
                                                                     >
-                                                                        <BookOpen className="h-3.5 w-3.5 mr-1" /> Book
+                                                                        <BookOpen className="h-3.5 w-3.5 mr-1 text-slate-400" /> Book
                                                                     </Button>
                                                                     <Button
                                                                         variant="ghost"
                                                                         size="sm"
-                                                                        className="h-7 px-2 text-[11px] font-semibold text-slate-600 hover:text-cyan-700 hover:bg-cyan-50"
+                                                                        className="h-7 px-2 text-[11px] font-bold text-slate-600 hover:text-cyan-700 hover:bg-cyan-50"
                                                                         onClick={() => {
                                                                             setEditingRecordId(null);
                                                                             setNewRecordData({
@@ -920,12 +924,12 @@ export default function NurseQueueDashboard() {
                                                                             setIsNewRecordOpen(true);
                                                                         }}
                                                                     >
-                                                                        <Plus className="h-3.5 w-3.5 mr-1" /> Record
+                                                                        <Plus className="h-3.5 w-3.5 mr-1 text-slate-400" /> Record
                                                                     </Button>
                                                                     <Button
                                                                         variant="ghost"
                                                                         size="sm"
-                                                                        className="h-7 px-2 text-[11px] font-semibold text-slate-600 hover:text-cyan-700 hover:bg-cyan-50"
+                                                                        className="h-7 px-2 text-[11px] font-bold text-slate-600 hover:text-cyan-700 hover:bg-cyan-50"
                                                                         onClick={() => {
                                                                             setSelectedPatient({
                                                                                 id: patId,
@@ -937,7 +941,7 @@ export default function NurseQueueDashboard() {
                                                                             setIsLabRequestOpen(true);
                                                                         }}
                                                                     >
-                                                                        <Activity className="h-3.5 w-3.5 mr-1" /> Lab
+                                                                        <Activity className="h-3.5 w-3.5 mr-1 text-slate-400" /> Lab
                                                                     </Button>
                                                                 </div>
                                                             </div>
@@ -956,17 +960,17 @@ export default function NurseQueueDashboard() {
 
             {/* MEDICAL BOOK MODAL */}
             {isMedicalBookOpen && selectedPatient && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
-                    <div className="bg-white rounded-2xl shadow-xl w-full max-w-4xl max-h-[85vh] overflow-hidden flex flex-col">
-                        <div className="p-6 border-b border-slate-100 flex flex-wrap justify-between items-center gap-3 bg-slate-50/50">
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[92vh] sm:max-h-[85vh] overflow-hidden flex flex-col">
+                        <div className="p-3.5 sm:p-5 border-b border-slate-100 flex flex-wrap justify-between items-center gap-2.5 bg-slate-50/60">
                             <div>
-                                <h3 className="text-xl font-bold text-slate-800">Patient Medical Book</h3>
-                                <p className="text-xs text-slate-500 mt-1">Viewing records for <span className="font-semibold text-slate-700">{selectedPatient.fullName}</span> • On behalf of <span className="font-semibold text-cyan-700">{selectedPatient.doctorName}</span></p>
+                                <h3 className="text-lg sm:text-xl font-bold text-slate-800">Patient Medical Book</h3>
+                                <p className="text-xs text-slate-500 mt-0.5">Viewing records for <span className="font-semibold text-slate-700">{selectedPatient.fullName}</span> • On behalf of <span className="font-semibold text-cyan-700">{selectedPatient.doctorName}</span></p>
                             </div>
                             <div className="flex items-center gap-2">
                                 <Button
                                     size="sm"
-                                    className="bg-cyan-600 hover:bg-cyan-700 text-white text-xs font-bold h-8 px-3 rounded-lg"
+                                    className="bg-cyan-600 hover:bg-cyan-700 text-white text-xs font-bold h-8 px-3 rounded-lg active:scale-95 shadow-sm"
                                     onClick={() => {
                                         setEditingRecordId(null);
                                         setNewRecordData({
@@ -987,7 +991,7 @@ export default function NurseQueueDashboard() {
                                 <Button
                                     size="sm"
                                     variant="outline"
-                                    className="border-slate-200 text-slate-700 text-xs font-bold h-8 px-3 rounded-lg"
+                                    className="border-slate-200 text-slate-700 text-xs font-bold h-8 px-3 rounded-lg active:scale-95"
                                     onClick={() => {
                                         fetchLabRequests(selectedPatient.id);
                                         setIsLabRequestOpen(true);
@@ -1001,7 +1005,7 @@ export default function NurseQueueDashboard() {
                             </div>
                         </div>
                         
-                        <div className="flex-1 overflow-y-auto p-6 space-y-4">
+                        <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4">
                             {loadingRecords ? (
                                 <div className="flex flex-col items-center justify-center py-20 text-slate-400">
                                     <Loader2 className="animate-spin h-8 w-8 mb-2 text-cyan-600" />
@@ -1013,22 +1017,22 @@ export default function NurseQueueDashboard() {
                                     <p className="text-sm font-medium">This patient does not have any medical records yet.</p>
                                 </div>
                             ) : (
-                                <div className="space-y-4">
+                                <div className="space-y-3.5">
                                     {medicalRecords.map((rec) => (
-                                        <Card key={rec._id} className="border-slate-100 shadow-none bg-slate-50/30">
-                                            <CardContent className="p-5 space-y-3">
-                                                <div className="flex justify-between items-start">
+                                        <Card key={rec._id} className="border-slate-100 shadow-none bg-slate-50/40 rounded-xl">
+                                            <CardContent className="p-4 sm:p-5 space-y-3">
+                                                <div className="flex justify-between items-start flex-wrap gap-2">
                                                     <div>
-                                                        <Badge className="bg-cyan-50 text-cyan-700 border-cyan-100 hover:bg-cyan-50 capitalize">
+                                                        <Badge className="bg-cyan-50 text-cyan-700 border-cyan-100 hover:bg-cyan-50 capitalize text-[10px] font-bold">
                                                             {rec.type?.replace('_', ' ')}
                                                         </Badge>
-                                                        <h4 className="font-bold text-slate-800 text-lg mt-1">{rec.title}</h4>
+                                                        <h4 className="font-bold text-slate-800 text-base sm:text-lg mt-0.5">{rec.title}</h4>
                                                     </div>
                                                     <div className="flex items-center gap-2">
                                                         <Button
                                                             variant="outline"
                                                             size="sm"
-                                                            className="h-7 px-2.5 text-xs font-bold text-cyan-700 border-cyan-200 hover:bg-cyan-50"
+                                                            className="h-7 px-2.5 text-xs font-bold text-cyan-700 border-cyan-200 hover:bg-cyan-50 active:scale-95"
                                                             onClick={() => openEditRecordModal(rec)}
                                                         >
                                                             Update Record
@@ -1039,37 +1043,37 @@ export default function NurseQueueDashboard() {
                                                     </div>
                                                 </div>
                                                 
-                                                <div className="text-sm text-slate-600 whitespace-pre-line space-y-2">
+                                                <div className="text-xs sm:text-sm text-slate-600 whitespace-pre-line space-y-2">
                                                     {rec.description && (
                                                         <div>
-                                                            <span className="font-bold text-slate-500 block text-xs uppercase tracking-wider">Notes/Description:</span>
+                                                            <span className="font-bold text-slate-500 block text-[11px] uppercase tracking-wider">Notes/Description:</span>
                                                             <p className="mt-0.5">{rec.description}</p>
                                                         </div>
                                                     )}
                                                     {rec.diagnosis && (
                                                         <div>
-                                                            <span className="font-bold text-slate-500 block text-xs uppercase tracking-wider">Diagnosis:</span>
-                                                            <p className="mt-0.5 text-rose-600 font-medium">{rec.diagnosis}</p>
+                                                            <span className="font-bold text-slate-500 block text-[11px] uppercase tracking-wider">Diagnosis:</span>
+                                                            <p className="mt-0.5 text-rose-600 font-semibold">{rec.diagnosis}</p>
                                                         </div>
                                                     )}
                                                     {rec.medications && (
                                                         <div>
-                                                            <span className="font-bold text-slate-500 block text-xs uppercase tracking-wider">Prescribed Medications:</span>
-                                                            <p className="mt-0.5 text-emerald-600 font-medium whitespace-pre-wrap">{rec.medications}</p>
+                                                            <span className="font-bold text-slate-500 block text-[11px] uppercase tracking-wider">Prescribed Medications:</span>
+                                                            <p className="mt-0.5 text-emerald-600 font-semibold whitespace-pre-wrap">{rec.medications}</p>
                                                         </div>
                                                     )}
                                                 </div>
                                                 
-                                                <div className="pt-3 border-t border-slate-100/60 flex justify-between items-center text-xs">
-                                                    <span className="text-slate-400 font-medium">
-                                                        Uploaded/Entered by: <span className="font-semibold text-slate-600">{rec.doctorName || "Unknown"}</span>
+                                                <div className="pt-2.5 border-t border-slate-100/60 flex flex-wrap justify-between items-center gap-2 text-xs">
+                                                    <span className="text-slate-400 font-medium text-[11px]">
+                                                        Entered by: <span className="font-semibold text-slate-600">{rec.doctorName || "Unknown"}</span>
                                                     </span>
                                                     {rec.fileType && (
-                                                        <div className="flex gap-2">
+                                                        <div className="flex gap-1.5">
                                                             <Button 
                                                                 variant="ghost" 
                                                                 size="sm" 
-                                                                className="text-cyan-600 hover:text-cyan-700 font-bold hover:bg-cyan-50 flex items-center gap-1 h-8 px-3 rounded-lg text-xs"
+                                                                className="text-cyan-600 hover:text-cyan-700 font-bold hover:bg-cyan-50 flex items-center gap-1 h-7 px-2.5 rounded-lg text-xs"
                                                                 onClick={() => togglePreview(rec._id)}
                                                             >
                                                                 {showPreviews[rec._id] ? "Hide Preview" : "Show Preview"}
@@ -1077,7 +1081,7 @@ export default function NurseQueueDashboard() {
                                                             <Button 
                                                                 variant="ghost" 
                                                                 size="sm" 
-                                                                className="text-cyan-600 hover:text-cyan-700 font-bold hover:bg-cyan-50 flex items-center gap-1 h-8 px-3 rounded-lg text-xs"
+                                                                className="text-cyan-600 hover:text-cyan-700 font-bold hover:bg-cyan-50 flex items-center gap-1 h-7 px-2.5 rounded-lg text-xs"
                                                                 onClick={() => handleDownload(rec._id, rec.title)}
                                                             >
                                                                 <Download className="h-3.5 w-3.5" /> Download
@@ -1088,10 +1092,10 @@ export default function NurseQueueDashboard() {
 
                                                 {/* Inline File Preview Panel */}
                                                 {showPreviews[rec._id] && (
-                                                    <div className="mt-4 pt-4 border-t border-slate-100/60">
+                                                    <div className="mt-3 pt-3 border-t border-slate-100/60">
                                                         {loadingPreviews[rec._id] ? (
-                                                            <div className="flex items-center gap-2 text-xs text-slate-400 py-4 justify-center">
-                                                                <Loader2 className="animate-spin h-4 w-4 text-cyan-600 animate-spin" />
+                                                            <div className="flex items-center gap-2 text-xs text-slate-400 py-3 justify-center">
+                                                                <Loader2 className="animate-spin h-4 w-4 text-cyan-600" />
                                                                 <span>Loading preview...</span>
                                                             </div>
                                                         ) : previews[rec._id] ? (
@@ -1102,12 +1106,12 @@ export default function NurseQueueDashboard() {
                                                                     if (preview.fileType.startsWith("image/")) {
                                                                         return (
                                                                             <div className="border border-slate-200/80 rounded-xl overflow-hidden bg-slate-100/30 flex items-center justify-center p-2">
-                                                                                <img src={src} alt={rec.title} className="max-w-full max-h-[500px] object-contain rounded-lg" />
+                                                                                <img src={src} alt={rec.title} className="max-w-full max-h-[300px] sm:max-h-[450px] object-contain rounded-lg" />
                                                                             </div>
                                                                         );
                                                                     } else if (preview.fileType === "application/pdf") {
                                                                         return (
-                                                                            <div className="border border-slate-200/80 rounded-xl overflow-hidden h-[500px]">
+                                                                            <div className="border border-slate-200/80 rounded-xl overflow-hidden h-[300px] sm:h-[450px]">
                                                                                 <iframe src={src} className="w-full h-full border-0" title={rec.title}></iframe>
                                                                             </div>
                                                                         );
@@ -1129,8 +1133,8 @@ export default function NurseQueueDashboard() {
                             )}
                         </div>
                         
-                        <div className="p-4 border-t border-slate-100 flex justify-end bg-slate-50/50">
-                            <Button onClick={() => setIsMedicalBookOpen(false)} className="bg-slate-800 hover:bg-slate-900 text-white font-bold px-5">
+                        <div className="p-3 sm:p-4 border-t border-slate-100 flex justify-end bg-slate-50/50">
+                            <Button onClick={() => setIsMedicalBookOpen(false)} className="bg-slate-800 hover:bg-slate-900 text-white font-bold px-5 rounded-xl h-9 text-xs sm:text-sm">
                                 Close
                             </Button>
                         </div>
@@ -1140,14 +1144,14 @@ export default function NurseQueueDashboard() {
 
             {/* ADD / UPDATE MEDICAL RECORD MODAL */}
             {isNewRecordOpen && selectedPatient && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
-                    <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
-                        <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[92vh] sm:max-h-[90vh] overflow-hidden flex flex-col">
+                        <div className="p-3.5 sm:p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50/60">
                             <div>
-                                <h3 className="text-xl font-bold text-slate-800">
+                                <h3 className="text-lg sm:text-xl font-bold text-slate-800">
                                     {editingRecordId ? "Update Patient Medical Record" : "Add Patient Medical Record"}
                                 </h3>
-                                <p className="text-xs text-slate-500 mt-1">
+                                <p className="text-xs text-slate-500 mt-0.5">
                                     {editingRecordId ? "Updating record for " : "Entering record for "}
                                     <span className="font-semibold text-slate-700">{selectedPatient.fullName}</span> on behalf of <span className="font-semibold text-cyan-700">{selectedPatient.doctorName}</span>
                                 </p>
@@ -1157,8 +1161,8 @@ export default function NurseQueueDashboard() {
                             </button>
                         </div>
                         
-                        <form onSubmit={handleUploadRecord} className="flex-1 overflow-y-auto p-6 space-y-4">
-                            <div className="grid grid-cols-2 gap-4">
+                        <form onSubmit={handleUploadRecord} className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-3.5">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                                 <div className="space-y-1">
                                     <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Record Title *</label>
                                     <input 
@@ -1184,17 +1188,15 @@ export default function NurseQueueDashboard() {
                                 </div>
                             </div>
 
-                            <div className="grid grid-cols-2 gap-4">
-                                <div className="space-y-1 col-span-2">
-                                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Date *</label>
-                                    <input 
-                                        type="date" 
-                                        required
-                                        className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent" 
-                                        value={newRecordData.date}
-                                        onChange={(e) => setNewRecordData(prev => ({ ...prev, date: e.target.value }))}
-                                    />
-                                </div>
+                            <div className="space-y-1">
+                                <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Date *</label>
+                                <input 
+                                    type="date" 
+                                    required
+                                    className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent" 
+                                    value={newRecordData.date}
+                                    onChange={(e) => setNewRecordData(prev => ({ ...prev, date: e.target.value }))}
+                                />
                             </div>
 
                             <div className="space-y-1">
@@ -1222,7 +1224,7 @@ export default function NurseQueueDashboard() {
                             <div className="space-y-1">
                                 <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Clinical Notes / Description</label>
                                 <textarea 
-                                    rows={3}
+                                    rows={2}
                                     placeholder="Add doctor session summary and clinical notes..."
                                     className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent resize-none" 
                                     value={newRecordData.description}
@@ -1232,8 +1234,8 @@ export default function NurseQueueDashboard() {
 
                             <div className="space-y-1">
                                 <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Attachment (PDF/Image)</label>
-                                <div className="border-2 border-dashed border-slate-200 hover:border-cyan-300 rounded-xl p-4 transition-colors flex flex-col items-center justify-center text-center cursor-pointer relative">
-                                    <UploadCloud className="h-8 w-8 text-slate-400 mb-1" />
+                                <div className="border-2 border-dashed border-slate-200 hover:border-cyan-300 rounded-xl p-3 sm:p-4 transition-colors flex flex-col items-center justify-center text-center cursor-pointer relative">
+                                    <UploadCloud className="h-7 w-7 text-slate-400 mb-1" />
                                     <span className="text-xs text-slate-500 font-medium">
                                         {newRecordData.fileType ? `File selected (${newRecordData.fileType.substring(0, 15)}...)` : "Click to select a file (Max 10MB)"}
                                     </span>
@@ -1246,12 +1248,12 @@ export default function NurseQueueDashboard() {
                                 </div>
                             </div>
 
-                            <div className="p-4 border-t border-slate-100 flex justify-end gap-2 bg-slate-50/50 -mx-6 -mb-6 mt-6">
-                                <Button type="button" variant="outline" onClick={() => { setIsNewRecordOpen(false); setEditingRecordId(null); }} className="border-slate-200 text-slate-700 font-bold px-5">
+                            <div className="p-3 sm:p-4 border-t border-slate-100 flex justify-end gap-2 bg-slate-50/50 -mx-4 sm:-mx-5 -mb-4 sm:-mb-5 mt-4">
+                                <Button type="button" variant="outline" onClick={() => { setIsNewRecordOpen(false); setEditingRecordId(null); }} className="border-slate-200 text-slate-700 font-bold px-4 rounded-xl text-xs sm:text-sm h-9">
                                     Cancel
                                 </Button>
-                                <Button type="submit" disabled={uploadingRecord} className="bg-cyan-600 hover:bg-cyan-700 text-white font-bold px-6 shadow-md shadow-cyan-100">
-                                    {uploadingRecord ? <Loader2 className="animate-spin h-5 w-5" /> : (editingRecordId ? "Save Changes" : "Upload Record")}
+                                <Button type="submit" disabled={uploadingRecord} className="bg-cyan-600 hover:bg-cyan-700 text-white font-bold px-5 rounded-xl shadow-md shadow-cyan-100 text-xs sm:text-sm h-9 active:scale-95">
+                                    {uploadingRecord ? <Loader2 className="animate-spin h-4 w-4" /> : (editingRecordId ? "Save Changes" : "Upload Record")}
                                 </Button>
                             </div>
                         </form>
@@ -1261,22 +1263,22 @@ export default function NurseQueueDashboard() {
 
             {/* LAB REQUESTS MODAL */}
             {isLabRequestOpen && selectedPatient && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
-                    <div className="bg-white rounded-2xl shadow-xl w-full max-w-4xl max-h-[85vh] overflow-hidden flex flex-col">
-                        <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[92vh] sm:max-h-[85vh] overflow-hidden flex flex-col">
+                        <div className="p-3.5 sm:p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50/60">
                             <div>
-                                <h3 className="text-xl font-bold text-slate-800">Lab Request & Reports Manager</h3>
-                                <p className="text-xs text-slate-500 mt-1">Managing lab details for <span className="font-semibold text-slate-700">{selectedPatient.fullName}</span></p>
+                                <h3 className="text-lg sm:text-xl font-bold text-slate-800">Lab Request & Reports Manager</h3>
+                                <p className="text-xs text-slate-500 mt-0.5">Managing lab details for <span className="font-semibold text-slate-700">{selectedPatient.fullName}</span></p>
                             </div>
                             <button onClick={() => setIsLabRequestOpen(false)} className="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-100 transition-colors">
                                 <X className="h-5 w-5" />
                             </button>
                         </div>
                         
-                        <div className="flex-1 overflow-y-auto p-6 grid grid-cols-1 lg:grid-cols-2 gap-8">
+                        <div className="flex-1 overflow-y-auto p-4 sm:p-6 grid grid-cols-1 lg:grid-cols-2 gap-6">
                             {/* Request history (Left side) */}
-                            <div className="space-y-4 border-r-0 lg:border-r border-slate-100 pr-0 lg:pr-8">
-                                <h4 className="font-bold text-slate-800 text-sm uppercase tracking-wider mb-2 font-semibold">Requested Reports</h4>
+                            <div className="space-y-3 border-r-0 lg:border-r border-slate-100 pr-0 lg:pr-6">
+                                <h4 className="font-bold text-slate-800 text-xs uppercase tracking-wider mb-2">Requested Reports</h4>
                                 {loadingLabs ? (
                                     <div className="flex flex-col items-center justify-center py-16 text-slate-400">
                                         <Loader2 className="animate-spin h-8 w-8 mb-2 text-cyan-600" />
@@ -1284,21 +1286,21 @@ export default function NurseQueueDashboard() {
                                     </div>
                                 ) : labRequests.length === 0 ? (
                                     <div className="text-center py-12 text-slate-400 bg-slate-50 rounded-xl border border-dashed border-slate-200">
-                                        <Activity className="h-10 w-10 mx-auto mb-2 text-slate-300" />
+                                        <Activity className="h-9 w-9 mx-auto mb-2 text-slate-300" />
                                         <p className="text-xs font-semibold">No lab requests recorded for this patient.</p>
                                     </div>
                                 ) : (
-                                    <div className="space-y-3 max-h-[50vh] overflow-y-auto pr-2">
+                                    <div className="space-y-2.5 max-h-[35vh] sm:max-h-[45vh] overflow-y-auto pr-1">
                                         {labRequests.map((req) => (
-                                            <Card key={req._id} className="border-slate-100 shadow-none bg-slate-50/30">
-                                                <CardContent className="p-4 space-y-2">
-                                                    <div className="flex justify-between items-start">
-                                                        <h5 className="font-bold text-slate-800 text-sm">{req.title}</h5>
-                                                        <Badge className={
+                                            <Card key={req._id} className="border-slate-100 shadow-none bg-slate-50/40 rounded-xl">
+                                                <CardContent className="p-3.5 space-y-2">
+                                                    <div className="flex justify-between items-start gap-2">
+                                                        <h5 className="font-bold text-slate-800 text-xs sm:text-sm">{req.title}</h5>
+                                                        <Badge className={`text-[10px] font-bold ${
                                                             req.status === 'completed'
                                                             ? "bg-emerald-50 text-emerald-700 border-emerald-100 hover:bg-emerald-50"
                                                             : "bg-amber-50 text-amber-700 border-amber-100 hover:bg-amber-50"
-                                                        }>
+                                                        }`}>
                                                             {req.status}
                                                         </Badge>
                                                     </div>
@@ -1321,7 +1323,7 @@ export default function NurseQueueDashboard() {
                                                                     className="text-cyan-600 hover:text-cyan-700 font-bold hover:bg-cyan-50 flex items-center gap-1 h-7 px-2 rounded-md text-[10px]"
                                                                     onClick={() => handleDownload(req.recordId, req.title)}
                                                                 >
-                                                                    <Download className="h-3.5 w-3.5" /> Download
+                                                                    <Download className="h-3 w-3" /> Download
                                                                 </Button>
                                                             </div>
                                                         )}
@@ -1329,10 +1331,10 @@ export default function NurseQueueDashboard() {
 
                                                     {/* Lab Request Inline Preview */}
                                                     {showPreviews[req.recordId] && (
-                                                        <div className="mt-3 pt-3 border-t border-slate-100/60">
+                                                        <div className="mt-2.5 pt-2.5 border-t border-slate-100/60">
                                                             {loadingPreviews[req.recordId] ? (
                                                                 <div className="flex items-center gap-2 text-[10px] text-slate-400 py-2 justify-center">
-                                                                    <Loader2 className="animate-spin h-3.5 w-3.5 text-cyan-600 animate-spin" />
+                                                                    <Loader2 className="animate-spin h-3.5 w-3.5 text-cyan-600" />
                                                                     <span>Loading preview...</span>
                                                                 </div>
                                                             ) : previews[req.recordId] ? (
@@ -1343,12 +1345,12 @@ export default function NurseQueueDashboard() {
                                                                     if (preview.fileType.startsWith("image/")) {
                                                                         return (
                                                                             <div className="border border-slate-200/80 rounded-lg overflow-hidden bg-slate-100/30 flex items-center justify-center p-1">
-                                                                                <img src={src} alt={req.title} className="max-w-full max-h-64 object-contain rounded-md" />
+                                                                                <img src={src} alt={req.title} className="max-w-full max-h-56 object-contain rounded-md" />
                                                                             </div>
                                                                         );
                                                                     } else if (preview.fileType === "application/pdf") {
                                                                         return (
-                                                                            <div className="border border-slate-200/80 rounded-lg overflow-hidden h-[300px]">
+                                                                            <div className="border border-slate-200/80 rounded-lg overflow-hidden h-[260px] sm:h-[300px]">
                                                                                 <iframe src={src} className="w-full h-full border-0" title={req.title}></iframe>
                                                                             </div>
                                                                         );
@@ -1371,8 +1373,8 @@ export default function NurseQueueDashboard() {
                             </div>
 
                             {/* Request form (Right side) */}
-                            <form onSubmit={handleCreateLabRequest} className="space-y-4">
-                                <h4 className="font-bold text-slate-800 text-sm uppercase tracking-wider mb-2 font-semibold">Request New Lab Report</h4>
+                            <form onSubmit={handleCreateLabRequest} className="space-y-3.5">
+                                <h4 className="font-bold text-slate-800 text-xs uppercase tracking-wider mb-2">Request New Lab Report</h4>
                                 <div className="space-y-1">
                                     <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Test / Report Name *</label>
                                     <input 
@@ -1388,7 +1390,7 @@ export default function NurseQueueDashboard() {
                                 <div className="space-y-1">
                                     <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Instructions / Notes</label>
                                     <textarea 
-                                        rows={4}
+                                        rows={3}
                                         placeholder="Add specific instructions for the lab assistant..."
                                         className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent resize-none" 
                                         value={newLabData.description}
@@ -1396,20 +1398,21 @@ export default function NurseQueueDashboard() {
                                     />
                                 </div>
 
-                                <Button type="submit" disabled={submittingLab} className="w-full bg-cyan-600 hover:bg-cyan-700 text-white font-bold py-2.5 rounded-xl shadow-md shadow-cyan-100 flex items-center justify-center gap-1.5">
+                                <Button type="submit" disabled={submittingLab} className="w-full bg-cyan-600 hover:bg-cyan-700 text-white font-bold py-2.5 rounded-xl shadow-md shadow-cyan-100 flex items-center justify-center gap-1.5 active:scale-95 text-xs sm:text-sm">
                                     {submittingLab ? <Loader2 className="animate-spin h-5 w-5" /> : <><Plus className="h-4 w-4" /> Request Report</>}
                                 </Button>
                             </form>
                         </div>
                         
-                        <div className="p-4 border-t border-slate-100 flex justify-end bg-slate-50/50">
-                            <Button onClick={() => setIsLabRequestOpen(false)} className="bg-slate-800 hover:bg-slate-900 text-white font-bold px-5">
+                        <div className="p-3 sm:p-4 border-t border-slate-100 flex justify-end bg-slate-50/50">
+                            <Button onClick={() => setIsLabRequestOpen(false)} className="bg-slate-800 hover:bg-slate-900 text-white font-bold px-5 rounded-xl h-9 text-xs sm:text-sm">
                                 Close
                             </Button>
                         </div>
                     </div>
                 </div>
             )}
+            </main>
         </div>
     );
 }
