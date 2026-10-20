@@ -27,7 +27,9 @@ import {
   ChevronRight,
   Activity,
   BarChart3,
-  FileText
+  FileText,
+  Trash2,
+  CheckCheck
 } from 'lucide-react-native';
 
 import BottomNavBar from '../../components/BottomNavBar';
@@ -172,27 +174,68 @@ export default function DashboardScreen() {
   const markAsRead = async (id: string) => {
     try {
       const token = await SecureStore.getItemAsync('token');
+      setNotifications(prev => prev.map(n => n._id === id ? { ...n, read: true } : n));
+      setUnreadCount(prev => Math.max(0, prev - 1));
       await fetch(`${API_BASE}/notifications/read/${id}`, {
         method: 'PUT',
         headers: { Authorization: `Bearer ${token}` }
       });
-      fetchNotifications();
     } catch (error) {
-      console.error(error);
+      console.error("Mark Read Error:", error);
+    }
+  };
+
+  const markAllRead = async () => {
+    try {
+      const token = await SecureStore.getItemAsync('token');
+      setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+      setUnreadCount(0);
+      await fetch(`${API_BASE}/notifications/read-all`, {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+    } catch (error) {
+      console.error("Mark All Read Error:", error);
     }
   };
 
   const deleteNotification = async (id: string) => {
     try {
       const token = await SecureStore.getItemAsync('token');
+      setNotifications(prev => prev.filter(n => n._id !== id));
+      setUnreadCount(prev => Math.max(0, prev - 1));
       await fetch(`${API_BASE}/notifications/${id}`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${token}` }
       });
-      fetchNotifications();
     } catch (error) {
-      console.error(error);
+      console.error("Delete Error:", error);
+      fetchNotifications();
     }
+  };
+
+  const clearAllNotifications = async () => {
+    Alert.alert("Clear All", "Delete all notifications?", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Clear All",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            const token = await SecureStore.getItemAsync('token');
+            setNotifications([]);
+            setUnreadCount(0);
+            await fetch(`${API_BASE}/notifications/clear-all`, {
+              method: 'DELETE',
+              headers: { Authorization: `Bearer ${token}` }
+            });
+          } catch (error) {
+            console.error("Clear All Error:", error);
+            fetchNotifications();
+          }
+        }
+      }
+    ]);
   };
 
   const quickActions = [
@@ -364,9 +407,21 @@ export default function DashboardScreen() {
         <SafeAreaView edges={['top']} style={styles.modalContainer}>
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>Notifications</Text>
-            <TouchableOpacity onPress={() => setShowNotifModal(false)} style={styles.closeBtn}>
-              <X size={24} color="#0f172a" />
-            </TouchableOpacity>
+            <View style={styles.notifHeaderActions}>
+              {notifications.length > 0 && (
+                <>
+                  <TouchableOpacity style={styles.iconButton} onPress={markAllRead}>
+                    <CheckCheck size={20} color="#06b6d4" />
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.iconButton} onPress={clearAllNotifications}>
+                    <Trash2 size={20} color="#ef4444" />
+                  </TouchableOpacity>
+                </>
+              )}
+              <TouchableOpacity onPress={() => setShowNotifModal(false)} style={styles.closeBtn}>
+                <X size={24} color="#0f172a" />
+              </TouchableOpacity>
+            </View>
           </View>
 
           <FlatList
@@ -388,7 +443,7 @@ export default function DashboardScreen() {
                     </View>
                 </TouchableOpacity>
                 <TouchableOpacity style={styles.deleteBtn} onPress={() => deleteNotification(item._id)}>
-                  <X size={16} color="#94a3b8" />
+                  <Trash2 size={18} color="#94a3b8" />
                 </TouchableOpacity>
               </View>
             )}
@@ -497,6 +552,8 @@ const styles = StyleSheet.create({
   modalContainer: { flex: 1, backgroundColor: '#fff' },
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 20, borderBottomWidth: 1, borderBottomColor: '#f1f5f9' },
   modalTitle: { fontSize: 20, fontWeight: '800' },
+  notifHeaderActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  iconButton: { padding: 8, borderRadius: 8, backgroundColor: '#f8fafc' },
   notifCard: { flexDirection: 'row', backgroundColor: '#fff', borderRadius: 16, marginBottom: 12, borderWidth: 1, borderColor: '#f1f5f9' },
   notifUnread: { backgroundColor: '#f0f9ff', borderColor: '#e0f2fe' },
   notifContent: { flex: 1, padding: 16 },

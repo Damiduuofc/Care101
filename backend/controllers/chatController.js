@@ -55,6 +55,8 @@ const cleanResponse = (text) => {
     .replace(/<think>[\s\S]*?<\/think>/gi, '')
     .replace(/^Here's a thinking process:[\s\S]*?\n\n/gi, '')
     .replace(/^Okay, the user is[\s\S]*?\n\n/gi, '')
+    .replace(/^The user is asking[\s\S]*?\n\n/gi, '')
+    .replace(/^(?:\*\s*)?Draft(?:[\s\S]*?):\s*/gi, '')
     // Remove markdown formatting
     .replace(/\*\*/g, '')
     .replace(/\*/g, '')
@@ -97,17 +99,22 @@ const getDoctorInfoString = async () => {
   const doctors = await Doctor.find({}, 'name specialization qualifications').lean();
   const doctorsByDept = {};
   doctors.forEach(doc => {
-    if (!doctorsByDept[doc.specialization]) {
-      doctorsByDept[doc.specialization] = [];
+    const spec = (doc.specialization || 'General Medicine').trim();
+    if (!doctorsByDept[spec]) {
+      doctorsByDept[spec] = [];
     }
-    doctorsByDept[doc.specialization].push(doc);
+    doctorsByDept[spec].push(doc);
   });
 
-  let doctorInfoString = 'AVAILABLE DOCTORS BY DEPARTMENT:\n';
+  let doctorInfoString = 'HOSPITAL DEPARTMENTS & KEY SPECIALISTS:\n';
   if (doctors.length > 0) {
     for (const [dept, doctorList] of Object.entries(doctorsByDept)) {
-      const docListStr = doctorList.map(d => `Dr. ${d.name} (${d.qualifications || 'Consultant'})`).join(', ');
-      doctorInfoString += `${dept}: ${docListStr}\n`;
+      const sample = doctorList.slice(0, 2).map(d => {
+        const cleanName = (d.name || '').replace(/^Dr\.?\s*/i, '').trim();
+        return `Dr. ${cleanName}`;
+      }).join(', ');
+      const extra = doctorList.length > 2 ? ` (+${doctorList.length - 2} more)` : '';
+      doctorInfoString += `- ${dept}: ${sample}${extra}\n`;
     }
   } else {
     doctorInfoString += 'No doctors registered yet.';
@@ -143,19 +150,19 @@ const getScheduleInfoString = async () => {
     scheduleByDoctor[name].push(s);
   }
 
-  let scheduleInfoString = 'DOCTOR CHANNELING SCHEDULES (Next 7 days):\n';
+  let scheduleInfoString = 'UPCOMING CHANNELING SESSIONS:\n';
   if (upcomingSchedules.length === 0) {
-    scheduleInfoString += 'No approved channeling schedules available for the upcoming week.';
+    scheduleInfoString += 'Contact OPD desk for daily channeling schedules.';
   } else {
     for (const [doctorName, sessions] of Object.entries(scheduleByDoctor)) {
-      const sessionList = sessions.map(s => {
+      const sessionList = sessions.slice(0, 2).map(s => {
         const d = formatDate(s.date);
         const start = formatTime(s.startTime);
         const end = formatTime(s.endTime);
-        const queue = s.isUnlimited ? 'unlimited' : `max ${s.queueLimit}`;
-        return `${d} ${start}-${end} (${queue})`;
+        return `${d} ${start}-${end}`;
       }).join('; ');
-      scheduleInfoString += `Dr. ${doctorName}: ${sessionList}\n`;
+      const cleanDoc = doctorName.replace(/^Dr\.?\s*/i, '').trim();
+      scheduleInfoString += `- Dr. ${cleanDoc}: ${sessionList}\n`;
     }
   }
 
@@ -257,11 +264,12 @@ Operating Hours: ${hospitalData.hours.opd} (OPD), ${hospitalData.hours.emergency
       ...recentMessages
     ];
 
-    // Verified fast models from build.nvidia.com/models (with automatic retry for resilience)
+    // Verified fast models from NVIDIA NIM API (ordered for minimum latency and maximum reliability)
     const modelCandidates = [
-      { name: "meta/llama-3.2-11b-vision-instruct", timeout: 12000 },
-      { name: "meta/llama-3.2-11b-vision-instruct", timeout: 14000 },
-      { name: "nvidia/nemotron-3-super-120b-a12b", timeout: 14000 }
+      { name: "google/diffusiongemma-26b-a4b-it", timeout: 5000 },
+      { name: "nvidia/nemotron-3-ultra-550b-a55b", timeout: 6000 },
+      { name: "meta/llama-3.2-11b-vision-instruct", timeout: 6000 },
+      { name: "nvidia/nemotron-3.5-super-vl-120b-a12b", timeout: 7000 }
     ];
 
     let reply = null;
@@ -279,7 +287,15 @@ Operating Hours: ${hospitalData.hours.opd} (OPD), ${hospitalData.hours.emergency
           temperature: 0.2,
         }, { timeout: modelTimeout });
 
-        reply = completion.choices[0]?.message?.content;
+        const choiceMsg = completion.choices[0]?.message;
+        reply = choiceMsg?.content;
+
+        // If content is empty or null, check if reasoning_content has the response
+        if (!reply || reply.trim().length === 0) {
+          if (choiceMsg?.reasoning_content && choiceMsg.reasoning_content.trim().length > 0) {
+            reply = choiceMsg.reasoning_content;
+          }
+        }
 
         if (reply && reply.trim().length > 0) {
           console.log(`[Care101 AI] ✅ Success with model: ${modelName}`);

@@ -16,6 +16,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
+import * as SecureStore from 'expo-secure-store';
 import {
     ChevronRight,
     Calendar,
@@ -360,14 +361,23 @@ export default function PatientDashboardScreen() {
         }
     };
 
+    const getAuthToken = async () => {
+        if (token) return token;
+        return await SecureStore.getItemAsync('token');
+    };
+
     const markAsRead = async (id: string) => {
         try {
+            const authToken = await getAuthToken();
+            setNotifications(prev => prev.map(n => n._id === id ? { ...n, read: true } : n));
+            setUnreadCount(prev => Math.max(0, prev - 1));
             await fetch(`${API_URL}/notifications/read/${id}`, {
                 method: 'PUT',
-                headers: { 'Authorization': `Bearer ${token}` }
+                headers: { 
+                    'Authorization': `Bearer ${authToken}`,
+                    'x-auth-token': authToken || ""
+                }
             });
-            setNotifications(prev => prev.map(n => n._id === id ? { ...n, read: true } : n));
-            fetchUnreadCount();
         } catch (error) {
             console.error("Mark Read Error:", error);
         }
@@ -375,14 +385,19 @@ export default function PatientDashboardScreen() {
 
     const deleteNotification = async (id: string) => {
         try {
+            const authToken = await getAuthToken();
+            setNotifications(prev => prev.filter(n => n._id !== id));
+            setUnreadCount(prev => Math.max(0, prev - 1));
             await fetch(`${API_URL}/notifications/${id}`, {
                 method: 'DELETE',
-                headers: { 'Authorization': `Bearer ${token}` }
+                headers: { 
+                    'Authorization': `Bearer ${authToken}`,
+                    'x-auth-token': authToken || ""
+                }
             });
-            setNotifications(prev => prev.filter(n => n._id !== id));
-            fetchUnreadCount();
         } catch (error) {
             console.error("Delete Error:", error);
+            fetchNotifications(false);
         }
     };
 
@@ -394,13 +409,20 @@ export default function PatientDashboardScreen() {
                 style: "destructive",
                 onPress: async () => {
                     try {
-                        await fetch(`${API_URL}/notifications/clear-all`, {
-                            method: 'DELETE',
-                            headers: { 'Authorization': `Bearer ${token}` }
-                        });
+                        const authToken = await getAuthToken();
                         setNotifications([]);
                         setUnreadCount(0);
-                    } catch (error) { console.error(error); }
+                        await fetch(`${API_URL}/notifications/clear-all`, {
+                            method: 'DELETE',
+                            headers: { 
+                                'Authorization': `Bearer ${authToken}`,
+                                'x-auth-token': authToken || ""
+                            }
+                        });
+                    } catch (error) { 
+                        console.error("Clear All Error:", error);
+                        fetchNotifications(false);
+                    }
                 }
             }
         ]);
@@ -408,13 +430,19 @@ export default function PatientDashboardScreen() {
 
     const markAllRead = async () => {
         try {
-            await fetch(`${API_URL}/notifications/read-all`, {
-                method: 'PUT',
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
+            const authToken = await getAuthToken();
             setNotifications(prev => prev.map(n => ({ ...n, read: true })));
             setUnreadCount(0);
-        } catch (error) { console.error(error); }
+            await fetch(`${API_URL}/notifications/read-all`, {
+                method: 'PUT',
+                headers: { 
+                    'Authorization': `Bearer ${authToken}`,
+                    'x-auth-token': authToken || ""
+                }
+            });
+        } catch (error) { 
+            console.error("Mark All Read Error:", error); 
+        }
     };
 
     // --- FETCH LIVE QUEUE DATA ---

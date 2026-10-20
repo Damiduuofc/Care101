@@ -17,6 +17,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
+import * as SecureStore from 'expo-secure-store';
 import PatientBottomNavBar from '../../components/PatientBottomNavBar';
 import { useAuth } from '@/context/auth';
 
@@ -94,6 +95,47 @@ export default function ProfileScreen() {
     useFocusEffect(
         useCallback(() => { fetchProfile(); }, [])
     );
+
+    const clearAllNotifications = async () => {
+        Alert.alert("Clear All", "Delete all notifications?", [
+            { text: "Cancel", style: "cancel" },
+            {
+                text: "Clear All",
+                style: "destructive",
+                onPress: async () => {
+                    try {
+                        const authToken = token || await SecureStore.getItemAsync('token');
+                        setNotifications([]);
+                        await fetch(`${API_URL}/notifications/clear-all`, {
+                            method: 'DELETE',
+                            headers: { 
+                                'Authorization': `Bearer ${authToken}`,
+                                'x-auth-token': authToken || ""
+                            }
+                        });
+                    } catch (error) {
+                        console.error("Clear All Error:", error);
+                    }
+                }
+            }
+        ]);
+    };
+
+    const deleteNotification = async (id: string) => {
+        try {
+            const authToken = token || await SecureStore.getItemAsync('token');
+            setNotifications(prev => prev.filter(n => n._id !== id));
+            await fetch(`${API_URL}/notifications/${id}`, {
+                method: 'DELETE',
+                headers: { 
+                    'Authorization': `Bearer ${authToken}`,
+                    'x-auth-token': authToken || ""
+                }
+            });
+        } catch (error) {
+            console.error("Delete Error:", error);
+        }
+    };
 
     const onRefresh = async () => {
         setRefreshing(true);
@@ -332,9 +374,16 @@ export default function ProfileScreen() {
                 <SafeAreaView style={styles.modalContainer}>
                     <View style={styles.modalHeader}>
                         <Text style={styles.modalTitle}>Notifications</Text>
-                        <TouchableOpacity onPress={() => setNotifModalVisible(false)}>
-                            <Ionicons name="close" size={24} color="#0f172a" />
-                        </TouchableOpacity>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                            {notifications.length > 0 && (
+                                <TouchableOpacity onPress={clearAllNotifications} style={{ padding: 4 }}>
+                                    <Ionicons name="trash-outline" size={22} color="#ef4444" />
+                                </TouchableOpacity>
+                            )}
+                            <TouchableOpacity onPress={() => setNotifModalVisible(false)} style={{ padding: 4 }}>
+                                <Ionicons name="close" size={24} color="#0f172a" />
+                            </TouchableOpacity>
+                        </View>
                     </View>
                     
                     <FlatList 
@@ -367,6 +416,9 @@ export default function ProfileScreen() {
                                         {new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short' })}
                                     </Text>
                                 </View>
+                                <TouchableOpacity onPress={() => deleteNotification(item._id)} style={{ padding: 8, justifyContent: 'center' }}>
+                                    <Ionicons name="trash-outline" size={18} color="#cbd5e1" />
+                                </TouchableOpacity>
                                 {!item.read && <View style={styles.unreadDot} />}
                             </View>
                         )}
