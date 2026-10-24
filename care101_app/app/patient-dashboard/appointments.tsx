@@ -28,6 +28,7 @@ import {
 } from 'lucide-react-native';
 import { useAuth } from '@/context/auth';
 import { useStripe } from '@stripe/stripe-react-native';
+import { payBill, waitForModalDismiss } from '@/services/billPayment';
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL;
 
@@ -208,94 +209,92 @@ export default function BookAppointmentScreen() {
         }
     };
 
-    const processBooking = useCallback(
-        async (paymentStatus: 'paid' | 'pending') => {
-            setShowPaymentModal(false);
-            setSubmitting(true);
-            try {
-                const response = await fetch(`${API_URL}/appointments/book`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${token}`
-                    },
-                    body: JSON.stringify({
-                        doctorId: selectedDoctor._id,
-                        doctorName: selectedDoctor.name,
-                        department: selectedDoctor.specialization,
-                        date: selectedDate?.toISOString(),
-                        visitType,
-                        reason,
-                        amount: totalFee,
-                        paymentStatus
-                    })
-                });
+    // Creates the appointment. Always booked as unpaid: payment is attached to its bill afterwards,
+    // so a failed booking can never leave the patient charged with no appointment.
+    const createBooking = useCallback(async () => {
+        const response = await fetch(`${API_URL}/appointments/book`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({
+                doctorId: selectedDoctor._id,
+                doctorName: selectedDoctor.name,
+                department: selectedDoctor.specialization,
+                date: selectedDate?.toISOString(),
+                visitType,
+                reason,
+                amount: totalFee,
+                paymentStatus: 'pending'
+            })
+        });
 
-                const data = await response.json();
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+            throw new Error(data.msg || 'Booking failed');
+        }
+        return data;
+    }, [token, selectedDoctor, selectedDate, visitType, reason, totalFee]);
 
-                if (response.ok) {
-                    Alert.alert(
-                        paymentStatus === 'paid' ? 'Payment Successful!' : 'Booking Confirmed',
-                        `Your Queue Token: #${data.queueNumber || data.tokenNumber || '1'}.`,
-                        [{ text: 'OK', onPress: () => router.replace('/patient-dashboard') }]
-                    );
-                } else {
-                    throw new Error(data.msg || 'Booking failed');
-                }
-            } catch (error: any) {
-                Alert.alert('Booking Error', error.message);
-            } finally {
-                setSubmitting(false);
-            }
-        },
-        [token, selectedDoctor, selectedDate, visitType, reason, totalFee, router]
-    );
+    const goToDashboard = [{ text: 'OK', onPress: () => router.replace('/patient-dashboard') }];
+
+    const handlePayLater = async () => {
+        setShowPaymentModal(false);
+        setSubmitting(true);
+        try {
+            await createBooking();
+            Alert.alert(
+                'Booking Received',
+                'Your queue token will be issued once the payment is completed.',
+                goToDashboard
+            );
+        } catch (error: any) {
+            Alert.alert('Booking Error', error.message);
+        } finally {
+            setSubmitting(false);
+        }
+    };
 
     const handlePayNow = async () => {
+        if (!token) return;
+        setShowPaymentModal(false);
+        setSubmitting(true);
         try {
-            setSubmitting(true);
-            setShowPaymentModal(false);
-
-            const response = await fetch(`${API_URL}/payments/create-intent`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                },
-                body: JSON.stringify({ amount: totalFee * 100 })
-            });
-
-            if (!response.ok) {
-                Alert.alert('Error', "Could not initiate payment. Please try 'Pay Later'.");
-                setSubmitting(false);
+            const booking = await createBooking();
+            if (!booking.billId) {
+                Alert.alert(
+                    'Booking Received',
+                    'Your booking is saved. Please complete the payment from Billing to get your queue token.',
+                    [{ text: 'OK', onPress: () => router.replace('/patient-dashboard/billing') }]
+                );
                 return;
             }
 
-            const { clientSecret } = await response.json();
+            await waitForModalDismiss();
+            const result = await payBill(token, booking.billId, { initPaymentSheet, presentPaymentSheet });
 
-            const { error: initError } = await initPaymentSheet({
-                paymentIntentClientSecret: clientSecret,
-                merchantDisplayName: 'Care101 Hospital',
-                defaultBillingDetails: { address: { country: 'LK' } }
-            });
-
-            if (initError) {
-                Alert.alert('Stripe Error', initError.message);
-                setSubmitting(false);
-                return;
-            }
-
-            const { error: paymentError } = await presentPaymentSheet();
-
-            if (paymentError) {
-                Alert.alert('Payment Failed', paymentError.message);
-                setSubmitting(false);
+            if (result.status === 'paid') {
+                Alert.alert(
+                    'Payment Successful!',
+                    result.queueNumber
+                        ? `Your Queue Token: #${result.queueNumber}.`
+                        : 'Your booking is confirmed. Your queue token is on the dashboard.',
+                    goToDashboard
+                );
+            } else if (result.status === 'unconfirmed') {
+                Alert.alert('Payment Received', result.message, goToDashboard);
             } else {
-                await processBooking('paid');
+                Alert.alert(
+                    result.status === 'canceled' ? 'Payment Not Completed' : 'Payment Failed',
+                    `${result.status === 'failed' ? result.message + '\n\n' : ''}Your booking is saved as unpaid. Pay from Billing to get your queue token.`,
+                    [{ text: 'OK', onPress: () => router.replace('/patient-dashboard/billing') }]
+                );
             }
-        } catch (error) {
+        } catch (error: any) {
             console.error(error);
-            Alert.alert('Error', 'Payment system offline. Try Pay Later.');
+            Alert.alert('Booking Error', error.message || 'Something went wrong. Please try again.');
+        } finally {
             setSubmitting(false);
         }
     };
@@ -644,7 +643,7 @@ export default function BookAppointmentScreen() {
 
                         <TouchableOpacity
                             style={[styles.paymentOption, { backgroundColor: '#f1f5f9' }]}
-                            onPress={() => processBooking('pending')}
+                            onPress={handlePayLater}
                         >
                             <ClockIcon color="#475569" size={24} />
                             <View style={{ marginLeft: 12, flex: 1 }}>

@@ -15,7 +15,11 @@ const BillSchema = new mongoose.Schema({
   status: { type: String, enum: ['Pending', 'Paid'], default: 'Pending' },
   
   // Optional: Link to original appointment if needed
-  appointmentId: { type: String } 
+  appointmentId: { type: String },
+
+  // Stripe PaymentIntent used to pay this bill (lets the server verify and recover payments)
+  paymentIntentId: { type: String, index: true },
+  paidAt: { type: Date }
 });
 
 export default mongoose.model("Bill", BillSchema);

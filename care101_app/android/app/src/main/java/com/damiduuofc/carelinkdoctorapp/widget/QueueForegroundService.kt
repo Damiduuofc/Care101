@@ -210,12 +210,14 @@ class QueueForegroundService : Service() {
                         }
                     }
                     "upcoming" -> {
+                        val awaitingPayment = data.optBoolean("awaitingPayment", false)
                         val statusBadge = when {
+                            awaitingPayment -> "Awaiting Payment"
                             isArrived -> "Doctor Arrived"
                             isDelayed -> "Delayed ($channelingStatus)"
                             else -> "On Schedule"
                         }
-                        title = "Upcoming: $doctor • Token #$myToken"
+                        title = if (awaitingPayment) "Upcoming: $doctor • Awaiting Payment" else "Upcoming: $doctor • Token #$myToken"
                         contentText = "$room • $statusBadge"
                         if (!isSocketConnected) {
                             contentText += " • Reconnecting..."
@@ -466,6 +468,8 @@ class QueueForegroundService : Service() {
             if (ourDoctorId.isNotEmpty() && eventDoctorId.isNotEmpty() && ourDoctorId != eventDoctorId) {
                 return
             }
+            // Unpaid bookings have no token, so they never move into the live queue view
+            if (currentData.optBoolean("awaitingPayment", false)) return
 
             val newToken = if (payload.has("currentToken")) {
                 payload.optInt("currentToken", -1)
@@ -520,7 +524,9 @@ class QueueForegroundService : Service() {
             val sessionEnded = updatedDoc.optBoolean("sessionEndedToday", false)
             val room = updatedDoc.optString("allocatedRoom", "").ifEmpty { currentData.optString("room", "Room TBA") }
 
-            if (sessionStarted && !sessionEnded) {
+            val awaitingPayment = currentData.optBoolean("awaitingPayment", false)
+
+            if (sessionStarted && !sessionEnded && !awaitingPayment) {
                 currentData.put("state", "queue")
                 currentData.put("ongoingToken", currentServing)
                 currentData.put("peopleAhead", peopleAhead)
@@ -528,7 +534,7 @@ class QueueForegroundService : Service() {
                 currentData.put("isDelayed", !channelingStatus.equals("On Time", ignoreCase = true))
                 currentData.put("channelingStatus", channelingStatus)
                 currentData.put("room", room)
-            } else if (!sessionStarted && !sessionEnded) {
+            } else if (!sessionEnded) {
                 val isDelayed = !channelingStatus.equals("On Time", ignoreCase = true) && !isArrived
                 currentData.put("state", "upcoming")
                 currentData.put("isArrived", isArrived)

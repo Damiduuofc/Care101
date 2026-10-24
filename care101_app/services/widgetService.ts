@@ -12,6 +12,7 @@ export interface WidgetData {
   myToken?: number | string;
   ongoingToken?: number | string;
   peopleAhead?: number;
+  awaitingPayment?: boolean;
   isArrived?: boolean;
   isDelayed?: boolean;
   delayMessage?: string;
@@ -174,7 +175,8 @@ export const WidgetService = {
           const isDelayed = channelingStatus.toLowerCase() !== 'on time' && !isArrived;
           const room = updatedDoc.allocatedRoom || lastWidgetPayload.room || 'Room TBA';
 
-          if (updatedDoc.sessionStarted && !updatedDoc.sessionEndedToday) {
+          // Unpaid bookings have no token, so they never move into the live queue view
+          if (updatedDoc.sessionStarted && !updatedDoc.sessionEndedToday && !lastWidgetPayload.awaitingPayment) {
             await WidgetService.updateWidgetData({
               ...lastWidgetPayload,
               state: 'queue',
@@ -189,7 +191,7 @@ export const WidgetService = {
                   : 'Session in progress',
               room,
             });
-          } else if (!updatedDoc.sessionStarted && !updatedDoc.sessionEndedToday) {
+          } else if (!updatedDoc.sessionEndedToday) {
             await WidgetService.updateWidgetData({
               ...lastWidgetPayload,
               state: 'upcoming',
@@ -234,7 +236,9 @@ export const WidgetService = {
             await WidgetService.showLocalNotification(
               `arrival_${payload.doctorId}_${new Date().toDateString()}`,
               'Doctor Arrived at Clinic',
-              `${docLabel} has arrived at ${room}. Your Token is #${lastWidgetPayload.myToken || '--'}.`
+              lastWidgetPayload.awaitingPayment
+                ? `${docLabel} has arrived at ${room}. Please pay the fee to get your queue token.`
+                : `${docLabel} has arrived at ${room}. Your Token is #${lastWidgetPayload.myToken || '--'}.`
             );
           }
         }
@@ -250,7 +254,7 @@ export const WidgetService = {
           !payload.doctorId ||
           String(lastWidgetPayload.doctorId) === String(payload.doctorId);
 
-        if (isOurDoc) {
+        if (isOurDoc && !lastWidgetPayload.awaitingPayment) {
           const myTokenNum = Number(lastWidgetPayload.myToken) || 0;
           const peopleAhead = Math.max(0, myTokenNum - Number(payload.currentToken));
           await WidgetService.updateWidgetData({

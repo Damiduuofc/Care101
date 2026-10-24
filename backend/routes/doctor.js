@@ -115,7 +115,8 @@ router.get("/today-appointments", auth, async (req, res) => {
     const appointments = await Appointment.find({
       doctorId: req.user.id,
       date: { $gte: startOfDay, $lte: endOfDay },
-      status: { $ne: "cancelled" }
+      status: { $ne: "cancelled" },
+      paymentStatus: "paid"
     })
       .populate("patientId", "fullName patientId nicNumber gender dateOfBirth profileImage")
       .sort({ queueNumber: 1 })

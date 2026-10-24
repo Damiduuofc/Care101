@@ -23,6 +23,7 @@ import {
 } from 'lucide-react-native';
 import { useAuth } from '@/context/auth';
 import { useStripe } from '@stripe/stripe-react-native';
+import { payBill } from '@/services/billPayment';
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL;
 
@@ -72,66 +73,26 @@ export default function BillingScreen() {
     }, [bills, filter]);
 
     const handlePayBill = async (bill: any) => {
+        if (!token) return;
+        setPaying(bill._id);
         try {
-            setPaying(bill._id);
+            const result = await payBill(token, bill._id, { initPaymentSheet, presentPaymentSheet });
 
-            // 1. Create Payment Intent on Backend
-            const response = await fetch(`${API_URL}/payments/create-intent`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                },
-                body: JSON.stringify({ amount: Math.round(bill.amount * 100) }) // Amount in cents
-            });
-
-            if (!response.ok) {
-                throw new Error("Failed to initialize payment");
+            if (result.status === 'paid') {
+                Alert.alert(
+                    'Success',
+                    result.queueNumber
+                        ? `Payment completed successfully! Your queue token is #${result.queueNumber}.`
+                        : 'Payment completed successfully!'
+                );
+            } else if (result.status === 'unconfirmed') {
+                Alert.alert('Payment Received', result.message);
+            } else if (result.status === 'failed') {
+                Alert.alert('Payment Failed', result.message);
             }
-
-            const { clientSecret } = await response.json();
-
-            // 2. Initialize Stripe Payment Sheet
-            const { error: initError } = await initPaymentSheet({
-                paymentIntentClientSecret: clientSecret,
-                merchantDisplayName: 'Care101 Hospital',
-                defaultBillingDetails: { address: { country: 'LK' } }
-            });
-
-            if (initError) {
-                Alert.alert('Initialization failed', initError.message);
-                return;
-            }
-
-            // 3. Present Stripe Payment Sheet
-            const { error: paymentError } = await presentPaymentSheet();
-
-            if (paymentError) {
-                if (paymentError.code !== 'Canceled') {
-                    Alert.alert(`Error: ${paymentError.code}`, paymentError.message);
-                }
-            } else {
-                // 4. On Success, notify backend
-                const successResponse = await fetch(`${API_URL}/payments/pay-bill/${bill._id}`, {
-                    method: 'PUT',
-                    headers: {
-                        'Authorization': `Bearer ${token}`,
-                        'Content-Type': 'application/json'
-                    }
-                });
-
-                if (successResponse.ok) {
-                    Alert.alert('Success', 'Payment completed successfully!');
-                    fetchBills(); // Refresh list
-                } else {
-                    Alert.alert('Partially Successful', 'Payment recorded by Stripe, but we failed to update our records. Please contact support.');
-                }
-            }
-        } catch (error: any) {
-            console.error(error);
-            Alert.alert('Payment Error', error.message || 'Something went wrong');
         } finally {
             setPaying(null);
+            fetchBills(); // Refresh list (the server also recovers any unrecorded payment here)
         }
     };
 

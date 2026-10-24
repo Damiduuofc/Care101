@@ -441,7 +441,7 @@ export default function NursePatientArrivals() {
                                                     </div>
                                                 </td>
                                                 <td className="p-3 sm:p-3.5 font-bold text-slate-800 text-sm sm:text-base">
-                                                    #{appt.queueNumber || "N/A"}
+                                                    {appt.paymentStatus?.toLowerCase() === "paid" && appt.queueNumber ? `#${appt.queueNumber}` : "N/A"}
                                                 </td>
                                                 <td className="p-3 sm:p-3.5">
                                                     <Badge variant="outline" className={`text-[10px] sm:text-xs font-bold ${
@@ -464,7 +464,8 @@ export default function NursePatientArrivals() {
                                                     <Button
                                                         variant="ghost"
                                                         size="sm"
-                                                        disabled={updatingId === appt._id}
+                                                        disabled={updatingId === appt._id || (!appt.arrived && appt.paymentStatus?.toLowerCase() !== "paid")}
+                                                        title={!appt.arrived && appt.paymentStatus?.toLowerCase() !== "paid" ? "Patient must pay the fee before arrival can be marked" : undefined}
                                                         onClick={() => toggleArrival(appt._id, appt.arrived)}
                                                         className={`rounded-xl px-3.5 py-1.5 transition-all text-xs font-bold min-h-[36px] active:scale-95 ${
                                                             appt.arrived 
@@ -476,6 +477,8 @@ export default function NursePatientArrivals() {
                                                             <Loader2 className="h-3.5 w-3.5 animate-spin mx-auto" />
                                                         ) : appt.arrived ? (
                                                             "Mark Absent"
+                                                        ) : appt.paymentStatus?.toLowerCase() !== "paid" ? (
+                                                            "Payment Pending"
                                                         ) : (
                                                             "Mark Arrived"
                                                         )}

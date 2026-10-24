@@ -64,7 +64,7 @@ function RootLayoutNav() {
 
 export default function RootLayout() {
   return (
-    <StripeProvider publishableKey={process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY || ""}>
+    <StripeProvider publishableKey={process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY || ""} urlScheme="carelink">
       <AuthProvider>
         {/* ChatProvider is initialized inside RootLayoutNav above */}
         <RootLayoutNav />

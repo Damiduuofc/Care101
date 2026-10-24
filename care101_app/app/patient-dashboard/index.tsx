@@ -592,6 +592,11 @@ export default function PatientDashboardScreen() {
         { id: 5, title: 'Update Profile', subtitle: 'Manage info', icon: User, link: '/patient-dashboard/profile', color: '#f59e0b', bg: '#fffbeb' },
     ];
 
+    // Queue tokens are only issued after payment, so unpaid bookings show "awaiting payment" instead
+    const awaitingPayment = Boolean(
+        upcomingAppointment &&
+        (upcomingAppointment.awaitingPayment ?? String(upcomingAppointment.paymentStatus || 'pending').toLowerCase() !== 'paid')
+    );
     const liveMyToken = Number(queueData?.queueNumber ?? upcomingAppointment?.queueNumber ?? 1);
     const liveOngoingToken = Number(
         queueData?.currentToken ??
@@ -697,6 +702,19 @@ export default function PatientDashboardScreen() {
                                 </View>
                             </View>
 
+                            {awaitingPayment ? (
+                                <TouchableOpacity
+                                    style={styles.awaitingPaymentBox}
+                                    onPress={() => router.push('/patient-dashboard/billing')}
+                                >
+                                    <CreditCard size={20} color="#d97706" />
+                                    <View style={{ flex: 1 }}>
+                                        <Text style={styles.awaitingPaymentTitle}>AWAITING PAYMENT</Text>
+                                        <Text style={styles.awaitingPaymentText}>Pay the fee to get your queue token.</Text>
+                                    </View>
+                                    <ChevronRight size={18} color="#d97706" />
+                                </TouchableOpacity>
+                            ) : (
                             <View style={styles.cardQueueMetricsRow}>
                                 <View style={styles.cardMetricBox}>
                                     <Text style={styles.cardMetricLabel}>YOUR TOKEN</Text>
@@ -714,6 +732,7 @@ export default function PatientDashboardScreen() {
                                     <Text style={styles.cardMetricValue}>{livePeopleAhead}</Text>
                                 </View>
                             </View>
+                            )}
                         </TouchableOpacity>
                     ) : (
                         <View style={styles.emptyCard}>
@@ -778,6 +797,23 @@ export default function PatientDashboardScreen() {
                                     </View>
                                 </View>
 
+                                {awaitingPayment ? (
+                                <TouchableOpacity
+                                    style={styles.awaitingPaymentBox}
+                                    onPress={() => {
+                                        setQueueVisible(false);
+                                        router.push('/patient-dashboard/billing');
+                                    }}
+                                >
+                                    <CreditCard size={20} color="#d97706" />
+                                    <View style={{ flex: 1 }}>
+                                        <Text style={styles.awaitingPaymentTitle}>AWAITING PAYMENT</Text>
+                                        <Text style={styles.awaitingPaymentText}>Your queue token will be issued once the fee is paid. Tap to pay now.</Text>
+                                    </View>
+                                    <ChevronRight size={18} color="#d97706" />
+                                </TouchableOpacity>
+                                ) : (
+                                <>
                                 <View style={styles.tokenRow}>
                                     <View style={styles.tokenBox}>
                                         <Text style={styles.tokenLabel}>Your Queue #</Text>
@@ -804,6 +840,8 @@ export default function PatientDashboardScreen() {
                                         </Text>
                                     </Text>
                                 </View>
+                                </>
+                                )}
                             </View>
                         ) : <ActivityIndicator color="#06b6d4" />}
                         <TouchableOpacity style={styles.closeButton} onPress={() => setQueueVisible(false)}><Text style={styles.closeButtonText}>Close</Text></TouchableOpacity>
@@ -933,6 +971,9 @@ const styles = StyleSheet.create({
     viewButton: { backgroundColor: '#06b6d4', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12, flexShrink: 0 },
     viewButtonText: { fontSize: 12, fontWeight: '700', color: '#fff' },
     cardQueueMetricsRow: { flexDirection: 'row', gap: 10, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#f1f5f9' },
+    awaitingPaymentBox: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: '#fffbeb', borderColor: '#fcd34d', borderWidth: 1, borderRadius: 12, paddingVertical: 12, paddingHorizontal: 12, marginTop: 12 },
+    awaitingPaymentTitle: { fontSize: 11, fontWeight: '800', color: '#b45309', letterSpacing: 0.4 },
+    awaitingPaymentText: { fontSize: 12, fontWeight: '600', color: '#92400e', marginTop: 2 },
     cardMetricBox: { flex: 1, backgroundColor: '#f8fafc', borderRadius: 12, paddingVertical: 10, paddingHorizontal: 8, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#e2e8f0' },
     cardMetricBoxActive: { backgroundColor: '#ecfeff', borderColor: '#06b6d4', borderWidth: 1.5 },
     cardMetricLiveHeader: { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 2 },

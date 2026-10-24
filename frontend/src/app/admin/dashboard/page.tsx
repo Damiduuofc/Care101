@@ -6,6 +6,7 @@ import {
   Stethoscope, CreditCard, Clock, CalendarCheck, Activity
 } from "lucide-react";
 import Sidebar from "@/components/admin/Sidebar";
+import NurseTodayAssignments from "@/components/admin/NurseTodayAssignments";
 
 import { useRouter } from "next/navigation";
 import { clearAdminSession, getAdminToken, getAdminUser } from "@/lib/adminSession";
@@ -29,6 +30,33 @@ export default function Dashboard() {
 
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [nurseDoctors, setNurseDoctors] = useState<any[]>([]);
+  const [nurseAppointments, setNurseAppointments] = useState<any[]>([]);
+
+  const fetchNurseAssignments = async () => {
+    if (getAdminUser()?.role !== "nurse") return;
+    try {
+      const token = getAdminToken();
+      const headers = {
+        "x-auth-token": token || "",
+        "ngrok-skip-browser-warning": "true"
+      };
+      const [docRes, apptRes] = await Promise.all([
+        fetch(`${process.env.NEXT_PUBLIC_API_URL}/admin/doctors`, { headers }),
+        fetch(`${process.env.NEXT_PUBLIC_API_URL}/admin/appointments`, { headers })
+      ]);
+      if (docRes.ok) {
+        const docData = await docRes.json();
+        if (Array.isArray(docData)) setNurseDoctors(docData);
+      }
+      if (apptRes.ok) {
+        const apptData = await apptRes.json();
+        if (Array.isArray(apptData)) setNurseAppointments(apptData);
+      }
+    } catch (err) {
+      console.error("Failed to load nurse assignments", err);
+    }
+  };
 
   const fetchStats = async () => {
     try {
@@ -80,6 +108,7 @@ export default function Dashboard() {
     }
 
     fetchStats();
+    fetchNurseAssignments();
   }, []);
 
   useEffect(() => {
@@ -107,6 +136,7 @@ export default function Dashboard() {
 
     socket.on("doctorStatusUpdated", () => {
       fetchStats();
+      fetchNurseAssignments();
     });
 
     socket.on("doctorDelayAlert", (alertData: any) => {
@@ -117,6 +147,11 @@ export default function Dashboard() {
 
     socket.on("appointmentUpdated", () => {
       fetchStats();
+      fetchNurseAssignments();
+    });
+
+    socket.on("queueUpdated", () => {
+      fetchNurseAssignments();
     });
 
     socket.on("hospitalStatusUpdated", () => {
@@ -218,6 +253,18 @@ export default function Dashboard() {
                 </div>
               </CardContent>
             </Card>
+
+            {/* Nurse: Today's Assignments */}
+            {user?.role === "nurse" && (
+              <NurseTodayAssignments
+                compact
+                nurseName={user?.name}
+                assignedDoctors={nurseDoctors.filter(d =>
+                  d.allocatedNurse && String(d.allocatedNurse).trim().toLowerCase() === String(user?.name || "").trim().toLowerCase()
+                )}
+                appointments={nurseAppointments}
+              />
+            )}
           </div>
         </div>
       </main>

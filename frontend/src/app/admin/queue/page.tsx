@@ -387,10 +387,13 @@ export default function NurseQueueDashboard() {
         }
     };
 
+    // Unpaid patients have no queue token, so they are kept out of the queue
+    const isPaid = (appt: any) => appt.paymentStatus?.toLowerCase() === "paid";
+
     const getDoctorTodayAppointments = (doctorDocId: string) => {
         const todayList = appointments.filter(appt => {
             const apptDocId = appt.doctorId?._id || appt.doctorId;
-            return apptDocId === doctorDocId && isToday(appt.date) && appt.status !== 'cancelled';
+            return apptDocId === doctorDocId && isToday(appt.date) && appt.status !== 'cancelled' && isPaid(appt);
         }).sort((a, b) => {
             if (a.queueNumber && b.queueNumber) return a.queueNumber - b.queueNumber;
             return new Date(a.createdAt || a.date).getTime() - new Date(b.createdAt || b.date).getTime();
@@ -570,7 +573,7 @@ export default function NurseQueueDashboard() {
     const getMaxQueueNumber = (doctorDocId: string) => {
         const doctorTodayAppts = appointments.filter(appt => {
             const apptDocId = appt.doctorId?._id || appt.doctorId;
-            return apptDocId === doctorDocId && isToday(appt.date) && appt.status !== 'cancelled';
+            return apptDocId === doctorDocId && isToday(appt.date) && appt.status !== 'cancelled' && isPaid(appt);
         });
 
         const maxQ = doctorTodayAppts.reduce((max, appt) => {
@@ -598,7 +601,8 @@ export default function NurseQueueDashboard() {
             return apptDocId === doctorDocId && 
                    appt.queueNumber === currentQueueNumber && 
                    isToday(appt.date) && 
-                   appt.status !== 'cancelled';
+                   appt.status !== 'cancelled' &&
+                   isPaid(appt);
         });
         return matched ? matched._id : undefined;
     };

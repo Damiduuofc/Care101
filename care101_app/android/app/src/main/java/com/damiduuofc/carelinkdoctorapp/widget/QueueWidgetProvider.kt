@@ -165,6 +165,7 @@ class QueueWidgetProvider : AppWidgetProvider() {
                 val prevDelayed = prev.optBoolean("isDelayed", false)
                 val channelingStatus = curr.optString("channelingStatus", "")
                 val peopleAhead = curr.optInt("peopleAhead", -1)
+                val awaitingPayment = curr.optBoolean("awaitingPayment", false)
 
                 // 1. Doctor Arrival transition
                 if (currArrived && !prevArrived) {
@@ -172,7 +173,8 @@ class QueueWidgetProvider : AppWidgetProvider() {
                         context,
                         "arrived_${doctor}_${room}_${System.currentTimeMillis() / 60000}",
                         "Doctor Arrived at Clinic",
-                        "$doctor has arrived at $room. Your Token is #$myToken."
+                        if (awaitingPayment) "$doctor has arrived at $room. Please pay the fee to get your queue token."
+                        else "$doctor has arrived at $room. Your Token is #$myToken."
                     )
                 }
 
@@ -530,6 +532,7 @@ class QueueWidgetProvider : AppWidgetProvider() {
             val isDelayed = data.optBoolean("isDelayed", false) && !isArrived
             val channelingStatus = data.optString("channelingStatus", "")
             val delayMsg = data.optString("delayMessage", "")
+            val awaitingPayment = data.optBoolean("awaitingPayment", false)
 
             // Bind Header Pills
             views.setTextViewText(R.id.tv_upcoming_hospital_name, hospital)
@@ -537,7 +540,7 @@ class QueueWidgetProvider : AppWidgetProvider() {
 
             // Bind Bento Cards (Doctor Info + Dedicated My Token Card)
             views.setTextViewText(R.id.tv_upcoming_doctor_name, doctor)
-            views.setTextViewText(R.id.tv_upcoming_token, "#$myToken")
+            views.setTextViewText(R.id.tv_upcoming_token, if (awaitingPayment) "--" else "#$myToken")
 
             val scheduleLine = if (time.isNotEmpty() && !time.equals("Scheduled Today", ignoreCase = true) && !time.equals("Scheduled", ignoreCase = true)) {
                 "$formattedDate • $time"
@@ -547,6 +550,19 @@ class QueueWidgetProvider : AppWidgetProvider() {
             views.setTextViewText(R.id.tv_upcoming_datetime, scheduleLine)
 
             when {
+                awaitingPayment -> {
+                    // 0. PAYMENT PENDING STATE (Amber): no queue token until the fee is paid
+                    views.setInt(R.id.badge_upcoming_status_container, "setBackgroundResource", R.drawable.badge_status_delayed)
+                    views.setTextViewText(R.id.tv_upcoming_status_badge, "● UNPAID")
+                    views.setTextViewText(R.id.tv_upcoming_hospital_room, "Allocated to $room")
+
+                    views.setInt(R.id.layout_upcoming_delay_banner, "setBackgroundResource", R.drawable.badge_delayed)
+                    views.setImageViewResource(R.id.iv_upcoming_delay_icon, R.drawable.ic_warning)
+                    views.setTextViewText(R.id.tv_upcoming_delay_title, "AWAITING PAYMENT:")
+                    views.setTextColor(R.id.tv_upcoming_delay_title, Color.parseColor("#9A3412"))
+                    views.setTextViewText(R.id.tv_upcoming_delay_text, "Pay the fee to get your token")
+                    views.setTextColor(R.id.tv_upcoming_delay_text, Color.parseColor("#C2410C"))
+                }
                 isArrived -> {
                     // 1. DOCTOR HAS ARRIVED STATE (Emerald Green)
                     views.setInt(R.id.badge_upcoming_status_container, "setBackgroundResource", R.drawable.badge_status_arrived)

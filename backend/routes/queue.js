@@ -159,7 +159,8 @@ router.post("/update", protect, authorize(["doctor", "nurse", "receptionist", "s
       const activeAppointments = await Appointment.find({
         doctorId: doctor._id,
         date: { $gte: startOfDay, $lte: endOfDay },
-        status: { $in: ["confirmed", "Confirmed", "pending", "Pending", "Waiting"] }
+        status: { $in: ["confirmed", "Confirmed", "pending", "Pending", "Waiting"] },
+        paymentStatus: "paid"
       });
 
       for (const appt of activeAppointments) {
@@ -257,8 +258,10 @@ router.get("/patient/:patientId", protect, async (req, res) => {
 
     const doctor = appt.doctorId ? await Doctor.findById(appt.doctorId) : null;
     const currentServing = doctor?.currentQueueNumber || 0;
-    const myQueueNumber = appt.queueNumber || 1;
-    const peopleAhead = Math.max(0, myQueueNumber - currentServing);
+    // No queue token until the fee is paid
+    const awaitingPayment = appt.paymentStatus !== "paid";
+    const myQueueNumber = awaitingPayment ? null : (appt.queueNumber || 1);
+    const peopleAhead = awaitingPayment ? null : Math.max(0, myQueueNumber - currentServing);
 
     res.json({
       appointmentId: appt._id,
@@ -267,6 +270,7 @@ router.get("/patient/:patientId", protect, async (req, res) => {
       allocatedRoom: doctor?.allocatedRoom || "Room TBA",
       appointmentStatus: appt.status || "confirmed",
       paymentStatus: appt.paymentStatus || "pending",
+      awaitingPayment,
       appointmentDate: appt.date,
       isArrived: Boolean(doctor?.isArrived),
       sessionStarted: Boolean(doctor?.sessionStarted),
@@ -298,7 +302,8 @@ router.get("/doctor/:doctorId/live", protect, async (req, res) => {
     const activeAppts = await Appointment.find({
       doctorId: doctor._id,
       date: { $gte: startOfDay, $lte: endOfDay },
-      status: { $in: ["confirmed", "Confirmed", "pending", "Pending", "Waiting"] }
+      status: { $in: ["confirmed", "Confirmed", "pending", "Pending", "Waiting"] },
+      paymentStatus: "paid"
     }).sort({ queueNumber: 1 });
 
     res.json({

@@ -12,6 +12,7 @@ import HospitalFinance from "../models/Finance.js";
 import Notification from "../models/Notification.js";
 import ScheduleRequest from "../models/ScheduleRequest.js";
 import { protect, authorize } from "../middleware/authRole.js";
+import { assignQueueToken } from "../utils/queueToken.js";
 import { sendBookingConfirmation, sendDoctorWelcomeEmail, sendDoctorApprovalEmail, sendAdminPasswordReset } from "../utils/emailService.js";
 import crypto from "crypto"; 
 const router = express.Router();
@@ -313,9 +314,6 @@ router.post("/appointments/walkin", protect, async (req, res) => {
       }
     }
 
-    // --- 4. GENERATE QUEUE NUMBER ---
-    const queueNumber = currentAppointmentCount + 1;
-    
     // Set total amount (2000 Doctor + 1500 Hospital = 3500)
     const totalAmount = amount || 3500; 
 
@@ -326,13 +324,15 @@ router.post("/appointments/walkin", protect, async (req, res) => {
       doctorName,
       department,
       date,
-      queueNumber,
       visitType: visitType || 'Consultation',
       reason,
       amount: totalAmount,
       status: paymentStatus === 'paid' ? 'confirmed' : 'pending',
       paymentStatus: paymentStatus || 'pending'
     });
+
+    // --- 4. GENERATE QUEUE NUMBER (paid bookings only) ---
+    const queueNumber = await assignQueueToken(newAppointment);
 
     const savedAppointment = await newAppointment.save();
 
@@ -418,7 +418,9 @@ router.post("/appointments/walkin", protect, async (req, res) => {
       await Notification.create({
         userId: patient._id,
         type: 'appointment',
-        message: `Booking Confirmed! Queue #${queueNumber} for Dr. ${doctorName}.`
+        message: queueNumber
+          ? `Booking Confirmed! Queue #${queueNumber} for Dr. ${doctorName}.`
+          : `Booking received for Dr. ${doctorName}. Your queue token will be issued once payment is completed.`
       });
 
       if (paymentStatus === 'paid') {
@@ -500,6 +502,10 @@ router.put("/appointments/:id", protect, async (req, res) => {
     }
 
     if (arrived !== undefined) {
+      const willBePaid = appointment.paymentStatus?.toLowerCase() === "paid" || paymentStatus?.toLowerCase() === "paid";
+      if (arrived && !willBePaid) {
+        return res.status(400).json({ msg: "Cannot mark arrival until the patient has paid the fee." });
+      }
       appointment.arrived = arrived;
     }
 
@@ -509,6 +515,7 @@ router.put("/appointments/:id", protect, async (req, res) => {
 
       if (isBecomingPaid) {
         appointment.status = "confirmed";
+        await assignQueueToken(appointment);
         const updatedBill = await Bill.findOneAndUpdate({ appointmentId: appointment._id }, { status: "Paid" }, { new: true });
 
         // Generate and email PDF Receipt (Run asynchronously in the background)
@@ -741,6 +748,20 @@ router.put("/bills/pay/:billId", protect, authorize(["system_admin", "receptioni
 
     bill.status = "Paid";
     await bill.save();
+
+    // If it's an appointment bill, mark the appointment paid and issue its queue token
+    if (bill.appointmentId) {
+      const appointment = await Appointment.findById(bill.appointmentId);
+      if (appointment && appointment.paymentStatus !== "paid" && appointment.status !== "cancelled") {
+        appointment.paymentStatus = "paid";
+        appointment.status = "confirmed";
+        await assignQueueToken(appointment);
+        await appointment.save();
+        if (req.io) {
+          req.io.emit("appointmentUpdated", appointment);
+        }
+      }
+    }
 
     // 1. Calculate the financial split based on Type
     try {
