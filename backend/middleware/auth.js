@@ -1,25 +1,4 @@
-import jwt from "jsonwebtoken";
+import { protect, authorize } from "./authRole.js";
 
-export const auth = (req, res, next) => {
-  let token = req.header("Authorization");
-  
-  // Also check x-auth-token for admin/dashboard compatibility
-  if (!token) {
-    token = req.header("x-auth-token");
-  }
-
-  if (!token) {
-    return res.status(401).json({ msg: "No token, authorization denied" });
-  }
-
-  try {
-    // Remove "Bearer " if present
-    const tokenString = token.startsWith("Bearer ") ? token.slice(7, token.length) : token;
-    
-    const decoded = jwt.verify(tokenString, process.env.JWT_SECRET);
-    req.user = decoded; // Adds user ID to the request
-    next();
-  } catch (err) {
-    res.status(401).json({ msg: "Token is not valid" });
-  }
-};
+export const auth = protect;
+export { protect, authorize };

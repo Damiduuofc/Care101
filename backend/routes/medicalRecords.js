@@ -6,7 +6,8 @@ import Patient from "../models/Patient.js";
 import Doctor from "../models/Doctor.js";
 import Appointment from "../models/Appointment.js";
 import Admin from "../models/Admin.js";
-import { auth } from "../middleware/auth.js";
+import { protect, authorize } from "../middleware/authRole.js";
+
 
 const router = express.Router();
 
@@ -211,7 +212,7 @@ export const syncPatientDoctorRecordBook = async ({ patientId, doctorId, doctorD
 };
 
 // 1. UPLOAD A RECORD
-router.post("/upload", auth, async (req, res) => {
+router.post("/upload", protect, authorize(["doctor", "nurse", "lab_assistant", "system_admin", "patient"]), async (req, res) => {
   try {
     const { patientId, doctorId, type, title, doctorName, date, description, diagnosis, medications, fileData, fileType } = req.body;
 
@@ -288,7 +289,7 @@ router.post("/upload", auth, async (req, res) => {
 });
 
 // 1.1 UPDATE AN EXISTING RECORD (For Nurse / Doctor / Lab Assistant)
-router.put("/:id", auth, async (req, res) => {
+router.put("/:id", protect, authorize(["doctor", "nurse", "lab_assistant", "system_admin", "patient"]), async (req, res) => {
   try {
     const record = await MedicalRecord.findById(req.params.id);
     if (!record) {
@@ -346,7 +347,7 @@ router.put("/:id", auth, async (req, res) => {
 });
 
 // 2. GET ALL MY RECORDS (Without the heavy file data)
-router.get("/my-records", auth, async (req, res) => {
+router.get("/my-records", protect, async (req, res) => {
   try {
     let targetPatientId = req.user.id;
     if (!mongoose.Types.ObjectId.isValid(targetPatientId) && req.user.patientId) {
@@ -364,18 +365,21 @@ router.get("/my-records", auth, async (req, res) => {
   }
 });
 
-// GET RECORDS FOR A SPECIFIC PATIENT (For Doctors, Nurses & Lab Assistants)
-router.get("/patient/:patientId", auth, async (req, res) => {
+// GET RECORDS FOR A SPECIFIC PATIENT (For Doctors, Nurses & Lab Assistants, or the Patient themselves)
+router.get("/patient/:patientId", protect, authorize(["doctor", "nurse", "lab_assistant", "system_admin", "patient"]), async (req, res) => {
   try {
     const { role } = req.user;
-    if (role !== "doctor" && role !== "lab_assistant" && role !== "system_admin" && role !== "nurse" && role !== "patient") {
-      return res.status(403).json({ msg: "Not authorized to view patient records" });
-    }
     let targetPatientId = req.params.patientId;
     if (!mongoose.Types.ObjectId.isValid(targetPatientId)) {
       const p = await Patient.findOne({ patientId: String(targetPatientId).trim().toUpperCase() });
       if (p) targetPatientId = p._id;
     }
+
+    // Ownership check: If caller is a patient, strictly restrict access to their own records only
+    if (role === "patient" && String(targetPatientId) !== String(req.user.id)) {
+      return res.status(403).json({ msg: "Not authorized to view another patient's records" });
+    }
+
     const records = await MedicalRecord.find({ patientId: targetPatientId })
       .populate("doctorId", "name fullName specialization slmcReg hospital")
       .select("-fileData")
@@ -388,7 +392,7 @@ router.get("/patient/:patientId", auth, async (req, res) => {
 });
 
 // 3. DOWNLOAD / VIEW SPECIFIC RECORD DETAILS & FILE
-router.get("/download/:id", auth, async (req, res) => {
+router.get("/download/:id", protect, authorize(["doctor", "nurse", "lab_assistant", "system_admin", "patient"]), async (req, res) => {
   try {
     const record = await MedicalRecord.findById(req.params.id);
     if (!record) return res.status(404).json({ msg: "File not found" });
@@ -421,7 +425,7 @@ router.get("/download/:id", auth, async (req, res) => {
   }
 });
 
-router.delete("/delete/:id", auth, async (req, res) => {
+router.delete("/delete/:id", protect, authorize(["doctor", "nurse", "lab_assistant", "system_admin", "patient"]), async (req, res) => {
   try {
     const record = await MedicalRecord.findById(req.params.id);
 

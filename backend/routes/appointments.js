@@ -5,7 +5,7 @@ import Notification from "../models/Notification.js";
 import HospitalFinance from "../models/Finance.js";
 import Doctor from "../models/Doctor.js";
 import ScheduleRequest from "../models/ScheduleRequest.js";
-import { auth } from "../middleware/auth.js";
+import { protect as auth, protect, authorize } from "../middleware/authRole.js";
 import Patient from "../models/Patient.js";
 import { sendBookingConfirmation } from "../utils/emailService.js";
 
@@ -14,7 +14,7 @@ const router = express.Router();
 // ==========================================
 // 1. CHECK BOOKING AVAILABILITY & DOUBLE BOOKING
 // ==========================================
-router.post("/check-booking", auth, async (req, res) => {
+router.post("/check-booking", protect, async (req, res) => {
   try {
     const { doctorId, date } = req.body;
 
@@ -74,7 +74,7 @@ router.post("/check-booking", auth, async (req, res) => {
 // ==========================================
 // 2. BOOK APPOINTMENT (With Notifications & Split Payment Logic)
 // ==========================================
-router.post("/book", auth, async (req, res) => {
+router.post("/book", protect, authorize(["patient", "receptionist", "system_admin"]), async (req, res) => {
   try {
     const {
       doctorId,

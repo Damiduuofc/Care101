@@ -57,7 +57,14 @@ export default function NursePatientArrivals() {
             console.error("Invalid API URL for socket:", e);
         }
 
-        const socket = io(socketUrl);
+        const token = getAdminToken() || "";
+        const socket = io(socketUrl, {
+            auth: { token },
+            extraHeaders: {
+                "Authorization": `Bearer ${token}`,
+                "x-auth-token": token
+            }
+        });
 
         socket.on("connect", () => {
             console.log("🔌 Connected to Socket.IO Server (Patient Arrivals)");

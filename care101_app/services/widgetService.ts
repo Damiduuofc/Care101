@@ -120,8 +120,11 @@ export const WidgetService = {
     }
 
     widgetSocket = io(socketUrl, {
+      auth: { token },
       extraHeaders: {
         'ngrok-skip-browser-warning': 'true',
+        'Authorization': `Bearer ${token}`,
+        'x-auth-token': token || ''
       },
       transports: ['websocket', 'polling'],
       reconnection: true,

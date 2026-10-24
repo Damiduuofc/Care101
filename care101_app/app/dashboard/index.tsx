@@ -142,7 +142,13 @@ export default function DashboardScreen() {
         console.error("Invalid API URL for socket:", e);
       }
 
-      socket = io(socketUrl);
+      socket = io(socketUrl, {
+        auth: { token },
+        extraHeaders: {
+          'Authorization': `Bearer ${token}`,
+          'x-auth-token': token
+        }
+      });
 
       socket.on("connect", () => {
         console.log("🔌 Doctor Dashboard Connected to Socket.IO Server");

@@ -1,7 +1,8 @@
 import express from "express";
 import mongoose from "mongoose";
 import Notification from "../models/Notification.js";
-import { auth } from "../middleware/auth.js"; 
+import { protect } from "../middleware/authRole.js"; 
+
 
 const router = express.Router();
 
@@ -16,7 +17,7 @@ const getUserCondition = (userId) => {
 // ==========================================
 // 1. GET ALL NOTIFICATIONS (Patient or Doctor)
 // ==========================================
-router.get("/", auth, async (req, res) => {
+router.get("/", protect, async (req, res) => {
   try {
     const userId = req.user.id || req.user._id;
     const userCondition = getUserCondition(userId);
@@ -38,7 +39,7 @@ router.get("/", auth, async (req, res) => {
 // ==========================================
 // 2. GET UNREAD COUNT
 // ==========================================
-router.get("/unread-count", auth, async (req, res) => {
+router.get("/unread-count", protect, async (req, res) => {
   try {
     const userId = req.user.id || req.user._id;
     const userCondition = getUserCondition(userId);
@@ -60,7 +61,7 @@ router.get("/unread-count", auth, async (req, res) => {
 // ==========================================
 // 3. MARK ALL AS READ (Must be before parameterized routes)
 // ==========================================
-router.put("/read-all", auth, async (req, res) => {
+router.put("/read-all", protect, async (req, res) => {
   try {
     const userId = req.user.id || req.user._id;
     const userCondition = getUserCondition(userId);
@@ -106,13 +107,13 @@ const handleMarkAsRead = async (req, res) => {
   }
 };
 
-router.put("/read/:id", auth, handleMarkAsRead);
-router.put("/:id/read", auth, handleMarkAsRead);
+router.put("/read/:id", protect, handleMarkAsRead);
+router.put("/:id/read", protect, handleMarkAsRead);
 
 // ==========================================
 // 5. CLEAR ALL NOTIFICATIONS (Must be before /:id)
 // ==========================================
-router.delete("/clear-all", auth, async (req, res) => {
+router.delete("/clear-all", protect, async (req, res) => {
   try {
     const userId = req.user.id || req.user._id;
     const userCondition = getUserCondition(userId);
@@ -131,7 +132,7 @@ router.delete("/clear-all", auth, async (req, res) => {
 // ==========================================
 // 6. DELETE SINGLE NOTIFICATION
 // ==========================================
-router.delete("/:id", auth, async (req, res) => {
+router.delete("/:id", protect, async (req, res) => {
   try {
     const { id } = req.params;
     if (!mongoose.Types.ObjectId.isValid(id)) {

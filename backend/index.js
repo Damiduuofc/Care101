@@ -6,6 +6,7 @@ import path from "path";
 import fs from "fs";
 import { createServer } from "http";
 import { Server } from "socket.io";
+import jwt from "jsonwebtoken";
 
 // Routes
 import authRoutes from "./routes/auth.js";
@@ -31,11 +32,81 @@ import ScheduleRequest from "./models/ScheduleRequest.js";
 
 const app = express();
 app.set("trust proxy", true);
+
+// ==========================================
+// 1. CORS CONFIGURATION (Strict Allowlist)
+// ==========================================
+const rawAllowedOrigins = [
+  process.env.CLIENT_URL,
+  process.env.FRONTEND_URL,
+  ...(process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(",") : []),
+  "http://localhost:9002",
+  "http://localhost:3000",
+  "http://localhost:5000",
+  "http://localhost:5002",
+  "http://127.0.0.1:9002",
+  "http://127.0.0.1:3000",
+  "http://127.0.0.1:5000",
+  "http://127.0.0.1:5002"
+].filter(Boolean).map(o => o.trim().replace(/\/$/, ""));
+
+const allowedOriginsSet = new Set(rawAllowedOrigins);
+
+const corsOriginDelegate = (origin, callback) => {
+  // Allow non-browser requests (mobile apps, Expo, curl/Postman, server-to-server) where origin header is absent
+  if (!origin) {
+    return callback(null, true);
+  }
+  
+  const normalizedOrigin = origin.replace(/\/$/, "");
+  if (
+    allowedOriginsSet.has(normalizedOrigin) ||
+    /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(normalizedOrigin) ||
+    // Private LAN addresses (dev machine accessed from other devices on the network)
+    /^https?:\/\/(10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3})(:\d+)?$/.test(normalizedOrigin) ||
+    /\.ngrok-free\.(app|dev)$/.test(normalizedOrigin) ||
+    /\.ngrok\.(io|app|dev)$/.test(normalizedOrigin)
+  ) {
+    return callback(null, true);
+  }
+
+  return callback(new Error(`CORS policy: Origin ${origin} is not allowed.`));
+};
+
 const httpServer = createServer(app);
+
+// ==========================================
+// 2. SOCKET.IO WITH AUTHENTICATION MIDDLEWARE
+// ==========================================
 const io = new Server(httpServer, {
   cors: {
-    origin: "*",
+    origin: corsOriginDelegate,
+    credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+  }
+});
+
+// Socket.IO Handshake Authentication Middleware
+io.use((socket, next) => {
+  const token =
+    socket.handshake.auth?.token ||
+    socket.handshake.headers?.["authorization"] ||
+    socket.handshake.headers?.["x-auth-token"] ||
+    socket.handshake.query?.token;
+
+  if (!token) {
+    console.warn(`⚠️ Socket connection rejected: No token provided from socket ${socket.id}`);
+    return next(new Error("Authentication error: Token required"));
+  }
+
+  try {
+    const tokenString = token.startsWith("Bearer ") ? token.slice(7).trim() : token.trim();
+    const decoded = jwt.verify(tokenString, process.env.JWT_SECRET);
+    socket.user = decoded; // { id, role, ... }
+    next();
+  } catch (err) {
+    console.error(`❌ Socket authentication error from socket ${socket.id}:`, err.message);
+    return next(new Error("Authentication error: Invalid token"));
   }
 });
 
@@ -46,11 +117,11 @@ app.use((req, res, next) => {
 });
 
 io.on("connection", (socket) => {
-  console.log(`🔌 Client connected: ${socket.id}`);
+  console.log(`🔌 Authenticated client connected: ${socket.id} (User: ${socket.user?.id || socket.user?.name || "unknown"}, Role: ${socket.user?.role || "patient"})`);
   
   socket.on("joinDoctorRoom", (doctorId) => {
     socket.join(`doctor:${doctorId}`);
-    console.log(`📡 Client joined room: doctor:${doctorId}`);
+    console.log(`📡 Authenticated client ${socket.id} joined room: doctor:${doctorId}`);
   });
 
   socket.on("disconnect", () => {
@@ -71,15 +142,17 @@ if (!fs.existsSync(uploadsDir)) {
  ========================= */
 
 app.use(cors({
-  origin: "*",
+  origin: corsOriginDelegate,
+  credentials: true,
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
   allowedHeaders: [
     "Content-Type",
     "Authorization",
     "ngrok-skip-browser-warning",
-    "x-auth-token" // <--- ADD THIS LINE
+    "x-auth-token"
   ]
 }));
+
 
 // Increase payload size (images, files)
 app.use(express.json({ limit: "50mb" }));

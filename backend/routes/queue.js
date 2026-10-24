@@ -1,6 +1,7 @@
 import express from "express";
-import { auth } from "../middleware/auth.js";
+import { protect, authorize } from "../middleware/authRole.js";
 import Doctor from "../models/Doctor.js";
+
 import Appointment from "../models/Appointment.js";
 import ScheduleRequest from "../models/ScheduleRequest.js";
 import ConsultationHistory from "../models/ConsultationHistory.js";
@@ -12,7 +13,7 @@ const router = express.Router();
 // ==========================================
 // 1. UPDATE QUEUE (POST /api/queue/update)
 // ==========================================
-router.post("/update", auth, async (req, res) => {
+router.post("/update", protect, authorize(["doctor", "nurse", "receptionist", "system_admin"]), async (req, res) => {
   try {
     const { doctorId, currentServingNumber, action, appointmentId } = req.body;
     
@@ -231,7 +232,7 @@ router.post("/update", auth, async (req, res) => {
 // ==========================================
 // 2. GET PATIENT QUEUE STATUS (GET /api/queue/patient/:patientId)
 // ==========================================
-router.get("/patient/:patientId", auth, async (req, res) => {
+router.get("/patient/:patientId", protect, async (req, res) => {
   try {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -284,7 +285,7 @@ router.get("/patient/:patientId", auth, async (req, res) => {
 // ==========================================
 // 3. GET DOCTOR LIVE QUEUE (GET /api/queue/doctor/:doctorId/live)
 // ==========================================
-router.get("/doctor/:doctorId/live", auth, async (req, res) => {
+router.get("/doctor/:doctorId/live", protect, async (req, res) => {
   try {
     const doctor = await Doctor.findById(req.params.doctorId);
     if (!doctor) return res.status(404).json({ msg: "Doctor not found" });

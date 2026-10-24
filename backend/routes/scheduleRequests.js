@@ -3,6 +3,7 @@ import ScheduleRequest from '../models/ScheduleRequest.js';
 import Doctor from '../models/Doctor.js';
 import Notification from '../models/Notification.js';
 import { auth } from '../middleware/auth.js';
+import { findAutoAllocation } from '../utils/autoAllocate.js';
 
 const router = express.Router();
 
@@ -71,7 +72,8 @@ router.get('/all', auth, async (req, res) => {
 // ==========================================
 router.put('/:id/status', auth, async (req, res) => {
   try {
-    const { status, allocatedRoom, allocatedNurse } = req.body; 
+    const { status } = req.body;
+    let { allocatedRoom, allocatedNurse } = req.body;
     
     if (!['approved', 'rejected', 'cancelled'].includes(status)) {
       return res.status(400).json({ msg: 'Invalid status. Must be approved, rejected, or cancelled.' });
@@ -95,6 +97,14 @@ router.put('/:id/status', auth, async (req, res) => {
     const wasApproved = request.status === 'approved';
 
     if (status === 'approved') {
+      // ✅ AUTO-ASSIGN any room/nurse the approver didn't pick
+      if (!allocatedRoom || !allocatedNurse) {
+        const doctor = await Doctor.findById(request.doctorId).select('specialization');
+        const auto = await findAutoAllocation(request, doctor?.specialization);
+        allocatedRoom = allocatedRoom || auto.room;
+        allocatedNurse = allocatedNurse || auto.nurse;
+      }
+
       // ✅ CONFLICT CHECK
       if (allocatedRoom || allocatedNurse) {
         const conflict = await ScheduleRequest.findOne({
@@ -305,6 +315,21 @@ router.get('/approved/today', auth, async (req, res) => {
   }
 });
 
+// 7.0 RECEPTIONIST: Suggest an available room and nurse for a request
+router.get('/:id/auto-allocation', auth, async (req, res) => {
+  try {
+    const request = await ScheduleRequest.findById(req.params.id);
+    if (!request) return res.status(404).json({ msg: 'Request not found' });
+
+    const doctor = await Doctor.findById(request.doctorId).select('specialization');
+    const { room, nurse } = await findAutoAllocation(request, doctor?.specialization);
+    res.json({ allocatedRoom: room, allocatedNurse: nurse });
+  } catch (err) {
+    console.error('Auto Allocation Error:', err.message);
+    res.status(500).json({ msg: 'Server error' });
+  }
+});
+
 // 7.1 RECEPTIONIST: Allocate room and nurse to an approved schedule
 router.put('/:id/allocate', auth, async (req, res) => {
   try {
@@ -401,18 +426,28 @@ router.post('/admin/create', auth, async (req, res) => {
       status: 'approved' // Automatically approved
     });
 
+    const auto = await findAutoAllocation(newRequest, doctor.specialization);
+    newRequest.allocatedRoom = auto.room;
+    newRequest.allocatedNurse = auto.nurse;
+
     const savedRequest = await newRequest.save();
+
+    if (parsedDate.toDateString() === new Date().toDateString()) {
+      await Doctor.findByIdAndUpdate(doctorId, {
+        $set: { allocatedRoom: auto.room, allocatedNurse: auto.nurse, sessionEndedToday: false }
+      });
+    }
 
     // Create a Notification for the doctor
     const doctorNotification = new Notification({
       userId: doctorId,
       type: 'schedule_request',
-      message: `A new schedule for ${parsedDate.toDateString()} was created and approved for you by the administration.`,
+      message: `A new schedule for ${parsedDate.toDateString()} was created and approved for you by the administration. Room: ${savedRequest.allocatedRoom || 'TBA'}`,
       data: { 
         requestId: savedRequest._id,
         status: 'approved',
-        allocatedRoom: 'TBA',
-        allocatedNurse: 'TBA'
+        allocatedRoom: savedRequest.allocatedRoom || 'TBA',
+        allocatedNurse: savedRequest.allocatedNurse || 'TBA'
       }
     });
     await doctorNotification.save();

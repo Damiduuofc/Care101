@@ -312,12 +312,13 @@ const [doctorSearchQuery, setDoctorSearchQuery] = useState("");
             });
             
             if (response.ok) {
+                const data = await response.json();
                 setRequests(prev => 
                     prev.map(req => req._id === id ? { 
                         ...req, 
                         status: newStatus,
-                        allocatedRoom: newStatus === "approved" ? req.allocatedRoom : "",
-                        allocatedNurse: newStatus === "approved" ? req.allocatedNurse : ""
+                        allocatedRoom: data.request?.allocatedRoom ?? "",
+                        allocatedNurse: data.request?.allocatedNurse ?? ""
                     } : req)
                 );
             } else {
@@ -367,11 +368,31 @@ const [doctorSearchQuery, setDoctorSearchQuery] = useState("");
         }
     };
 
-    const handleConfirmApproval = async (id: string) => {
-        if (!approvalRoom || !approvalNurse) {
-            alert("Please select both a Room and a Nurse.");
-            return;
+    // Opens the approval dialog pre-filled with an auto-assigned free room and nurse
+    const openApprovalDialog = async (selectedReq: any) => {
+        setApprovalDialogReq(selectedReq);
+        setApprovalRoom("");
+        setApprovalNurse("");
+        try {
+            const token = getAdminToken() || "";
+            const response = await fetch(`${API_URL}/schedule-requests/${selectedReq._id}/auto-allocation`, {
+                headers: { 
+                    "Authorization": `Bearer ${token}`,
+                    "x-auth-token": token,
+                    "ngrok-skip-browser-warning": "true" 
+                }
+            });
+            if (response.ok) {
+                const data = await response.json();
+                setApprovalRoom(data.allocatedRoom || "");
+                setApprovalNurse(data.allocatedNurse || "");
+            }
+        } catch (error) {
+            console.error("Auto Allocation Error:", error);
         }
+    };
+
+    const handleConfirmApproval = async (id: string) => {
         
         setApprovalSubmitting(true);
         try {
@@ -391,12 +412,13 @@ const [doctorSearchQuery, setDoctorSearchQuery] = useState("");
             });
             
             if (response.ok) {
+                const data = await response.json();
                 setRequests(prev => 
                     prev.map(req => req._id === id ? { 
                         ...req, 
                         status: "approved",
-                        allocatedRoom: approvalRoom,
-                        allocatedNurse: approvalNurse 
+                        allocatedRoom: data.request?.allocatedRoom ?? approvalRoom,
+                        allocatedNurse: data.request?.allocatedNurse ?? approvalNurse 
                     } : req)
                 );
                 setApprovalDialogReq(null);
@@ -413,7 +435,7 @@ const [doctorSearchQuery, setDoctorSearchQuery] = useState("");
     };
 
     const modalApprovalConflictMessage = useMemo(() => {
-        if (!approvalDialogReq || !approvalRoom || !approvalNurse) return null;
+        if (!approvalDialogReq) return null;
         
         const isRBooked = isRoomBookedForTime(approvalRoom, approvalDialogReq, requests);
         if (isRBooked) {
@@ -716,11 +738,7 @@ const filteredHistoryRequests = historyRequests.filter((req: any) => {
                                         req={req} 
                                         onAction={handleAction} 
                                         onDelete={handleDelete}
-                                        onApproveClick={(selectedReq: any) => {
-                                            setApprovalDialogReq(selectedReq);
-                                            setApprovalRoom("");
-                                            setApprovalNurse("");
-                                        }}
+                                        onApproveClick={openApprovalDialog}
                                         loadingId={loadingAction} 
                                         formatDate={formatDate}
                                         formatTime={formatTime}
@@ -789,7 +807,7 @@ const filteredHistoryRequests = historyRequests.filter((req: any) => {
                                 {/* Room select */}
                                 <div className="space-y-1.5">
                                     <label className="text-xs font-semibold text-slate-500 uppercase flex items-center justify-between">
-                                        <span>Select Room *</span>
+                                        <span>Room (auto-assigned)</span>
                                         <span className="text-[10px] text-cyan-600 font-bold lowercase">
                                             ({getDoctorDept(approvalDialogReq.specialization)} rooms)
                                         </span>
@@ -799,7 +817,7 @@ const filteredHistoryRequests = historyRequests.filter((req: any) => {
                                         onChange={(e) => setApprovalRoom(e.target.value)}
                                         className="w-full h-10 px-3 py-2 rounded-md border text-xs focus:outline-none focus:ring-2 focus:ring-cyan-500 bg-white border-slate-200"
                                     >
-                                        <option value="">Choose Room...</option>
+                                        <option value="">Auto-assign room</option>
                                         {getRoomsForDoctor(approvalDialogReq.specialization).map(room => {
                                             const isBooked = isRoomBookedForTime(room, approvalDialogReq, requests);
                                             return (
@@ -818,13 +836,13 @@ const filteredHistoryRequests = historyRequests.filter((req: any) => {
 
                                 {/* Nurse select */}
                                 <div className="space-y-1.5">
-                                    <label className="text-xs font-semibold text-slate-500 uppercase">Assigned Nurse *</label>
+                                    <label className="text-xs font-semibold text-slate-500 uppercase">Nurse (auto-assigned)</label>
                                     <select 
                                         value={approvalNurse}
                                         onChange={(e) => setApprovalNurse(e.target.value)}
                                         className="w-full h-10 px-3 py-2 rounded-md border text-xs focus:outline-none focus:ring-2 focus:ring-cyan-500 bg-white border-slate-200"
                                     >
-                                        <option value="">Choose Nurse...</option>
+                                        <option value="">Auto-assign nurse</option>
                                         {nursesList.map(n => {
                                             const isBooked = isNurseBookedForTime(n.name, approvalDialogReq, requests);
                                             return (
@@ -860,7 +878,7 @@ const filteredHistoryRequests = historyRequests.filter((req: any) => {
                                     </Button>
                                     <Button
                                         onClick={() => handleConfirmApproval(approvalDialogReq._id)}
-                                        disabled={approvalSubmitting || !!modalApprovalConflictMessage || !approvalRoom || !approvalNurse}
+                                        disabled={approvalSubmitting || !!modalApprovalConflictMessage}
                                         className="flex-1 text-xs bg-cyan-600 hover:bg-cyan-700 text-white"
                                     >
                                         {approvalSubmitting ? <Loader2 className="animate-spin h-4 w-4" /> : "Approve Request"}

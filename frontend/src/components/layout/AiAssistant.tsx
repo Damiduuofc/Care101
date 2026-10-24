@@ -7,6 +7,8 @@ import { Input } from "@/components/ui/input";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { motion, AnimatePresence } from "framer-motion";
+import { getAdminToken } from "@/lib/adminSession";
+
 
 const API_URL = `${process.env.NEXT_PUBLIC_API_URL}/chat`;
 
@@ -40,13 +42,13 @@ export default function AiAssistant() {
     setLoading(true);
 
     try {
+      const token = getAdminToken() || (typeof window !== "undefined" ? sessionStorage.getItem("token") : null);
       const res = await fetch(API_URL, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          // ✅ FIX 2: Ngrok Header
-          // This tells Ngrok "I am a developer, let the JSON through"
-          "ngrok-skip-browser-warning": "true"
+          "ngrok-skip-browser-warning": "true",
+          ...(token ? { "Authorization": `Bearer ${token}`, "x-auth-token": token } : {})
         },
         body: JSON.stringify({ messages: newHistory }),
       });

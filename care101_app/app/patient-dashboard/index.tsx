@@ -87,8 +87,11 @@ export default function PatientDashboardScreen() {
         }
 
         const socket = io(socketUrl, {
+            auth: { token },
             extraHeaders: {
-                'ngrok-skip-browser-warning': 'true'
+                'ngrok-skip-browser-warning': 'true',
+                'Authorization': `Bearer ${token}`,
+                'x-auth-token': token || ''
             },
             transports: ['websocket', 'polling']
         });
