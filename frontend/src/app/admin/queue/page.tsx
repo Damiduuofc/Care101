@@ -5,7 +5,8 @@ import Sidebar from "@/components/admin/Sidebar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge"; // Ensure you have this UI component
-import { Loader2, Play, Square, Users, Plus, Minus, AlertCircle, BookOpen, Activity, Download, X, UploadCloud, Volume2 } from "lucide-react";
+import { Loader2, Play, Square, Users, Plus, Minus, AlertCircle, BookOpen, Activity, Download, X, UploadCloud, Volume2, ClipboardList, Copy, Check } from "lucide-react";
+import { QRCodeSVG } from "qrcode.react";
 import { useRouter } from "next/navigation";
 import { clearAdminSession, getAdminToken, getAdminUser } from "@/lib/adminSession";
 import { io } from "socket.io-client";
@@ -27,6 +28,18 @@ export default function NurseQueueDashboard() {
     const [isMedicalBookOpen, setIsMedicalBookOpen] = useState(false);
     const [isNewRecordOpen, setIsNewRecordOpen] = useState(false);
     const [isLabRequestOpen, setIsLabRequestOpen] = useState(false);
+    const [isInstructionShareOpen, setIsInstructionShareOpen] = useState(false);
+
+    // Surgical Instruction Share States
+    const [doctorInstructions, setDoctorInstructions] = useState<any[]>([]);
+    const [loadingInstructions, setLoadingInstructions] = useState(false);
+    const [instructionsError, setInstructionsError] = useState("");
+    const [shareInstructionId, setShareInstructionId] = useState("");
+    const [shareSection, setShareSection] = useState<"preOp" | "postOp" | "both">("both");
+    const [shareExpiry, setShareExpiry] = useState("");
+    const [sharingInstruction, setSharingInstruction] = useState(false);
+    const [shareResult, setShareResult] = useState<any>(null);
+    const [linkCopied, setLinkCopied] = useState(false);
 
     // Data States
     const [medicalRecords, setMedicalRecords] = useState<any[]>([]);
@@ -117,6 +130,94 @@ export default function NurseQueueDashboard() {
             console.error("Fetch records error:", err);
         } finally {
             setLoadingRecords(false);
+        }
+    };
+
+    const defaultShareExpiry = () => {
+        const d = new Date();
+        d.setDate(d.getDate() + 30);
+        return d.toISOString().substring(0, 10);
+    };
+
+    const openInstructionShare = async (patient: { id: string; fullName: string; doctorId: string; doctorName: string }) => {
+        setSelectedPatient(patient);
+        setShareInstructionId("");
+        setShareSection("both");
+        setShareExpiry(defaultShareExpiry());
+        setShareResult(null);
+        setLinkCopied(false);
+        setInstructionsError("");
+        setDoctorInstructions([]);
+        setIsInstructionShareOpen(true);
+
+        setLoadingInstructions(true);
+        try {
+            const token = getAdminToken();
+            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/instructions/doctor/${patient.doctorId}`, {
+                headers: {
+                    "x-auth-token": token || "",
+                    "ngrok-skip-browser-warning": "true"
+                }
+            });
+            const data = await res.json().catch(() => null);
+            if (res.ok) {
+                setDoctorInstructions(Array.isArray(data) ? data : []);
+            } else {
+                setInstructionsError(data?.msg || "Failed to load surgical instructions.");
+            }
+        } catch (err) {
+            console.error("Fetch instructions error:", err);
+            setInstructionsError("An error occurred loading surgical instructions.");
+        } finally {
+            setLoadingInstructions(false);
+        }
+    };
+
+    const handleShareInstruction = async () => {
+        if (!selectedPatient || !shareInstructionId || !shareExpiry) {
+            alert("Please select a surgical instruction and an expiry date.");
+            return;
+        }
+
+        setSharingInstruction(true);
+        try {
+            const token = getAdminToken();
+            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/instructions/nurse-share`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "x-auth-token": token || "",
+                    "ngrok-skip-browser-warning": "true"
+                },
+                body: JSON.stringify({
+                    instructionId: shareInstructionId,
+                    patientId: selectedPatient.id,
+                    section: shareSection,
+                    expiresAt: shareExpiry
+                })
+            });
+            const data = await res.json().catch(() => null);
+            if (res.ok) {
+                setShareResult(data);
+            } else {
+                alert(data?.msg || "Failed to share surgical instructions.");
+            }
+        } catch (err) {
+            console.error("Share instruction error:", err);
+            alert("An error occurred while sharing instructions.");
+        } finally {
+            setSharingInstruction(false);
+        }
+    };
+
+    const handleCopyShareLink = async () => {
+        if (!shareResult?.link) return;
+        try {
+            await navigator.clipboard.writeText(shareResult.link);
+            setLinkCopied(true);
+            setTimeout(() => setLinkCopied(false), 2000);
+        } catch {
+            window.prompt("Copy this link:", shareResult.link);
         }
     };
 
@@ -862,6 +963,23 @@ export default function NurseQueueDashboard() {
                                                         <Activity className="h-4 w-4 text-slate-500" />
                                                         Lab Requests
                                                     </Button>
+
+                                                    {doc.sessionStarted && (
+                                                        <Button 
+                                                            variant="outline" 
+                                                            size="sm"
+                                                            className="bg-cyan-50 border-cyan-200 text-cyan-700 font-bold text-xs hover:bg-cyan-100 flex items-center gap-1.5 h-9 px-3 rounded-xl shadow-sm active:scale-95"
+                                                            onClick={() => openInstructionShare({
+                                                                id: activeAppt.patientId?._id || activeAppt.patientId,
+                                                                fullName: activeAppt.patientId?.fullName || "Patient",
+                                                                doctorId: doc._id,
+                                                                doctorName: doc.name
+                                                            })}
+                                                        >
+                                                            <ClipboardList className="h-4 w-4" />
+                                                            Surgical Instructions
+                                                        </Button>
+                                                    )}
                                                 </div>
                                             )}
                                         </div>
@@ -950,6 +1068,21 @@ export default function NurseQueueDashboard() {
                                                                     >
                                                                         <Activity className="h-3.5 w-3.5 mr-1 text-slate-400" /> Lab
                                                                     </Button>
+                                                                    {doc.sessionStarted && (
+                                                                        <Button
+                                                                            variant="ghost"
+                                                                            size="sm"
+                                                                            className="h-7 px-2 text-[11px] font-bold text-cyan-700 hover:text-cyan-800 hover:bg-cyan-50"
+                                                                            onClick={() => openInstructionShare({
+                                                                                id: patId,
+                                                                                fullName: appt.patientId?.fullName || "Patient",
+                                                                                doctorId: doc._id,
+                                                                                doctorName: doc.name
+                                                                            })}
+                                                                        >
+                                                                            <ClipboardList className="h-3.5 w-3.5 mr-1" /> Instructions
+                                                                        </Button>
+                                                                    )}
                                                                 </div>
                                                             </div>
                                                         );
@@ -1264,6 +1397,145 @@ export default function NurseQueueDashboard() {
                                 </Button>
                             </div>
                         </form>
+                    </div>
+                </div>
+            )}
+
+            {/* SURGICAL INSTRUCTIONS SHARE MODAL */}
+            {isInstructionShareOpen && selectedPatient && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[92vh] overflow-hidden flex flex-col">
+                        <div className="p-3.5 sm:p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50/60">
+                            <div>
+                                <h3 className="text-lg sm:text-xl font-bold text-slate-800">Share Surgical Instructions</h3>
+                                <p className="text-xs text-slate-500 mt-0.5">
+                                    For <span className="font-semibold text-slate-700">{selectedPatient.fullName}</span> • {selectedPatient.doctorName}
+                                </p>
+                            </div>
+                            <button onClick={() => setIsInstructionShareOpen(false)} className="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-100 transition-colors">
+                                <X className="h-5 w-5" />
+                            </button>
+                        </div>
+
+                        <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-5">
+                            {shareResult ? (
+                                <div className="text-center space-y-4">
+                                    <div className="inline-block bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+                                        <QRCodeSVG value={shareResult.link} size={200} />
+                                    </div>
+                                    <div>
+                                        <p className="font-bold text-slate-800">{shareResult.surgeryName}</p>
+                                        <p className="text-xs text-slate-500 mt-0.5">
+                                            {shareResult.section === "preOp" ? "Pre-Operative" : shareResult.section === "postOp" ? "Post-Operative" : "Pre & Post-Operative"} • Valid until{" "}
+                                            <span className="font-semibold text-slate-700">{new Date(shareResult.expiresAt).toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" })}</span>
+                                        </p>
+                                    </div>
+                                    <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl p-2">
+                                        <input readOnly value={shareResult.link} className="flex-1 min-w-0 bg-transparent text-xs text-slate-600 outline-none px-1" />
+                                        <Button size="sm" variant="outline" className="h-8 px-2.5 text-xs font-bold shrink-0" onClick={handleCopyShareLink}>
+                                            {linkCopied ? <><Check className="h-3.5 w-3.5 mr-1 text-emerald-600" /> Copied</> : <><Copy className="h-3.5 w-3.5 mr-1" /> Copy</>}
+                                        </Button>
+                                    </div>
+                                    <p className="text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-xl px-3 py-2">
+                                        Link saved to the patient&apos;s medical records.
+                                    </p>
+                                </div>
+                            ) : loadingInstructions ? (
+                                <div className="flex flex-col items-center justify-center py-16 text-slate-400">
+                                    <Loader2 className="animate-spin h-8 w-8 mb-2 text-cyan-600" />
+                                    <p className="text-sm font-medium">Loading surgical instructions...</p>
+                                </div>
+                            ) : instructionsError ? (
+                                <div className="text-center py-10 text-rose-600 bg-rose-50 rounded-xl border border-rose-100 text-sm font-semibold px-4">
+                                    {instructionsError}
+                                </div>
+                            ) : doctorInstructions.length === 0 ? (
+                                <div className="text-center py-12 text-slate-400 bg-slate-50 rounded-xl border border-dashed border-slate-200">
+                                    <ClipboardList className="h-9 w-9 mx-auto mb-2 text-slate-300" />
+                                    <p className="text-xs font-semibold">{selectedPatient.doctorName} has no surgical instructions yet.</p>
+                                </div>
+                            ) : (
+                                <>
+                                    <div className="space-y-2">
+                                        <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">1. Select Surgical Instruction</label>
+                                        <div className="space-y-2 max-h-[30vh] overflow-y-auto pr-1">
+                                            {doctorInstructions.map((ins) => {
+                                                const hasPre = !!(ins.preOp?.video || ins.preOp?.audio || ins.preOp?.document);
+                                                const hasPost = !!(ins.postOp?.video || ins.postOp?.audio || ins.postOp?.document);
+                                                const selected = shareInstructionId === ins._id;
+                                                return (
+                                                    <button
+                                                        type="button"
+                                                        key={ins._id}
+                                                        onClick={() => setShareInstructionId(ins._id)}
+                                                        className={`w-full text-left p-3 rounded-xl border transition-all ${selected ? "border-cyan-500 bg-cyan-50 ring-2 ring-cyan-100" : "border-slate-200 hover:border-slate-300 bg-white"}`}
+                                                    >
+                                                        <p className="font-bold text-sm text-slate-800">{ins.surgeryName}</p>
+                                                        {ins.description && <p className="text-xs text-slate-500 mt-0.5 line-clamp-2">{ins.description}</p>}
+                                                        <div className="flex gap-1.5 mt-1.5">
+                                                            <Badge variant="outline" className={`text-[10px] font-bold ${hasPre ? "bg-blue-50 text-blue-700 border-blue-100" : "text-slate-400"}`}>Pre-Op {hasPre ? "✓" : "—"}</Badge>
+                                                            <Badge variant="outline" className={`text-[10px] font-bold ${hasPost ? "bg-emerald-50 text-emerald-700 border-emerald-100" : "text-slate-400"}`}>Post-Op {hasPost ? "✓" : "—"}</Badge>
+                                                        </div>
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+
+                                    <div className="space-y-2">
+                                        <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">2. What to Share</label>
+                                        <div className="grid grid-cols-3 gap-2">
+                                            {([
+                                                { value: "preOp", label: "Pre-Op" },
+                                                { value: "postOp", label: "Post-Op" },
+                                                { value: "both", label: "Both" },
+                                            ] as const).map(opt => (
+                                                <button
+                                                    type="button"
+                                                    key={opt.value}
+                                                    onClick={() => setShareSection(opt.value)}
+                                                    className={`h-10 rounded-xl border text-xs font-bold transition-all ${shareSection === opt.value ? "border-cyan-500 bg-cyan-50 text-cyan-700" : "border-slate-200 text-slate-600 hover:border-slate-300"}`}
+                                                >
+                                                    {opt.label}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    <div className="space-y-2">
+                                        <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">3. Link Expiry Date</label>
+                                        <input
+                                            type="date"
+                                            value={shareExpiry}
+                                            min={new Date().toISOString().substring(0, 10)}
+                                            onChange={(e) => setShareExpiry(e.target.value)}
+                                            className="w-full h-10 px-3 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                                        />
+                                    </div>
+                                </>
+                            )}
+                        </div>
+
+                        <div className="p-3.5 sm:p-5 border-t border-slate-100 flex justify-end gap-2 bg-slate-50/60">
+                            {shareResult ? (
+                                <Button onClick={() => setIsInstructionShareOpen(false)} className="bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl">
+                                    Done
+                                </Button>
+                            ) : (
+                                <>
+                                    <Button variant="outline" onClick={() => setIsInstructionShareOpen(false)} className="font-bold rounded-xl">
+                                        Cancel
+                                    </Button>
+                                    <Button
+                                        onClick={handleShareInstruction}
+                                        disabled={sharingInstruction || !shareInstructionId || !shareExpiry}
+                                        className="bg-cyan-600 hover:bg-cyan-700 text-white font-bold rounded-xl"
+                                    >
+                                        {sharingInstruction ? <Loader2 className="h-4 w-4 animate-spin" /> : "Generate QR & Save"}
+                                    </Button>
+                                </>
+                            )}
+                        </div>
                     </div>
                 </div>
             )}

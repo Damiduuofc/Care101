@@ -9,7 +9,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
-import { Calendar, ArrowLeft, CheckCircle2 } from 'lucide-react-native';
+import { Calendar, ArrowLeft, CheckCircle2, FileText, ChevronRight } from 'lucide-react-native';
 import * as SecureStore from 'expo-secure-store';
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL;
@@ -127,6 +127,16 @@ export default function PatientsScreen() {
               <Text style={styles.statLabel}>Patients Arrived</Text>
             </View>
           </View>
+
+          <TouchableOpacity
+            style={styles.recordsButton}
+            activeOpacity={0.8}
+            onPress={() => router.push('/dashboard/patients/today' as any)}
+          >
+            <FileText size={18} color="#06B6D4" />
+            <Text style={styles.recordsButtonText}>View Today's Patient Records</Text>
+            <ChevronRight size={18} color="#06B6D4" />
+          </TouchableOpacity>
         </View>
 
         {/* STATUS SECTION */}
@@ -274,6 +284,19 @@ const styles = StyleSheet.create({
     elevation: 2,
     marginTop: 10,
   },
+  recordsButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    marginTop: 12,
+    backgroundColor: '#ecfeff',
+    borderWidth: 1,
+    borderColor: '#a5f3fc',
+    paddingVertical: 14,
+    borderRadius: 14,
+  },
+  recordsButtonText: { color: '#06B6D4', fontSize: 15, fontWeight: '700' },
   statCard: {
     flex: 1,
     alignItems: 'center',

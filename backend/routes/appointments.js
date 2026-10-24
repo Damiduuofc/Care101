@@ -403,12 +403,18 @@ router.get("/widget-status", auth, async (req, res) => {
     const endOfToday = new Date();
     endOfToday.setHours(23, 59, 59, 999);
 
-    // 1. Look for today's active/upcoming appointment
-    const todayAppt = await Appointment.findOne({
+    const upcomingStatuses = ["confirmed", "Confirmed", "pending", "Pending", "scheduled", "Scheduled"];
+
+    // 1. Look for today's active/upcoming appointment. A patient can have several today
+    // (e.g. one completed, one later); prefer one that isn't completed so the widget
+    // doesn't flip between "completed" and "queue" depending on Mongo's natural order.
+    const todayAppts = await Appointment.find({
       patientId,
       date: { $gte: startOfToday, $lte: endOfToday },
-      status: { $ne: "cancelled" }
-    }).populate("doctorId");
+      status: { $nin: ["cancelled", "Cancelled"] }
+    }).sort({ date: 1, queueNumber: 1 }).populate("doctorId");
+    const todayAppt =
+      todayAppts.find((a) => String(a.status).toLowerCase() !== "completed") || todayAppts[0] || null;
 
     if (todayAppt) {
       const doc = todayAppt.doctorId;
@@ -446,7 +452,7 @@ router.get("/widget-status", auth, async (req, res) => {
       const ongoingToken = (doc && doc.currentQueueNumber) ? doc.currentQueueNumber : 0;
       const isArrived = !!(doc && doc.isArrived);
       const isSessionStarted = !!(doc && doc.sessionStarted);
-      const isSessionEnded = !!(doc && doc.sessionEndedToday) || todayAppt.status === "completed";
+      const isSessionEnded = !!(doc && doc.sessionEndedToday) || String(todayAppt.status).toLowerCase() === "completed";
       const channelingStatus = (doc && doc.channelingStatus) ? doc.channelingStatus : "On Time";
       const isDelayed = channelingStatus.toLowerCase() !== "on time" && !isArrived;
       const delayMessage = isArrived
@@ -460,7 +466,7 @@ router.get("/widget-status", auth, async (req, res) => {
         const nextAppt = await Appointment.findOne({
           patientId,
           date: { $gt: endOfToday },
-          status: { $in: ["confirmed", "Confirmed", "pending", "Pending"] }
+          status: { $in: upcomingStatuses }
         }).sort({ date: 1 }).populate("doctorId");
 
         if (nextAppt) {
@@ -534,7 +540,7 @@ router.get("/widget-status", auth, async (req, res) => {
     const futureAppt = await Appointment.findOne({
       patientId,
       date: { $gt: endOfToday },
-      status: { $in: ["confirmed", "Confirmed", "pending", "Pending"] }
+      status: { $in: upcomingStatuses }
     }).sort({ date: 1 }).populate("doctorId");
 
     if (futureAppt) {

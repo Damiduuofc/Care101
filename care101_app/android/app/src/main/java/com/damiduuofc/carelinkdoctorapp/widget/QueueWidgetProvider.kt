@@ -45,6 +45,7 @@ class QueueWidgetProvider : AppWidgetProvider() {
         const val KEY_PATIENT_ID = "patient_id"
         const val KEY_NOTIFIED_IDS = "notified_ids_set"
         const val KEY_INITIAL_SYNC_DONE = "initial_notif_sync_done"
+        const val KEY_WIDGET_SYNCED_AT = "widget_synced_at_ms"
 
         const val CHANNEL_ID = "care101_live_alerts_v2"
         const val CHANNEL_NAME = "CareLink 101 Live Clinic Alerts"
@@ -262,7 +263,24 @@ class QueueWidgetProvider : AppWidgetProvider() {
                         readTimeout = 6000
                     }
 
-                    if (conn.responseCode == HttpURLConnection.HTTP_OK) {
+                    val code = conn.responseCode
+                    if (code == HttpURLConnection.HTTP_UNAUTHORIZED) {
+                        // Token expired/invalid: cached data can never refresh again, so reset to the
+                        // empty widget and stop the service (the app re-sets auth on next login).
+                        conn.disconnect()
+                        Log.w(TAG, "Widget status fetch got 401, clearing widget auth/state")
+                        prefs.edit()
+                            .remove(KEY_WIDGET_DATA)
+                            .remove(KEY_WIDGET_SYNCED_AT)
+                            .remove(KEY_AUTH_TOKEN)
+                            .apply()
+                        mainHandler.post {
+                            updateAllWidgets(appContext)
+                            QueueForegroundService.stop(appContext)
+                        }
+                        return@execute
+                    }
+                    if (code == HttpURLConnection.HTTP_OK) {
                         val reader = BufferedReader(InputStreamReader(conn.inputStream))
                         val sb = StringBuilder()
                         var line: String?
@@ -272,20 +290,27 @@ class QueueWidgetProvider : AppWidgetProvider() {
                         reader.close()
 
                         val responseJson = sb.toString()
-                        val prevJson = prefs.getString(KEY_WIDGET_DATA, null)
-                        prefs.edit().putString(KEY_WIDGET_DATA, responseJson).apply()
-                        try {
-                            val parsed = JSONObject(responseJson)
+                        // Only persist a real widget payload; a proxy/HTML page would otherwise wipe
+                        // the last known state and leave the widget blank.
+                        val parsed = try { JSONObject(responseJson) } catch (_: Exception) { null }
+                        if (parsed != null && parsed.has("state")) {
+                            val prevJson = prefs.getString(KEY_WIDGET_DATA, null)
+                            prefs.edit()
+                                .putString(KEY_WIDGET_DATA, responseJson)
+                                .putLong(KEY_WIDGET_SYNCED_AT, System.currentTimeMillis())
+                                .apply()
                             val docId = parsed.optString("doctorId", "")
                             if (docId.isNotEmpty() && docId != "null") {
                                 resolvedDoctorId = docId
                             }
-                        } catch (_: Exception) {}
 
-                        checkAndNotifyStateTransition(appContext, prevJson, responseJson)
-                        mainHandler.post {
-                            updateAllWidgets(appContext)
-                            onDoctorResolved?.invoke(resolvedDoctorId)
+                            checkAndNotifyStateTransition(appContext, prevJson, responseJson)
+                            mainHandler.post {
+                                updateAllWidgets(appContext)
+                                onDoctorResolved?.invoke(resolvedDoctorId)
+                            }
+                        } else {
+                            Log.w(TAG, "Widget status response was not a widget payload; keeping last state")
                         }
                     }
                     conn.disconnect()
@@ -405,7 +430,16 @@ class QueueWidgetProvider : AppWidgetProvider() {
             } else {
                 try {
                     val data = JSONObject(rawJson)
-                    val state = data.optString("state", "empty")
+                    var state = data.optString("state", "empty")
+
+                    // A "today" payload synced before local midnight is from a previous day
+                    // (no refresh happened overnight): don't keep showing yesterday's live queue.
+                    val syncedAt = prefs.getLong(KEY_WIDGET_SYNCED_AT, 0L)
+                    val isTodayPayload = state == "queue" ||
+                        (state == "upcoming" && data.optString("formattedDate", "Today").equals("Today", ignoreCase = true))
+                    if (isTodayPayload && syncedAt > 0L && syncedAt < startOfTodayMillis()) {
+                        state = "empty"
+                    }
 
                     when (state) {
                         "queue" -> bindQueueState(views, data)
@@ -420,6 +454,15 @@ class QueueWidgetProvider : AppWidgetProvider() {
             }
 
             appWidgetManager.updateAppWidget(appWidgetId, views)
+        }
+
+        private fun startOfTodayMillis(): Long {
+            val cal = java.util.Calendar.getInstance()
+            cal.set(java.util.Calendar.HOUR_OF_DAY, 0)
+            cal.set(java.util.Calendar.MINUTE, 0)
+            cal.set(java.util.Calendar.SECOND, 0)
+            cal.set(java.util.Calendar.MILLISECOND, 0)
+            return cal.timeInMillis
         }
 
         private fun showEmptyState(views: RemoteViews) {
@@ -615,6 +658,8 @@ class QueueWidgetProvider : AppWidgetProvider() {
             updateAppWidget(context, appWidgetManager, appWidgetId)
         }
         QueueForegroundService.startOrUpdate(context)
+        // Periodic update (updatePeriodMillis) previously only redrew cached data; pull fresh state too.
+        fetchRemoteDataOnce(context)
     }
 
     override fun onReceive(context: Context, intent: Intent) {

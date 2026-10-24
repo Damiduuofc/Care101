@@ -6,6 +6,11 @@ import path from "path";
 import crypto from "crypto";
 import InstructionShare from "../models/InstructionShare.js";
 import Doctor from "../models/Doctor.js";
+import Admin from "../models/Admin.js";
+import ScheduleRequest from "../models/ScheduleRequest.js";
+import Patient from "../models/Patient.js";
+import MedicalRecord from "../models/MedicalRecord.js";
+import Notification from "../models/Notification.js";
 
 const router = express.Router();
 
@@ -47,6 +52,155 @@ router.post("/", auth, async (req, res) => {
     const saved = await newInstruction.save();
     res.json(saved);
   } catch (err) { res.status(500).send("Server Error"); }
+});
+
+// ==========================================
+// NURSE: access the instructions of an assigned doctor during an active session
+// ==========================================
+const STAFF_SHARE_ROLES = ["nurse", "system_admin"];
+
+// Nurses may only use instructions of a doctor assigned to them whose queue session is running
+const checkNurseDoctorAccess = async (user, doctorId) => {
+  if (!STAFF_SHARE_ROLES.includes(user?.role)) {
+    return { error: 403, msg: "Only nurses can share surgical instructions." };
+  }
+
+  const doctor = await Doctor.findById(doctorId).select("name allocatedNurse sessionStarted");
+  if (!doctor) return { error: 404, msg: "Doctor not found." };
+
+  if (user.role === "nurse") {
+    const nurse = await Admin.findById(user.id).select("name");
+    const nurseName = String(nurse?.name || "").trim().toLowerCase();
+    const matchesNurse = (name) => !!nurseName && String(name || "").trim().toLowerCase() === nurseName;
+
+    // The doctor's live allocation can be cleared while today's approved schedule still names the nurse
+    let assigned = matchesNurse(doctor.allocatedNurse);
+    if (!assigned) {
+      const startOfDay = new Date();
+      startOfDay.setHours(0, 0, 0, 0);
+      const endOfDay = new Date();
+      endOfDay.setHours(23, 59, 59, 999);
+      const todaySchedules = await ScheduleRequest.find({
+        doctorId: doctor._id,
+        status: "approved",
+        sessionEnded: { $ne: true },
+        date: { $gte: startOfDay, $lte: endOfDay }
+      }).select("allocatedNurse");
+      assigned = todaySchedules.some(s => matchesNurse(s.allocatedNurse));
+    }
+
+    if (!assigned) {
+      return { error: 403, msg: "You are not assigned to this doctor." };
+    }
+    if (!doctor.sessionStarted) {
+      return { error: 403, msg: "Surgical instructions are available once the queue session has started." };
+    }
+  }
+
+  return { doctor };
+};
+
+// GET a doctor's instructions (nurse view)
+router.get("/doctor/:doctorId", auth, async (req, res) => {
+  try {
+    const access = await checkNurseDoctorAccess(req.user, req.params.doctorId);
+    if (access.error) return res.status(access.error).json({ msg: access.msg });
+
+    const list = await Instruction.find({ doctor: req.params.doctorId }).sort({ createdAt: -1 });
+    res.json(list);
+  } catch (err) {
+    console.error("Nurse Instructions Fetch Error:", err);
+    res.status(500).send("Server Error");
+  }
+});
+
+// NURSE: share selected instruction sections with a patient & save the link to their medical records
+router.post("/nurse-share", auth, async (req, res) => {
+  try {
+    const { instructionId, patientId, section, expiresAt } = req.body;
+
+    if (!instructionId || !patientId || !expiresAt) {
+      return res.status(400).json({ msg: "Instruction, patient and expiry date are required." });
+    }
+
+    const sec = ["preOp", "postOp", "both"].includes(section) ? section : "both";
+
+    const expiry = new Date(expiresAt);
+    if (isNaN(expiry.getTime())) {
+      return res.status(400).json({ msg: "Invalid expiry date." });
+    }
+    // Links stay valid through the end of the chosen day
+    expiry.setHours(23, 59, 59, 999);
+    const maxExpiry = new Date();
+    maxExpiry.setFullYear(maxExpiry.getFullYear() + 1);
+    if (expiry <= new Date() || expiry > maxExpiry) {
+      return res.status(400).json({ msg: "Expiry date must be in the future and within one year." });
+    }
+
+    const instruction = await Instruction.findById(instructionId);
+    if (!instruction) return res.status(404).json({ msg: "Instruction not found." });
+
+    const access = await checkNurseDoctorAccess(req.user, instruction.doctor);
+    if (access.error) return res.status(access.error).json({ msg: access.msg });
+    const { doctor } = access;
+
+    const patient = await Patient.findById(patientId).select("fullName");
+    if (!patient) return res.status(404).json({ msg: "Patient not found." });
+
+    const token = crypto.randomBytes(16).toString("hex");
+    const share = await InstructionShare.create({
+      instruction: instruction._id,
+      section: sec,
+      token,
+      expiresAt: expiry,
+      patient: patient._id,
+      sharedBy: req.user.id
+    });
+
+    // Link is served by this backend, so it works from any device that can reach the API host
+    const proto = req.headers["x-forwarded-proto"] || req.protocol || "http";
+    const link = `${proto}://${req.get("host")}/patient/instructions/${token}`;
+
+    const sectionLabel = sec === "preOp" ? "Pre-Operative" : sec === "postOp" ? "Post-Operative" : "Pre & Post-Operative";
+    const expiryLabel = expiry.toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" });
+
+    const record = await MedicalRecord.create({
+      patientId: patient._id,
+      doctorId: doctor._id,
+      doctorName: doctor.name || "Doctor",
+      type: "reports",
+      title: `Surgical Instructions: ${instruction.surgeryName}`,
+      date: new Date(),
+      description: `${sectionLabel} care instructions for ${instruction.surgeryName}.\n\nOpen link: ${link}\n\nAccess valid until: ${expiryLabel}`,
+      updatedAt: new Date()
+    });
+
+    share.medicalRecord = record._id;
+    await share.save();
+
+    try {
+      await Notification.create({
+        userId: patient._id,
+        type: "report",
+        message: `Surgical care instructions for ${instruction.surgeryName} were shared with you (valid until ${expiryLabel}).`,
+        metadata: { recordId: record._id, recordType: "reports" }
+      });
+    } catch (notifErr) {
+      console.error("Instruction share notification error:", notifErr);
+    }
+
+    res.status(201).json({
+      token,
+      link,
+      section: sec,
+      expiresAt: expiry,
+      surgeryName: instruction.surgeryName,
+      recordId: record._id
+    });
+  } catch (err) {
+    console.error("Nurse Instruction Share Error:", err);
+    res.status(500).send("Server Error");
+  }
 });
 
 // GET Single Instruction
@@ -316,8 +470,8 @@ export async function handlePatientInstructionsView(req, res) {
     const formattedExpiry = new Date(expiresAt).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
     const formattedUpdated = new Date(instruction.createdAt || Date.now()).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
 
-    const showPreOp = !section || section === "preOp";
-    const showPostOp = !section || section === "postOp";
+    const showPreOp = section !== "postOp";
+    const showPostOp = section !== "preOp";
 
     const html = `
       <!DOCTYPE html>

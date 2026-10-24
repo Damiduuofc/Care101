@@ -332,6 +332,8 @@ class QueueForegroundService : Service() {
                 reconnectionDelay = 2000
                 reconnectionDelayMax = 10000
                 timeout = 10000
+                // Backend io.use() checks handshake.auth.token first; headers can be dropped by proxies
+                auth = mapOf("token" to token)
                 extraHeaders = mapOf(
                     "ngrok-skip-browser-warning" to listOf("true"),
                     "Authorization" to listOf("Bearer $token")
@@ -365,6 +367,11 @@ class QueueForegroundService : Service() {
                 isSocketConnected = false
                 mainHandler.post {
                     updatePersistentNotification()
+                }
+                // Handshake rejected for a bad/expired token: the HTTP fetch will see the 401 and
+                // clear auth + stop this service instead of reconnecting forever.
+                if (err?.contains("Authentication", ignoreCase = true) == true) {
+                    scheduleServerReconciliation(0L)
                 }
             }
 

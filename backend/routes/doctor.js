@@ -103,6 +103,32 @@ router.get("/dashboard-stats", auth, async (req, res) => {
 });
 
 // ---------------------------------------------
+// 1.1 TODAY'S APPOINTMENTS (patients the doctor can open records for)
+// ---------------------------------------------
+router.get("/today-appointments", auth, async (req, res) => {
+  try {
+    const startOfDay = new Date();
+    startOfDay.setHours(0, 0, 0, 0);
+    const endOfDay = new Date();
+    endOfDay.setHours(23, 59, 59, 999);
+
+    const appointments = await Appointment.find({
+      doctorId: req.user.id,
+      date: { $gte: startOfDay, $lte: endOfDay },
+      status: { $ne: "cancelled" }
+    })
+      .populate("patientId", "fullName patientId nicNumber gender dateOfBirth profileImage")
+      .sort({ queueNumber: 1 })
+      .lean();
+
+    res.json(appointments.filter(a => a.patientId));
+  } catch (err) {
+    console.error("Today Appointments Error:", err.message);
+    res.status(500).send("Server Error");
+  }
+});
+
+// ---------------------------------------------
 // 2. GET PROFILE
 // ---------------------------------------------
 router.get("/profile", auth, async (req, res) => {

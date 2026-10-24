@@ -39,7 +39,7 @@ export default function PatientInstructionPage() {
   const token = params.token as string;
 
   const [data, setData] = useState<InstructionData | null>(null);
-  const [shareSection, setShareSection] = useState<"preOp" | "postOp" | null>(null);
+  const [shareSection, setShareSection] = useState<"preOp" | "postOp" | "both" | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [resolvedApiBase, setResolvedApiBase] = useState<string>("");
@@ -296,12 +296,12 @@ export default function PatientInstructionPage() {
         )}
 
         {/* PRE-OP */}
-        {(shareSection === null || shareSection === "preOp") && 
+        {shareSection !== "postOp" && 
           renderSection("Pre-Operative", "bg-blue-500", "bg-blue-50/50", data.preOp)
         }
 
         {/* POST-OP */}
-        {(shareSection === null || shareSection === "postOp") && 
+        {shareSection !== "preOp" && 
           renderSection("Post-Operative", "bg-emerald-500", "bg-emerald-50/50", data.postOp)
         }
 

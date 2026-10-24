@@ -31,6 +31,12 @@ let activeToken: string | null = null;
 let activePatientId: string | null = null;
 let lastWidgetPayload: WidgetData | null = null;
 let appStateSubscription: any = null;
+// Bumped on logout/clear so in-flight syncs started before it don't repopulate the widget
+let sessionGeneration = 0;
+// Monotonic request id so an older, slower response can't overwrite a newer one
+let syncRequestSeq = 0;
+let lastAppliedSyncSeq = 0;
+const SYNC_TIMEOUT_MS = 8000;
 
 const formatDoctorName = (raw?: string | null): string => {
   const trimmed = (raw || '').trim();
@@ -131,6 +137,14 @@ export const WidgetService = {
       reconnectionDelay: 2000,
     });
 
+    widgetSocket.on('connect_error', (err: any) => {
+      // Server rejects the handshake when the token is missing/expired; let the HTTP sync
+      // confirm with a 401 and clear the widget instead of reconnecting forever.
+      if (String(err?.message || '').toLowerCase().includes('authentication')) {
+        WidgetService.syncWithServer(token, patientId);
+      }
+    });
+
     widgetSocket.on('connect', () => {
       console.log('⚡ Widget Real-Time Socket.IO Connected');
       if (lastWidgetPayload?.doctorId) {
@@ -154,8 +168,9 @@ export const WidgetService = {
             updatedDoc.isArrived !== undefined
               ? !!updatedDoc.isArrived
               : !!lastWidgetPayload.isArrived;
-          const channelingStatus =
-            updatedDoc.channelingStatus || lastWidgetPayload.channelingStatus || 'On Time';
+          const channelingStatus = String(
+            updatedDoc.channelingStatus || lastWidgetPayload.channelingStatus || 'On Time'
+          );
           const isDelayed = channelingStatus.toLowerCase() !== 'on time' && !isArrived;
           const room = updatedDoc.allocatedRoom || lastWidgetPayload.room || 'Room TBA';
 
@@ -259,7 +274,7 @@ export const WidgetService = {
           String(lastWidgetPayload.doctorId) === String(payload.doctorId);
 
         if (isOurDoc) {
-          const status = payload.channelingStatus || payload.status || 'Delayed';
+          const status = String(payload.channelingStatus || payload.status || 'Delayed');
           const isDelayed = status.toLowerCase() !== 'on time';
           const room = payload.allocatedRoom || lastWidgetPayload.room || 'Room TBA';
 
@@ -345,6 +360,10 @@ export const WidgetService = {
     if (Platform.OS !== 'android' || !token || !patientId) return;
 
     const apiUrl = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:5002';
+    const generation = sessionGeneration;
+    const requestSeq = ++syncRequestSeq;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), SYNC_TIMEOUT_MS);
     try {
       // 1. Ensure widget has auth credentials for independent background refresh
       if (QueueWidgetModule) {
@@ -359,10 +378,27 @@ export const WidgetService = {
           'Content-Type': 'application/json',
           'ngrok-skip-browser-warning': 'true',
         },
+        signal: controller.signal,
       });
 
+      // Logged out meanwhile, or a newer sync already landed: drop this response
+      if (generation !== sessionGeneration || requestSeq < lastAppliedSyncSeq) return;
+
+      if (res.status === 401) {
+        // Token expired/invalid: stale data can never refresh, so reset to the empty widget
+        console.warn('Widget sync: token rejected (401), clearing widget');
+        await WidgetService.clearWidget();
+        return;
+      }
+
       if (res.ok) {
-        const rawPayload: WidgetData = await res.json();
+        const rawPayload = (await res.json().catch(() => null)) as WidgetData | null;
+        if (generation !== sessionGeneration || requestSeq < lastAppliedSyncSeq) return;
+        if (!rawPayload || typeof rawPayload !== 'object' || !rawPayload.state) {
+          console.warn('Widget sync: unexpected payload shape', rawPayload);
+          return;
+        }
+        lastAppliedSyncSeq = requestSeq;
         const payload: WidgetData = {
           ...rawPayload,
           ...(rawPayload.doctorName ? { doctorName: formatDoctorName(rawPayload.doctorName) } : {}),
@@ -379,7 +415,10 @@ export const WidgetService = {
         console.warn('Widget sync error: HTTP', res.status);
       }
     } catch (error) {
+      // Network failure/timeout: keep the last known widget state
       console.warn('Failed to sync Android widget with server:', error);
+    } finally {
+      clearTimeout(timeoutId);
     }
   },
 
@@ -387,6 +426,7 @@ export const WidgetService = {
    * Reset widget to the empty state (app logo on white background).
    */
   clearWidget: async () => {
+    sessionGeneration++;
     WidgetService.stopRealtimeSocket();
     if (Platform.OS !== 'android' || !QueueWidgetModule) return;
     try {

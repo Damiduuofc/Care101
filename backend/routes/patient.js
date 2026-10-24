@@ -244,7 +244,6 @@ router.get("/:id/medical-history", auth, async (req, res) => {
     const medicalRecords = await MedicalRecord.find({ patientId })
       .select("-fileData") // Don't send large file data
       .sort({ date: -1 })
-      .limit(10)
       .lean();
 
     // Get surgery records

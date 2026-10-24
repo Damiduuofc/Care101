@@ -13,10 +13,11 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { ArrowLeft, User, Phone, Mail, Calendar, MapPin, AlertCircle, FileText, Plus, X } from 'lucide-react-native';
+import { ArrowLeft, User, Phone, Mail, Calendar, MapPin, AlertCircle, FileText, Plus, X, Pencil, Trash2 } from 'lucide-react-native';
 import * as SecureStore from 'expo-secure-store';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
+import * as DocumentPicker from 'expo-document-picker';
 const API_URL = process.env.EXPO_PUBLIC_API_URL;
 
 export default function PatientDetailScreen() {
@@ -35,6 +36,18 @@ export default function PatientDetailScreen() {
     const [showViewRecordModal, setShowViewRecordModal] = useState(false);
     const [selectedRecordData, setSelectedRecordData] = useState<any>(null);
     const [fetchingRecord, setFetchingRecord] = useState(false);
+
+    // Add / Edit / Delete Record States
+    const [recordFormMode, setRecordFormMode] = useState<'add' | 'edit' | null>(null);
+    const [editRecordId, setEditRecordId] = useState<string | null>(null);
+    const [editType, setEditType] = useState("consultations");
+    const [editFile, setEditFile] = useState<{ data: string; type: string; name: string } | null>(null);
+    const [editTitle, setEditTitle] = useState("");
+    const [editDiagnosis, setEditDiagnosis] = useState("");
+    const [editMedications, setEditMedications] = useState("");
+    const [editDescription, setEditDescription] = useState("");
+    const [savingRecord, setSavingRecord] = useState(false);
+    const [deletingRecord, setDeletingRecord] = useState(false);
 
     const handleDownloadFile = async (fileData: string, fileName: string, fileType: string) => {
         try {
@@ -181,6 +194,142 @@ export default function PatientDetailScreen() {
 
 
 
+    const closeRecordModal = () => {
+        setShowViewRecordModal(false);
+    };
+
+    const openAddRecord = () => {
+        setEditRecordId(null);
+        setEditType("consultations");
+        setEditTitle("");
+        setEditDiagnosis("");
+        setEditMedications("");
+        setEditDescription("");
+        setEditFile(null);
+        setRecordFormMode('add');
+    };
+
+    const openEditRecord = (record: any) => {
+        setShowViewRecordModal(false);
+        setEditRecordId(record._id);
+        setEditType(record.type || "consultations");
+        setEditTitle(record.title || "");
+        setEditDiagnosis(record.diagnosis || "");
+        setEditMedications(record.medications || "");
+        setEditDescription(record.description || "");
+        setEditFile(null);
+        setRecordFormMode('edit');
+    };
+
+    const handlePickFile = async () => {
+        try {
+            const result = await DocumentPicker.getDocumentAsync({
+                type: ['image/*', 'application/pdf'],
+                copyToCacheDirectory: true,
+            });
+            if (result.canceled || !result.assets?.length) return;
+
+            const asset = result.assets[0];
+            const mimeType = asset.mimeType || (asset.name?.toLowerCase().endsWith('.pdf') ? 'application/pdf' : 'image/jpeg');
+            const base64 = await FileSystem.readAsStringAsync(asset.uri, {
+                encoding: FileSystem.EncodingType.Base64,
+            });
+            setEditFile({ data: `data:${mimeType};base64,${base64}`, type: mimeType, name: asset.name || 'Attachment' });
+        } catch (error) {
+            console.error("Pick File Error:", error);
+            Alert.alert("Error", "Could not attach the file.");
+        }
+    };
+
+    const handleSaveRecord = async () => {
+        if (!editTitle.trim()) {
+            Alert.alert("Required", "Please enter a title for the record.");
+            return;
+        }
+
+        setSavingRecord(true);
+        try {
+            const token = await SecureStore.getItemAsync('token');
+            const isAdd = recordFormMode === 'add';
+            const response = await fetch(
+                isAdd ? `${API_URL}/medical-records/upload` : `${API_URL}/medical-records/${editRecordId}`,
+                {
+                    method: isAdd ? 'POST' : 'PUT',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json',
+                        'ngrok-skip-browser-warning': 'true'
+                    },
+                    body: JSON.stringify({
+                        ...(isAdd ? { patientId: id, date: new Date().toISOString() } : {}),
+                        type: editType,
+                        title: editTitle.trim(),
+                        diagnosis: editDiagnosis.trim(),
+                        medications: editMedications.trim(),
+                        description: editDescription.trim(),
+                        ...(editFile ? { fileData: editFile.data, fileType: editFile.type } : {})
+                    })
+                }
+            );
+
+            if (response.ok) {
+                setRecordFormMode(null);
+                Alert.alert("Success", isAdd ? "Medical record added." : "Medical record updated.");
+                fetchPatientDetails(); // Refresh
+            } else {
+                const data = await response.json().catch(() => ({}));
+                Alert.alert("Error", data.msg || "Failed to save record");
+            }
+        } catch (error) {
+            console.error("Save Record Error:", error);
+            Alert.alert("Error", "Connection failed");
+        } finally {
+            setSavingRecord(false);
+        }
+    };
+
+    const confirmDeleteRecord = (record: any) => {
+        Alert.alert(
+            "Delete Record",
+            `Are you sure you want to delete "${record?.title || 'this record'}"? This cannot be undone.`,
+            [
+                { text: "Cancel", style: "cancel" },
+                {
+                    text: "Delete",
+                    style: "destructive",
+                    onPress: async () => {
+                        setDeletingRecord(true);
+                        try {
+                            const token = await SecureStore.getItemAsync('token');
+                            const response = await fetch(`${API_URL}/medical-records/delete/${record._id}`, {
+                                method: 'DELETE',
+                                headers: {
+                                    'Authorization': `Bearer ${token}`,
+                                    'ngrok-skip-browser-warning': 'true'
+                                }
+                            });
+
+                            if (response.ok) {
+                                closeRecordModal();
+                                setSelectedRecordData(null);
+                                Alert.alert("Deleted", "Medical record removed.");
+                                fetchPatientDetails(); // Refresh
+                            } else {
+                                const data = await response.json().catch(() => ({}));
+                                Alert.alert("Error", data.msg || "Failed to delete record");
+                            }
+                        } catch (error) {
+                            console.error("Delete Record Error:", error);
+                            Alert.alert("Error", "Connection failed");
+                        } finally {
+                            setDeletingRecord(false);
+                        }
+                    }
+                }
+            ]
+        );
+    };
+
     const formatDate = (dateString: string) => {
         if (!dateString) return 'N/A';
         const date = new Date(dateString);
@@ -219,7 +368,7 @@ export default function PatientDetailScreen() {
         );
     }
 
-    const { patient, appointments, medicalRecords, summary } = patientData;
+    const { patient, medicalRecords, summary } = patientData;
 
     return (
         <View style={styles.container}>
@@ -344,26 +493,6 @@ export default function PatientDetailScreen() {
                         </View>
                     </View>
 
-                    {/* Recent Appointments */}
-                    {appointments.length > 0 && (
-                        <View style={styles.section}>
-                            <Text style={styles.sectionTitle}>Recent Appointments</Text>
-                            {appointments.slice(0, 5).map((appointment: any) => (
-                                <View key={appointment._id} style={styles.listItem}>
-                                    <View style={styles.listItemIcon}>
-                                        <Calendar size={16} color="#06b6d4" />
-                                    </View>
-                                    <View style={styles.listItemContent}>
-                                        <Text style={styles.listItemTitle}>{appointment.doctorName}</Text>
-                                        <Text style={styles.listItemSubtitle}>
-                                            {formatDate(appointment.date)} • {appointment.status}
-                                        </Text>
-                                    </View>
-                                </View>
-                            ))}
-                        </View>
-                    )}
-
                     {/* Pending Lab Requests */}
                     {patientData.labRequests && patientData.labRequests.filter((r: any) => r.status === 'pending').length > 0 && (
                         <View style={styles.section}>
@@ -388,8 +517,17 @@ export default function PatientDetailScreen() {
                     <View style={styles.section}>
                         <View style={styles.sectionHeaderRow}>
                             <Text style={styles.sectionTitle}>Medical Records</Text>
+                        </View>
+                        <View style={styles.recordActionsRow}>
                             <TouchableOpacity 
-                                style={styles.addButton}
+                                style={[styles.addButton, styles.recordActionButton]}
+                                onPress={openAddRecord}
+                            >
+                                <Plus size={16} color="#06b6d4" />
+                                <Text style={styles.addButtonText}>Add Record</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity 
+                                style={[styles.addButton, styles.recordActionButton]}
                                 onPress={() => setShowLabRequestModal(true)}
                             >
                                 <Plus size={16} color="#06b6d4" />
@@ -397,7 +535,7 @@ export default function PatientDetailScreen() {
                             </TouchableOpacity>
                         </View>
                         {medicalRecords.length > 0 ? (
-                            medicalRecords.slice(0, 5).map((record: any) => (
+                            medicalRecords.map((record: any) => (
                                 <TouchableOpacity 
                                     key={record._id} 
                                     style={styles.listItem}
@@ -412,6 +550,21 @@ export default function PatientDetailScreen() {
                                             {record.type.replace('_', ' ').toUpperCase()} • {formatDate(record.date)}
                                         </Text>
                                     </View>
+                                    <TouchableOpacity
+                                        style={styles.rowIconButton}
+                                        onPress={() => openEditRecord(record)}
+                                        hitSlop={8}
+                                    >
+                                        <Pencil size={16} color="#06b6d4" />
+                                    </TouchableOpacity>
+                                    <TouchableOpacity
+                                        style={[styles.rowIconButton, { backgroundColor: '#fef2f2' }]}
+                                        onPress={() => confirmDeleteRecord(record)}
+                                        hitSlop={8}
+                                        disabled={deletingRecord}
+                                    >
+                                        <Trash2 size={16} color="#ef4444" />
+                                    </TouchableOpacity>
                                 </TouchableOpacity>
                             ))
                         ) : (
@@ -427,13 +580,13 @@ export default function PatientDetailScreen() {
                     visible={showViewRecordModal}
                     transparent={true}
                     animationType="fade"
-                    onRequestClose={() => setShowViewRecordModal(false)}
+                    onRequestClose={closeRecordModal}
                 >
                     <View style={styles.modalOverlay}>
                         <View style={styles.modalContentCard}>
                             <View style={styles.modalHeaderRow}>
-                                <Text style={styles.modalTitle} numberOfLines={1}>{selectedRecordData?.fileName || 'Record Details'}</Text>
-                                <TouchableOpacity onPress={() => setShowViewRecordModal(false)}>
+                                <Text style={styles.modalTitle} numberOfLines={1}>{selectedRecordData?.title || 'Record Details'}</Text>
+                                <TouchableOpacity onPress={closeRecordModal}>
                                     <X size={24} color="#64748b" />
                                 </TouchableOpacity>
                             </View>
@@ -441,8 +594,27 @@ export default function PatientDetailScreen() {
                             <ScrollView showsVerticalScrollIndicator={false}>
                                 <View style={styles.recordDetailContainer}>
                                     <View style={styles.recordMetaRow}>
-                                        <Text style={styles.recordMetaText}>Type: {selectedRecordData?.fileType || 'N/A'}</Text>
+                                        <Text style={styles.recordMetaText}>
+                                            {(selectedRecordData?.type || 'record').replace('_', ' ').toUpperCase()} • {formatDate(selectedRecordData?.date)}
+                                        </Text>
                                     </View>
+                                    <View style={styles.recordMetaRow}>
+                                        <Text style={styles.recordMetaText}>By: {selectedRecordData?.doctorName || 'N/A'}</Text>
+                                    </View>
+
+                                    {!!selectedRecordData?.diagnosis && (
+                                        <>
+                                            <Text style={styles.modalLabel}>Diagnosis</Text>
+                                            <Text style={styles.recordDescriptionText}>{selectedRecordData.diagnosis}</Text>
+                                        </>
+                                    )}
+
+                                    {!!selectedRecordData?.medications && (
+                                        <>
+                                            <Text style={styles.modalLabel}>Medications</Text>
+                                            <Text style={styles.recordDescriptionText}>{selectedRecordData.medications}</Text>
+                                        </>
+                                    )}
                                     
                                     <Text style={styles.modalLabel}>Description</Text>
                                     <Text style={styles.recordDescriptionText}>
@@ -469,7 +641,31 @@ export default function PatientDetailScreen() {
                                     )}
                                 </View>
                             </ScrollView>
-                            
+
+                            <View style={styles.modalButtonRow}>
+                                <TouchableOpacity 
+                                    style={[styles.modalButton, styles.recordEditButton]}
+                                    onPress={() => openEditRecord(selectedRecordData)}
+                                    disabled={deletingRecord}
+                                >
+                                    <Pencil size={16} color="#06b6d4" />
+                                    <Text style={styles.recordEditButtonText}>Edit</Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity 
+                                    style={[styles.modalButton, styles.recordDeleteButton]}
+                                    onPress={() => confirmDeleteRecord(selectedRecordData)}
+                                    disabled={deletingRecord}
+                                >
+                                    {deletingRecord ? (
+                                        <ActivityIndicator size="small" color="#ef4444" />
+                                    ) : (
+                                        <>
+                                            <Trash2 size={16} color="#ef4444" />
+                                            <Text style={styles.recordDeleteButtonText}>Delete</Text>
+                                        </>
+                                    )}
+                                </TouchableOpacity>
+                            </View>
                             <View style={styles.modalButtonRow}>
                                 {selectedRecordData?.fileData && (
                                     <TouchableOpacity 
@@ -481,9 +677,112 @@ export default function PatientDetailScreen() {
                                 )}
                                 <TouchableOpacity 
                                     style={[styles.modalButton, styles.modalButtonCancel]}
-                                    onPress={() => setShowViewRecordModal(false)}
+                                    onPress={closeRecordModal}
                                 >
                                     <Text style={styles.modalButtonCancelText}>Close</Text>
+                                </TouchableOpacity>
+                            </View>
+                        </View>
+                    </View>
+                </Modal>
+
+                {/* Add / Edit Record Modal */}
+                <Modal
+                    visible={recordFormMode !== null}
+                    transparent={true}
+                    animationType="slide"
+                    onRequestClose={() => setRecordFormMode(null)}
+                >
+                    <View style={styles.modalOverlay}>
+                        <View style={styles.modalContentCard}>
+                            <View style={styles.modalHeaderRow}>
+                                <Text style={styles.modalTitle}>{recordFormMode === 'add' ? 'Add Medical Record' : 'Edit Medical Record'}</Text>
+                                <TouchableOpacity onPress={() => setRecordFormMode(null)}>
+                                    <X size={24} color="#64748b" />
+                                </TouchableOpacity>
+                            </View>
+
+                            <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+                                <Text style={styles.modalLabel}>Record Type</Text>
+                                <View style={styles.typeChipRow}>
+                                    {[
+                                        { value: 'consultations', label: 'Consultation' },
+                                        { value: 'prescriptions', label: 'Prescription' },
+                                        { value: 'lab_tests', label: 'Lab Test' },
+                                        { value: 'reports', label: 'Report' },
+                                    ].map(opt => (
+                                        <TouchableOpacity
+                                            key={opt.value}
+                                            style={[styles.typeChip, editType === opt.value && styles.typeChipActive]}
+                                            onPress={() => setEditType(opt.value)}
+                                        >
+                                            <Text style={[styles.typeChipText, editType === opt.value && styles.typeChipTextActive]}>{opt.label}</Text>
+                                        </TouchableOpacity>
+                                    ))}
+                                </View>
+
+                                <Text style={styles.modalLabel}>Title *</Text>
+                                <TextInput
+                                    style={styles.modalInput}
+                                    value={editTitle}
+                                    onChangeText={setEditTitle}
+                                    placeholder="e.g. OPD Consultation"
+                                />
+
+                                <Text style={styles.modalLabel}>Diagnosis</Text>
+                                <TextInput
+                                    style={[styles.modalInput, styles.modalTextarea]}
+                                    value={editDiagnosis}
+                                    onChangeText={setEditDiagnosis}
+                                    placeholder="Diagnosis"
+                                    multiline={true}
+                                />
+
+                                <Text style={styles.modalLabel}>Medications</Text>
+                                <TextInput
+                                    style={[styles.modalInput, styles.modalTextarea]}
+                                    value={editMedications}
+                                    onChangeText={setEditMedications}
+                                    placeholder="Medications"
+                                    multiline={true}
+                                />
+
+                                <Text style={styles.modalLabel}>Description</Text>
+                                <TextInput
+                                    style={[styles.modalInput, styles.modalTextarea]}
+                                    value={editDescription}
+                                    onChangeText={setEditDescription}
+                                    placeholder="Description / notes"
+                                    multiline={true}
+                                />
+
+                                <Text style={styles.modalLabel}>Attachment (optional)</Text>
+                                <TouchableOpacity style={styles.attachButton} onPress={handlePickFile}>
+                                    <FileText size={16} color="#06b6d4" />
+                                    <Text style={styles.attachButtonText} numberOfLines={1}>
+                                        {editFile ? editFile.name : (recordFormMode === 'edit' ? 'Replace file (image / PDF)' : 'Attach file (image / PDF)')}
+                                    </Text>
+                                </TouchableOpacity>
+                            </ScrollView>
+
+                            <View style={styles.modalButtonRow}>
+                                <TouchableOpacity 
+                                    style={[styles.modalButton, styles.modalButtonCancel]}
+                                    onPress={() => setRecordFormMode(null)}
+                                    disabled={savingRecord}
+                                >
+                                    <Text style={styles.modalButtonCancelText}>Cancel</Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity 
+                                    style={[styles.modalButton, styles.modalButtonSubmit]}
+                                    onPress={handleSaveRecord}
+                                    disabled={savingRecord}
+                                >
+                                    {savingRecord ? (
+                                        <ActivityIndicator size="small" color="#fff" />
+                                    ) : (
+                                        <Text style={styles.modalButtonSubmitText}>{recordFormMode === 'add' ? 'Add Record' : 'Save Changes'}</Text>
+                                    )}
                                 </TouchableOpacity>
                             </View>
                         </View>
@@ -870,6 +1169,57 @@ const styles = StyleSheet.create({
     modalButtonSubmit: {
         backgroundColor: '#06b6d4',
     },
+    recordActionsRow: { flexDirection: 'row', gap: 10, marginBottom: 12 },
+    recordActionButton: { flex: 1, justifyContent: 'center' },
+    rowIconButton: {
+        width: 34,
+        height: 34,
+        borderRadius: 17,
+        backgroundColor: '#ecfeff',
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginLeft: 8,
+    },
+    typeChipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+    typeChip: {
+        paddingHorizontal: 12,
+        paddingVertical: 8,
+        borderRadius: 16,
+        borderWidth: 1,
+        borderColor: '#e2e8f0',
+        backgroundColor: '#fff',
+    },
+    typeChipActive: { borderColor: '#06b6d4', backgroundColor: '#ecfeff' },
+    typeChipText: { fontSize: 13, color: '#475569', fontWeight: '500' },
+    typeChipTextActive: { color: '#0891b2', fontWeight: '700' },
+    attachButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        borderWidth: 1,
+        borderStyle: 'dashed',
+        borderColor: '#a5f3fc',
+        backgroundColor: '#f0fdff',
+        borderRadius: 8,
+        padding: 12,
+    },
+    attachButtonText: { flex: 1, color: '#0891b2', fontSize: 14, fontWeight: '600' },
+    recordEditButton: {
+        flexDirection: 'row',
+        gap: 6,
+        backgroundColor: '#ecfeff',
+        borderWidth: 1,
+        borderColor: '#a5f3fc',
+    },
+    recordEditButtonText: { color: '#06b6d4', fontSize: 14, fontWeight: '600' },
+    recordDeleteButton: {
+        flexDirection: 'row',
+        gap: 6,
+        backgroundColor: '#fef2f2',
+        borderWidth: 1,
+        borderColor: '#fecaca',
+    },
+    recordDeleteButtonText: { color: '#ef4444', fontSize: 14, fontWeight: '600' },
     modalButtonCancel: {
         backgroundColor: '#f1f5f9',
     },
