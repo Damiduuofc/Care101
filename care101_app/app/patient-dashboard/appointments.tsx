@@ -246,7 +246,7 @@ export default function BookAppointmentScreen() {
             await createBooking();
             Alert.alert(
                 'Booking Received',
-                'Your queue token will be issued once the payment is completed.',
+                'Your token has been issued. You will join the queue once the payment is completed.',
                 goToDashboard
             );
         } catch (error: any) {

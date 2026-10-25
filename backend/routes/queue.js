@@ -7,6 +7,7 @@ import ScheduleRequest from "../models/ScheduleRequest.js";
 import ConsultationHistory from "../models/ConsultationHistory.js";
 import Notification from "../models/Notification.js";
 import { calculatePrediction, updateDoctorAverageDuration } from "../services/predictionService.js";
+import { countPaidAhead, firstPaidToken } from "../utils/queueToken.js";
 
 const router = express.Router();
 
@@ -55,7 +56,8 @@ router.post("/update", protect, authorize(["doctor", "nurse", "receptionist", "s
         return res.status(400).json({ msg: "Doctor session has already been completed today and cannot be restarted." });
       }
       doctor.sessionStarted = true;
-      doctor.currentQueueNumber = 1;
+      // Start on the first paid token; unpaid tokens are skipped
+      doctor.currentQueueNumber = await firstPaidToken(doctor._id);
       if (!doctor.lastArrivalDate) {
         doctor.lastArrivalDate = new Date();
       }
@@ -164,26 +166,28 @@ router.post("/update", protect, authorize(["doctor", "nurse", "receptionist", "s
       });
 
       for (const appt of activeAppointments) {
+        const peopleAhead = await countPaidAhead(appt, doctor.currentQueueNumber);
         req.io.to(`doctor:${doctor._id}`).emit("queueUpdated", {
           doctorId: doctor._id,
           currentServingNumber: doctor.currentQueueNumber,
           currentToken: doctor.currentQueueNumber,
           patientQueueNumber: appt.queueNumber,
-          peopleAhead: Math.max(0, (appt.queueNumber || 1) - doctor.currentQueueNumber),
+          peopleAhead,
           lastUpdated: new Date()
         });
 
         // Create & emit real-time notifications for session start and queue progress
         try {
           const patientToken = appt.queueNumber || 0;
-          const diff = patientToken - doctor.currentQueueNumber;
+          // Paid patients ahead (unpaid tokens are skipped); 0 when it's this patient's turn
+          const diff = patientToken === doctor.currentQueueNumber ? 0 : patientToken > doctor.currentQueueNumber ? peopleAhead : -1;
 
           if (action === "start") {
             const notif = await Notification.create({
               userId: appt.patientId,
               type: "reminder",
               title: "Channeling Session Started",
-              message: `Dr. ${doctor.name} has started the session in ${doctor.allocatedRoom || "Room TBA"}. Your Token: #${patientToken} (Ongoing: #1).`,
+              message: `Dr. ${doctor.name} has started the session in ${doctor.allocatedRoom || "Room TBA"}. Your Token: #${patientToken} (Ongoing: #${doctor.currentQueueNumber}).`,
               metadata: { doctorId: doctor._id, appointmentId: appt._id, currentQueue: doctor.currentQueueNumber }
             });
             req.io.emit("newNotification", notif);
@@ -258,10 +262,10 @@ router.get("/patient/:patientId", protect, async (req, res) => {
 
     const doctor = appt.doctorId ? await Doctor.findById(appt.doctorId) : null;
     const currentServing = doctor?.currentQueueNumber || 0;
-    // No queue token until the fee is paid
+    // Unpaid patients keep their token but are not in the live queue until they pay
     const awaitingPayment = appt.paymentStatus !== "paid";
-    const myQueueNumber = awaitingPayment ? null : (appt.queueNumber || 1);
-    const peopleAhead = awaitingPayment ? null : Math.max(0, myQueueNumber - currentServing);
+    const myQueueNumber = appt.queueNumber || null;
+    const peopleAhead = awaitingPayment ? null : await countPaidAhead(appt, currentServing);
 
     res.json({
       appointmentId: appt._id,

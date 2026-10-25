@@ -12,7 +12,7 @@ import HospitalFinance from "../models/Finance.js";
 import Notification from "../models/Notification.js";
 import ScheduleRequest from "../models/ScheduleRequest.js";
 import { protect, authorize } from "../middleware/authRole.js";
-import { assignQueueToken } from "../utils/queueToken.js";
+import { assignQueueToken, countPaidAhead } from "../utils/queueToken.js";
 import { sendBookingConfirmation, sendDoctorWelcomeEmail, sendDoctorApprovalEmail, sendAdminPasswordReset } from "../utils/emailService.js";
 import crypto from "crypto"; 
 const router = express.Router();
@@ -331,7 +331,7 @@ router.post("/appointments/walkin", protect, async (req, res) => {
       paymentStatus: paymentStatus || 'pending'
     });
 
-    // --- 4. GENERATE QUEUE NUMBER (paid bookings only) ---
+    // --- 4. GENERATE QUEUE NUMBER (unpaid bookings stay out of the live queue until paid) ---
     const queueNumber = await assignQueueToken(newAppointment);
 
     const savedAppointment = await newAppointment.save();
@@ -418,9 +418,9 @@ router.post("/appointments/walkin", protect, async (req, res) => {
       await Notification.create({
         userId: patient._id,
         type: 'appointment',
-        message: queueNumber
+        message: paymentStatus === 'paid'
           ? `Booking Confirmed! Queue #${queueNumber} for Dr. ${doctorName}.`
-          : `Booking received for Dr. ${doctorName}. Your queue token will be issued once payment is completed.`
+          : `Booking received for Dr. ${doctorName}. Your token is #${queueNumber}. Please pay the fee to join the queue.`
       });
 
       if (paymentStatus === 'paid') {
@@ -1243,13 +1243,15 @@ router.put("/doctors/:id/status", protect, authorize(["system_admin", "reception
         const appointments = await Appointment.find({
           doctorId: doctor._id,
           date: { $gte: startOfDay, $lte: endOfDay },
-          status: { $in: ["confirmed", "Confirmed", "pending", "Pending"] }
+          status: { $in: ["confirmed", "Confirmed", "pending", "Pending"] },
+          paymentStatus: "paid"
         });
 
         const notifyPromises = [];
         for (const appt of appointments) {
           const patientToken = appt.queueNumber || 0;
-          const diff = patientToken - currentQueueNumber;
+          // Paid patients ahead (unpaid tokens are skipped); 0 when it's this patient's turn
+          const diff = patientToken === currentQueueNumber ? 0 : patientToken > currentQueueNumber ? await countPaidAhead(appt, currentQueueNumber) : -1;
 
           if (diff === 3) {
             notifyPromises.push((async () => {

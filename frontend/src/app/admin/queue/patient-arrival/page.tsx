@@ -441,7 +441,7 @@ export default function NursePatientArrivals() {
                                                     </div>
                                                 </td>
                                                 <td className="p-3 sm:p-3.5 font-bold text-slate-800 text-sm sm:text-base">
-                                                    {appt.paymentStatus?.toLowerCase() === "paid" && appt.queueNumber ? `#${appt.queueNumber}` : "N/A"}
+                                                    {appt.queueNumber ? `#${appt.queueNumber}` : "N/A"}
                                                 </td>
                                                 <td className="p-3 sm:p-3.5">
                                                     <Badge variant="outline" className={`text-[10px] sm:text-xs font-bold ${

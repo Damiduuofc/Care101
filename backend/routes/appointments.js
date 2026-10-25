@@ -1,5 +1,5 @@
 import express from "express";
-import { assignQueueToken } from "../utils/queueToken.js";
+import { assignQueueToken, countPaidAhead } from "../utils/queueToken.js";
 import { reconcilePendingBills } from "../utils/paymentService.js";
 import Appointment from "../models/Appointment.js";
 import Bill from "../models/Bill.js";
@@ -153,7 +153,7 @@ router.post("/book", protect, authorize(["patient", "receptionist", "system_admi
       paymentStatus: paymentStatus || 'pending'
     });
 
-    // --- 3. GENERATE QUEUE NUMBER (paid bookings only) ---
+    // --- 3. GENERATE QUEUE NUMBER (unpaid bookings stay out of the live queue until paid) ---
     const queueNumber = await assignQueueToken(newAppointment);
 
     const savedAppointment = await newAppointment.save();
@@ -242,10 +242,10 @@ router.post("/book", protect, authorize(["patient", "receptionist", "system_admi
       const bookingNotif = await Notification.create({
         userId: req.user.id,
         type: 'appointment',
-        title: queueNumber ? 'Booking Confirmed' : 'Booking Received',
-        message: queueNumber
+        title: paymentStatus === 'paid' ? 'Booking Confirmed' : 'Booking Received',
+        message: paymentStatus === 'paid'
           ? `Booking Confirmed! Queue #${queueNumber} for Dr. ${doctorName}.`
-          : `Booking received for Dr. ${doctorName}. Your queue token will be issued once payment is completed.`
+          : `Booking received for Dr. ${doctorName}. Your token is #${queueNumber}. Please pay the fee to join the queue.`
       });
       if (req.io && bookingNotif) {
         req.io.emit("newNotification", bookingNotif);
@@ -362,11 +362,11 @@ router.get("/upcoming", auth, async (req, res) => {
     }
 
     const doc = upcoming.doctorId && typeof upcoming.doctorId === "object" ? upcoming.doctorId : null;
-    // No queue token until the fee is paid
+    // Unpaid patients keep their token but are not in the live queue until they pay
     const awaitingPayment = upcoming.paymentStatus !== "paid";
-    const myToken = awaitingPayment ? null : (upcoming.queueNumber || 1);
+    const myToken = upcoming.queueNumber || null;
     const currentToken = doc && typeof doc.currentQueueNumber === "number" ? doc.currentQueueNumber : 0;
-    const peopleAhead = awaitingPayment ? null : Math.max(0, myToken - currentToken);
+    const peopleAhead = awaitingPayment ? null : await countPaidAhead(upcoming, currentToken);
     const allocatedRoom = (doc && doc.allocatedRoom) ? doc.allocatedRoom : "Room TBA";
     const sessionStarted = !!(doc && doc.sessionStarted);
     const isArrived = !!(doc && doc.isArrived);
@@ -464,7 +464,7 @@ router.get("/widget-status", auth, async (req, res) => {
       const rawDoctorName = (doc && (doc.fullName || doc.name)) ? (doc.fullName || doc.name) : todayAppt.doctorName;
       const doctorName = formatDoctorName(rawDoctorName);
       const awaitingPayment = todayAppt.paymentStatus !== "paid";
-      const myToken = awaitingPayment ? "--" : (todayAppt.queueNumber || 0);
+      const myToken = todayAppt.queueNumber || "--";
       const ongoingToken = (doc && doc.currentQueueNumber) ? doc.currentQueueNumber : 0;
       const isArrived = !!(doc && doc.isArrived);
       const isSessionStarted = !!(doc && doc.sessionStarted);
@@ -496,7 +496,7 @@ router.get("/widget-status", auth, async (req, res) => {
             nextDoctorName: formatDoctorName(rawNextDocName),
             nextHospitalName: (nextDoc && nextDoc.hospital) ? nextDoc.hospital : "SUWASEWANA HOSPITAL",
             nextRoom,
-            nextToken: (nextAppt.paymentStatus === "paid" && nextAppt.queueNumber) || "--",
+            nextToken: nextAppt.queueNumber || "--",
             nextAwaitingPayment: nextAppt.paymentStatus !== "paid",
             nextDate: new Date(nextAppt.date).toLocaleDateString("en-US", { month: "short", day: "numeric", weekday: "short" })
           });
@@ -510,7 +510,7 @@ router.get("/widget-status", auth, async (req, res) => {
       }
 
       // Case 2: Session has started -> Real-time live queue (unpaid patients are not in the queue)
-      const peopleAhead = awaitingPayment ? 0 : Math.max(0, myToken - ongoingToken);
+      const peopleAhead = awaitingPayment ? 0 : await countPaidAhead(todayAppt, ongoingToken);
       if (isSessionStarted && !awaitingPayment) {
         return res.json({
           state: "queue",
@@ -578,7 +578,7 @@ router.get("/widget-status", auth, async (req, res) => {
         hospitalName,
         doctorName,
         room,
-        myToken: (futureAppt.paymentStatus === "paid" && futureAppt.queueNumber) || "--",
+        myToken: futureAppt.queueNumber || "--",
         awaitingPayment: futureAppt.paymentStatus !== "paid",
         formattedDate: new Date(futureAppt.date).toLocaleDateString("en-US", { month: "short", day: "numeric", weekday: "short" }),
         channelingTime: (doc && doc.channelingTime) ? doc.channelingTime : "Scheduled",
@@ -615,12 +615,12 @@ router.get("/queue-status/:id", auth, async (req, res) => {
     }
 
     const awaitingPayment = myAppointment.paymentStatus !== "paid";
-    const myToken = awaitingPayment ? null : (myAppointment.queueNumber || 0);
+    const myToken = myAppointment.queueNumber || null;
 
     const doctor = await Doctor.findById(myAppointment.doctorId);
     const currentToken = doctor ? doctor.currentQueueNumber || 0 : 0;
 
-    const peopleAhead = awaitingPayment ? null : Math.max(0, myToken - currentToken);
+    const peopleAhead = awaitingPayment ? null : await countPaidAhead(myAppointment, currentToken);
     const estimatedWait = awaitingPayment ? null : peopleAhead * 15;
 
     res.json({

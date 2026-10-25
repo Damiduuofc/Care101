@@ -592,7 +592,7 @@ export default function PatientDashboardScreen() {
         { id: 5, title: 'Update Profile', subtitle: 'Manage info', icon: User, link: '/patient-dashboard/profile', color: '#f59e0b', bg: '#fffbeb' },
     ];
 
-    // Queue tokens are only issued after payment, so unpaid bookings show "awaiting payment" instead
+    // Unpaid bookings have a token but aren't in the live queue, so they show "awaiting payment" instead of live counts
     const awaitingPayment = Boolean(
         upcomingAppointment &&
         (upcomingAppointment.awaitingPayment ?? String(upcomingAppointment.paymentStatus || 'pending').toLowerCase() !== 'paid')
@@ -710,7 +710,7 @@ export default function PatientDashboardScreen() {
                                     <CreditCard size={20} color="#d97706" />
                                     <View style={{ flex: 1 }}>
                                         <Text style={styles.awaitingPaymentTitle}>AWAITING PAYMENT</Text>
-                                        <Text style={styles.awaitingPaymentText}>Pay the fee to get your queue token.</Text>
+                                        <Text style={styles.awaitingPaymentText}>Your token is #{liveMyToken}. Pay the fee to join the queue.</Text>
                                     </View>
                                     <ChevronRight size={18} color="#d97706" />
                                 </TouchableOpacity>
@@ -808,7 +808,7 @@ export default function PatientDashboardScreen() {
                                     <CreditCard size={20} color="#d97706" />
                                     <View style={{ flex: 1 }}>
                                         <Text style={styles.awaitingPaymentTitle}>AWAITING PAYMENT</Text>
-                                        <Text style={styles.awaitingPaymentText}>Your queue token will be issued once the fee is paid. Tap to pay now.</Text>
+                                        <Text style={styles.awaitingPaymentText}>Your token is #{liveMyToken}. You will join the live queue once the fee is paid. Tap to pay now.</Text>
                                     </View>
                                     <ChevronRight size={18} color="#d97706" />
                                 </TouchableOpacity>

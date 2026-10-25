@@ -387,7 +387,7 @@ export default function NurseQueueDashboard() {
         }
     };
 
-    // Unpaid patients have no queue token, so they are kept out of the queue
+    // Unpaid patients keep their token but are kept out of the queue until they pay
     const isPaid = (appt: any) => appt.paymentStatus?.toLowerCase() === "paid";
 
     const getDoctorTodayAppointments = (doctorDocId: string) => {
@@ -587,12 +587,16 @@ export default function NurseQueueDashboard() {
     const getActiveAppointment = (doctorDocId: string, currentQueueNumber: number) => {
         const todayList = getDoctorTodayAppointments(doctorDocId);
         if (todayList.length === 0) return undefined;
-        const exact = todayList.find(appt => appt.queueNumber === currentQueueNumber || appt.effectiveQueueNumber === currentQueueNumber);
-        if (exact) return exact;
-        if (currentQueueNumber > 0 && currentQueueNumber <= todayList.length) {
-            return todayList[currentQueueNumber - 1];
-        }
-        return undefined;
+        return todayList.find(appt => appt.queueNumber === currentQueueNumber || appt.effectiveQueueNumber === currentQueueNumber);
+    };
+
+    // Next/previous paid token, skipping tokens held by unpaid patients
+    const getAdjacentPaidToken = (doctorDocId: string, currentQueueNumber: number, direction: 1 | -1) => {
+        const tokens = getDoctorTodayAppointments(doctorDocId).map(appt => appt.effectiveQueueNumber);
+        const found = direction === 1
+            ? tokens.filter(t => t > currentQueueNumber).sort((a, b) => a - b)[0]
+            : tokens.filter(t => t < currentQueueNumber).sort((a, b) => b - a)[0];
+        return found ?? Math.max(0, currentQueueNumber + direction);
     };
 
     const getActiveAppointmentId = (doctorDocId: string, currentQueueNumber: number) => {
@@ -831,7 +835,7 @@ export default function NurseQueueDashboard() {
 
                                     <div className={`inline-flex items-center justify-center gap-4 sm:gap-6 p-3 sm:p-4 rounded-3xl ${doc.sessionStarted ? 'bg-slate-50 border border-slate-200 shadow-sm' : 'opacity-40 pointer-events-none'}`}>
                                         <Button
-                                            onClick={() => handleUpdateDoctor(doc, { currentQueueNumber: Math.max(0, (doc.currentQueueNumber || 0) - 1) }, "decrement")}
+                                            onClick={() => handleUpdateDoctor(doc, { currentQueueNumber: getAdjacentPaidToken(doc._id, doc.currentQueueNumber || 0, -1) })}
                                             variant="outline"
                                             size="icon"
                                             className="h-12 w-12 sm:h-14 sm:w-14 rounded-full border-2 border-slate-200 hover:bg-slate-100 active:scale-95 shrink-0"
@@ -848,7 +852,7 @@ export default function NurseQueueDashboard() {
 
                                         <Button
                                             onClick={() => {
-                                                const nextQ = (doc.currentQueueNumber || 0) + 1;
+                                                const nextQ = getAdjacentPaidToken(doc._id, doc.currentQueueNumber || 0, 1);
                                                 const currentApptId = getActiveAppointmentId(doc._id, doc.currentQueueNumber);
                                                 handleUpdateDoctor(doc, { currentQueueNumber: nextQ }, "complete", currentApptId);
                                             }}
