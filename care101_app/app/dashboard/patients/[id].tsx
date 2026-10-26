@@ -18,6 +18,7 @@ import * as SecureStore from 'expo-secure-store';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import * as DocumentPicker from 'expo-document-picker';
+import LabTestPicker from '../../../components/LabTestPicker';
 const API_URL = process.env.EXPO_PUBLIC_API_URL;
 
 export default function PatientDetailScreen() {
@@ -28,7 +29,7 @@ export default function PatientDetailScreen() {
 
     // Lab Request Modal & Form States
     const [showLabRequestModal, setShowLabRequestModal] = useState(false);
-    const [labTitle, setLabTitle] = useState("");
+    const [labTestIds, setLabTestIds] = useState<string[]>([]);
     const [labDescription, setLabDescription] = useState("");
     const [submittingLab, setSubmittingLab] = useState(false);
 
@@ -113,8 +114,8 @@ export default function PatientDetailScreen() {
     }, [fetchPatientDetails]);
 
     const handleSubmitLabRequest = async () => {
-        if (!labTitle.trim()) {
-            Alert.alert("Required", "Please enter a title for the lab request.");
+        if (labTestIds.length === 0) {
+            Alert.alert("Required", "Please select at least one lab test.");
             return;
         }
 
@@ -140,7 +141,7 @@ export default function PatientDetailScreen() {
                 },
                 body: JSON.stringify({
                     patientId: id,
-                    title: labTitle.trim(),
+                    testIds: labTestIds,
                     description: labDescription.trim(),
                     doctorId,
                     doctorName
@@ -148,8 +149,9 @@ export default function PatientDetailScreen() {
             });
 
             if (response.ok) {
-                Alert.alert("Success", "Lab request created successfully!");
-                setLabTitle("");
+                const created = await response.json();
+                Alert.alert("Success", `Lab request created. Total: LKR ${Number(created.totalAmount || 0).toLocaleString()}`);
+                setLabTestIds([]);
                 setLabDescription("");
                 setShowLabRequestModal(false);
                 fetchPatientDetails(); // Refresh
@@ -805,13 +807,8 @@ export default function PatientDetailScreen() {
                                 </TouchableOpacity>
                             </View>
 
-                            <Text style={styles.modalLabel}>Lab Test Title *</Text>
-                            <TextInput 
-                                style={styles.modalInput}
-                                placeholder="e.g. Full Blood Count, Lipid Profile"
-                                value={labTitle}
-                                onChangeText={setLabTitle}
-                            />
+                            <Text style={styles.modalLabel}>Lab Tests *</Text>
+                            <LabTestPicker selectedIds={labTestIds} onChange={setLabTestIds} />
 
                             <Text style={styles.modalLabel}>Instructions / Notes (Optional)</Text>
                             <TextInput 
@@ -828,7 +825,7 @@ export default function PatientDetailScreen() {
                                     style={[styles.modalButton, styles.modalButtonCancel]}
                                     onPress={() => {
                                         setShowLabRequestModal(false);
-                                        setLabTitle("");
+                                        setLabTestIds([]);
                                         setLabDescription("");
                                     }}
                                     disabled={submittingLab}

@@ -26,9 +26,12 @@ import instructionRoutes, { handlePatientInstructionsView } from "./routes/instr
 import patientsRoutes from "./routes/patients.js"; // <--- NEW: Patients management
 import scheduleRequestRoutes from "./routes/scheduleRequests.js"; // <--- NEW: Schedule Requests
 import labRequestRoutes from "./routes/labRequests.js"; // <--- NEW: Lab Requests
+import labTestRoutes from "./routes/labTests.js";
 import queueRoutes from "./routes/queue.js";
 import Doctor from "./models/Doctor.js";
 import ScheduleRequest from "./models/ScheduleRequest.js";
+import LabTest from "./models/LabTest.js";
+import labTests from "./config/labTests.js";
 
 const app = express();
 app.set("trust proxy", true);
@@ -186,6 +189,7 @@ app.use("/api/payments", paymentRoutes);
 app.use("/api/patients", patientsRoutes); // <--- NEW: Patients management
 app.use("/api/schedule-requests", scheduleRequestRoutes); // <--- NEW: Schedule requests
 app.use("/api/lab-requests", labRequestRoutes); // <--- NEW: Lab Requests
+app.use("/api/lab-tests", labTestRoutes);
 app.use("/api/queue", queueRoutes);
 /* =========================
    SERVER START
@@ -198,6 +202,19 @@ const startServer = async () => {
     console.log("Connecting to MongoDB...");
     await mongoose.connect(process.env.MONGO_URI);
     console.log("✅ MongoDB Connected");
+
+    const seedResult = await LabTest.bulkWrite(
+      labTests.map(test => ({
+        updateOne: {
+          filter: { name: test.name },
+          update: { $setOnInsert: test },
+          upsert: true
+        }
+      }))
+    );
+    if (seedResult.upsertedCount) {
+      console.log(`✅ Seeded ${seedResult.upsertedCount} lab tests`);
+    }
 
     httpServer.listen(PORT, "0.0.0.0", () => {
       console.log(`🚀 Server running on port ${PORT}`);

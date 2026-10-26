@@ -12,6 +12,7 @@ import { clearAdminSession, getAdminToken, getAdminUser } from "@/lib/adminSessi
 import { io } from "socket.io-client";
 import { playDingSound } from "@/lib/soundUtils";
 import NurseHeader from "@/components/admin/NurseHeader";
+import LabTestPicker from "@/components/admin/LabTestPicker";
 import { useSidebar } from "@/components/admin/SidebarContext";
 
 export default function NurseQueueDashboard() {
@@ -62,8 +63,8 @@ export default function NurseQueueDashboard() {
     const [uploadingRecord, setUploadingRecord] = useState(false);
 
     // Form States for Lab Request
-    const [newLabData, setNewLabData] = useState({
-        title: "",
+    const [newLabData, setNewLabData] = useState<{ testIds: string[]; description: string }>({
+        testIds: [],
         description: ""
     });
     const [submittingLab, setSubmittingLab] = useState(false);
@@ -338,7 +339,10 @@ export default function NurseQueueDashboard() {
 
     const handleCreateLabRequest = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!selectedPatient || !newLabData.title.trim()) return;
+        if (!selectedPatient || newLabData.testIds.length === 0) {
+            alert("Please select at least one lab test.");
+            return;
+        }
         setSubmittingLab(true);
         try {
             const token = getAdminToken();
@@ -346,7 +350,7 @@ export default function NurseQueueDashboard() {
                 patientId: selectedPatient.id,
                 doctorId: selectedPatient.doctorId,
                 doctorName: selectedPatient.doctorName,
-                title: newLabData.title,
+                testIds: newLabData.testIds,
                 description: newLabData.description
             };
             const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/lab-requests/create`, {
@@ -358,11 +362,13 @@ export default function NurseQueueDashboard() {
                 body: JSON.stringify(payload)
             });
             if (res.ok) {
-                alert("Lab Request Created Successfully!");
-                setNewLabData({ title: "", description: "" });
+                const created = await res.json();
+                alert(`Lab Request Created! Total: LKR ${Number(created.totalAmount || 0).toLocaleString()}`);
+                setNewLabData({ testIds: [], description: "" });
                 fetchLabRequests(selectedPatient.id);
             } else {
-                alert("Failed to create lab request.");
+                const errData = await res.json().catch(() => ({}));
+                alert(errData.msg || "Failed to create lab request.");
             }
         } catch (err) {
             console.error("Create lab request error:", err);
@@ -1592,6 +1598,7 @@ export default function NurseQueueDashboard() {
                                                         </Badge>
                                                     </div>
                                                     {req.description && <p className="text-xs text-slate-500">{req.description}</p>}
+                                                    {req.totalAmount > 0 && <p className="text-xs font-semibold text-slate-600">Total: LKR {Number(req.totalAmount).toLocaleString()}</p>}
                                                     <div className="pt-2 border-t border-slate-100/60 flex justify-between items-center text-[10px] text-slate-400 font-medium">
                                                         <span>Doctor: {req.doctorName}</span>
                                                         {req.status === 'completed' && req.recordId && (
@@ -1663,14 +1670,10 @@ export default function NurseQueueDashboard() {
                             <form onSubmit={handleCreateLabRequest} className="space-y-3.5">
                                 <h4 className="font-bold text-slate-800 text-xs uppercase tracking-wider mb-2">Request New Lab Report</h4>
                                 <div className="space-y-1">
-                                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Test / Report Name *</label>
-                                    <input 
-                                        type="text" 
-                                        required
-                                        placeholder="e.g., Full Blood Count (FBC), Serum Creatinine..."
-                                        className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent" 
-                                        value={newLabData.title}
-                                        onChange={(e) => setNewLabData(prev => ({ ...prev, title: e.target.value }))}
+                                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Lab Tests *</label>
+                                    <LabTestPicker
+                                        selectedIds={newLabData.testIds}
+                                        onChange={(testIds) => setNewLabData(prev => ({ ...prev, testIds }))}
                                     />
                                 </div>
 

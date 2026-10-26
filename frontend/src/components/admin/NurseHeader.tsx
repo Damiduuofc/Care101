@@ -128,8 +128,7 @@ export default function NurseHeader({
 
         {/* Display specification indicator badge on 8.7" screens or compact view */}
         <div className="hidden xl:flex items-center gap-1 text-[11px] font-semibold text-slate-400 shrink-0">
-          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>
-          <span>OPD Station Ready</span>
+
         </div>
       </div>
     </header>

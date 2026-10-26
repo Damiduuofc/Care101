@@ -212,7 +212,8 @@ export const syncPatientDoctorRecordBook = async ({ patientId, doctorId, doctorD
 };
 
 // 1. UPLOAD A RECORD
-router.post("/upload", protect, authorize(["doctor", "nurse", "lab_assistant", "system_admin", "patient"]), async (req, res) => {
+// Lab assistants upload through a paid lab request (POST /api/lab-requests/upload/:requestId), not here
+router.post("/upload", protect, authorize(["doctor", "nurse", "system_admin", "patient"]), async (req, res) => {
   try {
     const { patientId, doctorId, type, title, doctorName, date, description, diagnosis, medications, fileData, fileType } = req.body;
 

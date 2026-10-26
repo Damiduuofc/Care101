@@ -10,6 +10,7 @@ import * as SecureStore from 'expo-secure-store';
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
+import LabTestPicker from '../../../components/LabTestPicker';
 
 const API_URL = `${process.env.EXPO_PUBLIC_API_URL}/surgery-records`;
 
@@ -32,7 +33,7 @@ export default function RecordDetailsScreen() {
 
   // --- LAB REQUEST STATE ---
   const [showLabModal, setShowLabModal] = useState(false);
-  const [labTitle, setLabTitle] = useState('');
+  const [labTestIds, setLabTestIds] = useState<string[]>([]);
   const [labDescription, setLabDescription] = useState('');
   const [submittingLab, setSubmittingLab] = useState(false);
 
@@ -109,8 +110,8 @@ export default function RecordDetailsScreen() {
   }, [id]);
 
   const handleRequestLab = async () => {
-    if (!labTitle.trim()) {
-      Alert.alert("Required", "Please enter a title for the lab request.");
+    if (labTestIds.length === 0) {
+      Alert.alert("Required", "Please select at least one lab test.");
       return;
     }
 
@@ -164,7 +165,7 @@ export default function RecordDetailsScreen() {
         },
         body: JSON.stringify({
           patientId: patientMongooseId,
-          title: labTitle.trim(),
+          testIds: labTestIds,
           description: labDescription.trim(),
           doctorId,
           doctorName
@@ -172,8 +173,9 @@ export default function RecordDetailsScreen() {
       });
 
       if (res.ok) {
-        Alert.alert("Success", "Lab request created successfully!");
-        setLabTitle('');
+        const created = await res.json();
+        Alert.alert("Success", `Lab request created. Total: LKR ${Number(created.totalAmount || 0).toLocaleString()}`);
+        setLabTestIds([]);
         setLabDescription('');
         setShowLabModal(false);
         fetchRecordDetails();
@@ -635,13 +637,8 @@ export default function RecordDetailsScreen() {
             </View>
 
             <ScrollView contentContainerStyle={{ padding: 20 }}>
-              <Text style={styles.inputLabel}>Lab Test Title *</Text>
-              <TextInput 
-                style={styles.modalInput}
-                placeholder="e.g. Full Blood Count, Lipid Profile"
-                value={labTitle}
-                onChangeText={setLabTitle}
-              />
+              <Text style={styles.inputLabel}>Lab Tests *</Text>
+              <LabTestPicker selectedIds={labTestIds} onChange={setLabTestIds} />
 
               <Text style={styles.inputLabel}>Instructions / Notes (Optional)</Text>
               <TextInput 

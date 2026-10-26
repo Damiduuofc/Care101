@@ -11,6 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { clearAdminSession, getAdminToken, getAdminUser } from "@/lib/adminSession";
+import LabTestPicker from "@/components/admin/LabTestPicker";
 
 export default function LabAssistantDashboard() {
   const [loading, setLoading] = useState(true);
@@ -27,10 +28,6 @@ export default function LabAssistantDashboard() {
   const [activeTab, setActiveTab] = useState<"directory" | "requests">("requests");
   const [selectedRequest, setSelectedRequest] = useState<any | null>(null);
 
-  // Price Setup State
-  const [priceInput, setPriceInput] = useState("");
-  const [priceLoading, setPriceLoading] = useState(false);
-
   // Upload Form State
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [uploadLoading, setUploadLoading] = useState(false);
@@ -45,11 +42,10 @@ export default function LabAssistantDashboard() {
   // Create Request Form State
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [createLoading, setCreateLoading] = useState(false);
-  const [createFormData, setCreateFormData] = useState({
-    title: "",
+  const [createFormData, setCreateFormData] = useState<{ testIds: string[]; type: string; description: string }>({
+    testIds: [],
     type: "lab_tests",
-    description: "",
-    amount: ""
+    description: ""
   });
 
   const fetchPatients = async () => {
@@ -167,7 +163,6 @@ export default function LabAssistantDashboard() {
       fileData: "",
       fileType: ""
     });
-    setPriceInput("");
   };
 
   const handleRequestSelect = (req: any) => {
@@ -195,12 +190,11 @@ export default function LabAssistantDashboard() {
       fileData: "",
       fileType: ""
     });
-    setPriceInput(req.billId?.amount != null && req.billId?.amount > 0 ? req.billId.amount.toString() : "");
   };
 
   const handleCreateRequest = async () => {
-    if (!createFormData.title || !createFormData.amount) {
-      alert("Title and Price are required!");
+    if (createFormData.testIds.length === 0) {
+      alert("Please select at least one lab test!");
       return;
     }
     setCreateLoading(true);
@@ -214,10 +208,9 @@ export default function LabAssistantDashboard() {
         },
         body: JSON.stringify({
           patientId: selectedPatient?._id,
-          title: createFormData.title,
+          testIds: createFormData.testIds,
           description: createFormData.description,
           type: createFormData.type,
-          amount: Number(createFormData.amount),
           doctorName: "Lab Assistant"
         })
       });
@@ -226,7 +219,7 @@ export default function LabAssistantDashboard() {
         const newReq = await res.json();
         alert("Report request created successfully!");
         setIsCreateModalOpen(false);
-        setCreateFormData({ title: "", type: "lab_tests", description: "", amount: "" });
+        setCreateFormData({ testIds: [], type: "lab_tests", description: "" });
         
         // Fetch requests and select the new one
         const fetchRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/lab-requests/all`, {
@@ -476,8 +469,11 @@ export default function LabAssistantDashboard() {
                           <div className="text-xs font-medium text-orange-600 mt-1 truncate">
                             Req: {req.title}
                           </div>
-                          <div className="text-[10px] text-slate-500 mt-1">
-                            By: {displayDoctor}
+                          <div className="text-[10px] text-slate-500 mt-1 flex items-center justify-between gap-2">
+                            <span className="truncate">By: {displayDoctor}</span>
+                            <span className={`font-bold px-1.5 py-0.5 rounded flex-shrink-0 ${req.billId?.status === 'Paid' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                              {req.billId?.status === 'Paid' ? 'Paid' : 'Unpaid'}
+                            </span>
                           </div>
                         </div>
                       );
@@ -534,71 +530,23 @@ export default function LabAssistantDashboard() {
                               </span>
                             </div>
 
-                            <div className="flex justify-between items-center text-xs">
-                              <span className="font-semibold text-cyan-800">Current Price:</span>
+                            {selectedRequest.tests?.length > 0 && (
+                              <ul className="text-xs space-y-1">
+                                {selectedRequest.tests.map((t: any, i: number) => (
+                                  <li key={t.testId || i} className="flex justify-between gap-2 text-cyan-900">
+                                    <span>{t.name}</span>
+                                    <span className="font-semibold">LKR {Number(t.price).toLocaleString()}</span>
+                                  </li>
+                                ))}
+                              </ul>
+                            )}
+
+                            <div className="flex justify-between items-center text-xs pt-1 border-t border-cyan-100">
+                              <span className="font-semibold text-cyan-800">Total:</span>
                               <span className="font-bold text-slate-800">
-                                {selectedRequest.billId?.amount > 0 ? `LKR ${selectedRequest.billId.amount}` : 'Not Set (LKR 0)'}
+                                LKR {Number(selectedRequest.billId?.amount ?? selectedRequest.totalAmount ?? 0).toLocaleString()}
                               </span>
                             </div>
-
-                            {selectedRequest.billId?.status !== "Paid" && !(selectedRequest.billId?.amount > 0) && (
-                              <div className="flex items-center gap-2 mt-2">
-                                <Input 
-                                  type="number" 
-                                  placeholder="Enter Price (LKR)" 
-                                  className="h-8 text-xs bg-white w-32"
-                                  value={priceInput || ""}
-                                  onChange={(e) => setPriceInput(e.target.value)}
-                                />
-                                <Button 
-                                  size="sm" 
-                                  className="h-8 text-xs bg-cyan-600 hover:bg-cyan-700 text-white"
-                                  onClick={async () => {
-                                    if (!priceInput || isNaN(Number(priceInput)) || Number(priceInput) <= 0) {
-                                      alert("Please enter a valid price!");
-                                      return;
-                                    }
-                                    setPriceLoading(true);
-                                    try {
-                                      const token = getAdminToken();
-                                      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/lab-requests/update-price/${selectedRequest._id}`, {
-                                        method: "PUT",
-                                        headers: {
-                                          "Content-Type": "application/json",
-                                          "Authorization": `Bearer ${token}`
-                                        },
-                                        body: JSON.stringify({ amount: Number(priceInput) })
-                                      });
-                                      if (res.ok) {
-                                        alert("Price updated successfully!");
-                                        fetchRequests(); // Refresh requests list
-                                        setSelectedRequest((prev: any) => {
-                                          if (!prev) return null;
-                                          return {
-                                            ...prev,
-                                            billId: {
-                                              ...prev.billId,
-                                              amount: Number(priceInput)
-                                            }
-                                          };
-                                        });
-                                      } else {
-                                        const errData = await res.json();
-                                        alert(`Error: ${errData.msg}`);
-                                      }
-                                    } catch (err) {
-                                      console.error("Failed to update price", err);
-                                      alert("Failed to update price");
-                                    } finally {
-                                      setPriceLoading(false);
-                                    }
-                                  }}
-                                  disabled={priceLoading}
-                                >
-                                  {priceLoading ? "Saving..." : "Set Price"}
-                                </Button>
-                              </div>
-                            )}
                           </div>
                         </div>
                       )}
@@ -611,7 +559,7 @@ export default function LabAssistantDashboard() {
                             <Upload className="mr-2 h-4 w-4" /> Upload Blocked
                           </Button>
                           <span className="text-[10px] font-semibold text-red-500">
-                            {selectedRequest.billId?.amount > 0 ? "⚠️ Awaiting Patient Payment" : "⚠️ Price Not Set"}
+                            ⚠️ Awaiting Patient Payment
                           </span>
                         </div>
                       ) : (
@@ -672,11 +620,10 @@ export default function LabAssistantDashboard() {
                           </DialogHeader>
                           <div className="space-y-4 py-4">
                             <div className="space-y-2">
-                              <label className="text-sm font-medium">Report Name</label>
-                              <Input 
-                                placeholder="e.g., Blood Sugar Test" 
-                                value={createFormData.title || ""} 
-                                onChange={(e) => setCreateFormData({...createFormData, title: e.target.value})} 
+                              <label className="text-sm font-medium">Lab Tests</label>
+                              <LabTestPicker
+                                selectedIds={createFormData.testIds}
+                                onChange={(testIds) => setCreateFormData({...createFormData, testIds})}
                               />
                             </div>
                             <div className="space-y-2">
@@ -702,16 +649,6 @@ export default function LabAssistantDashboard() {
                                 onChange={(e) => setCreateFormData({...createFormData, description: e.target.value})} 
                               />
                             </div>
-                            <div className="space-y-2">
-                              <label className="text-sm font-medium">Set Price (LKR)</label>
-                              <Input 
-                                type="number" 
-                                placeholder="e.g., 1500" 
-                                value={createFormData.amount || ""} 
-                                onChange={(e) => setCreateFormData({...createFormData, amount: e.target.value})} 
-                              />
-                            </div>
-                            
                             <Button className="w-full bg-cyan-600" onClick={handleCreateRequest} disabled={createLoading}>
                               {createLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Create Request
                             </Button>

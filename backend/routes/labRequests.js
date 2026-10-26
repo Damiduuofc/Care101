@@ -7,6 +7,7 @@ import Bill from "../models/Bill.js";
 import Doctor from "../models/Doctor.js";
 import Appointment from "../models/Appointment.js";
 import Admin from "../models/Admin.js";
+import LabTest from "../models/LabTest.js";
 import { syncPatientDoctorRecordBook } from "./medicalRecords.js";
 import { auth } from "../middleware/auth.js";
 
@@ -124,7 +125,7 @@ const resolveDoctorName = async (reqDocId, reqDocName, patientId, user) => {
 // 1. Doctor, Nurse or Lab Assistant creates a Lab Request
 router.post("/create", auth, async (req, res) => {
   try {
-    const { patientId, title, description, doctorId, doctorName, amount, type } = req.body;
+    const { patientId, title, description, doctorId, doctorName, type, testIds } = req.body;
     
     // Check if user is a doctor, nurse, or lab assistant
     if (req.user.role !== "doctor" && req.user.role !== "nurse" && req.user.role !== "lab_assistant") {
@@ -137,12 +138,25 @@ router.post("/create", auth, async (req, res) => {
       if (p) actualPatientId = p._id;
     }
 
+    // Price the request from the admin-configured lab test catalog
+    const ids = [...new Set((Array.isArray(testIds) ? testIds : []).map(String))];
+    if (ids.length === 0 || ids.some(tid => !mongoose.Types.ObjectId.isValid(tid))) {
+      return res.status(400).json({ msg: "Please select at least one lab test" });
+    }
+    const labTests = await LabTest.find({ _id: { $in: ids }, isActive: true });
+    if (labTests.length !== ids.length) {
+      return res.status(400).json({ msg: "One or more selected lab tests are no longer available" });
+    }
+    const tests = labTests.map(t => ({ testId: t._id, name: t.name, price: t.price }));
+    const totalAmount = tests.reduce((sum, t) => sum + t.price, 0);
+    const requestTitle = (title && String(title).trim()) || tests.map(t => t.name).join(", ");
+
     // Create associated Bill
     const newBill = new Bill({
       patientId: actualPatientId,
-      title: `Lab Report - ${title}`,
+      title: `Lab Report - ${requestTitle}`,
       type: "Lab",
-      amount: amount || 0, // Use set price if provided
+      amount: totalAmount,
       status: "Pending"
     });
     await newBill.save();
@@ -153,8 +167,10 @@ router.post("/create", auth, async (req, res) => {
       patientId: actualPatientId,
       doctorId: finalDoctorId,
       doctorName: finalDoctorName,
-      title,
+      title: requestTitle,
       description,
+      tests,
+      totalAmount,
       type: type || 'lab_tests',
       status: "pending",
       billId: newBill._id
@@ -180,7 +196,7 @@ router.post("/create", auth, async (req, res) => {
       await Notification.create({
         userId: actualPatientId,
         type: "lab_report",
-        message: `New Lab Request: ${title} requested for ${patient?.fullName || 'you'} by ${finalDoctorName}.`,
+        message: `New Lab Request: ${requestTitle} requested for ${patient?.fullName || 'you'} by ${finalDoctorName}. Amount due: LKR ${totalAmount}.`,
         metadata: { requestId: newRequest._id }
       });
     } catch (err) {
@@ -316,22 +332,12 @@ router.post("/upload/:requestId", auth, async (req, res) => {
       return res.status(400).json({ msg: "This request has already been completed" });
     }
 
-    // Verify payment is completed before uploading
-    if (labRequest.billId) {
-      const bill = await Bill.findById(labRequest.billId);
-      if (bill && bill.status !== "Paid") {
-        return res.status(400).json({ msg: "Cannot upload report. Payment is pending for this lab request." });
-      }
-    } else {
-      // Fallback: search for a matching bill if billId is not linked directly
-      const bill = await Bill.findOne({
-        patientId: labRequest.patientId,
-        title: `Lab Report - ${labRequest.title}`,
-        status: "Pending"
-      });
-      if (bill) {
-        return res.status(400).json({ msg: "Cannot upload report. Payment is pending for this lab request." });
-      }
+    // Lab staff can only upload once the lab request bill is paid
+    const bill = labRequest.billId
+      ? await Bill.findById(labRequest.billId)
+      : await Bill.findOne({ patientId: labRequest.patientId, title: `Lab Report - ${labRequest.title}` });
+    if (!bill || bill.status !== "Paid") {
+      return res.status(400).json({ msg: "Cannot upload report. Payment is pending for this lab request." });
     }
 
     // Create a new MedicalRecord using the request's type
@@ -392,40 +398,6 @@ router.post("/upload/:requestId", auth, async (req, res) => {
     res.json({ msg: "Report uploaded successfully", record: newRecord, request: labRequest });
   } catch(err) {
     console.error("Upload Lab Report Error:", err.message);
-    res.status(500).send("Server Error");
-  }
-});
-
-// 5. Lab Assistant Updates Lab Request Bill Price
-router.put("/update-price/:requestId", auth, async (req, res) => {
-  try {
-    const { amount } = req.body;
-    
-    // Check if user is a lab assistant or system admin
-    if (req.user.role !== "lab_assistant" && req.user.role !== "system_admin") {
-      return res.status(403).json({ msg: "Not authorized to update price" });
-    }
-
-    const labRequest = await LabRequest.findById(req.params.requestId);
-    if (!labRequest) return res.status(404).json({ msg: "Request not found" });
-
-    if (!labRequest.billId) {
-      return res.status(400).json({ msg: "No associated bill found for this request" });
-    }
-
-    const bill = await Bill.findById(labRequest.billId);
-    if (!bill) return res.status(404).json({ msg: "Associated bill not found" });
-
-    if (bill.status === "Paid") {
-      return res.status(400).json({ msg: "Cannot change price of a paid bill" });
-    }
-
-    bill.amount = Number(amount);
-    await bill.save();
-
-    res.json({ msg: "Price updated successfully", bill, request: labRequest });
-  } catch (err) {
-    console.error("Update Price Error:", err.message);
     res.status(500).send("Server Error");
   }
 });
