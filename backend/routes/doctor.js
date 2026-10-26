@@ -146,6 +146,7 @@ router.get("/profile", auth, async (req, res) => {
       phone: doctor.phone || "N/A",
       email: doctor.email,
       specialization: doctor.specialization || "General Physician",
+      slmcReg: doctor.slmcReg || "",
       profileImage: doctor.profileImage || null,
       hospital: doctor.hospital || "SUWASEWANA HOSPITAL",
       subscription: doctor.subscription || { plan: 'free', status: 'active' },
@@ -161,10 +162,27 @@ router.get("/profile", auth, async (req, res) => {
 // ---------------------------------------------
 router.put("/profile", auth, async (req, res) => {
   try {
-    const { fullName, nameWithInitials, nic, phone, profileImage } = req.body;
+    const { fullName, nameWithInitials, nic, phone, profileImage, specialization } = req.body;
+
+    // Email and SLMC number are managed by the hospital, not the doctor
+    const current = await Doctor.findById(req.user.id).select("email slmcReg");
+    if (!current) return res.status(404).json({ msg: "Doctor not found" });
+    const lockedChanged = ["email", "slmcReg"].some(
+      (field) => req.body[field] !== undefined && req.body[field] !== current[field]
+    );
+    if (lockedChanged) {
+      return res.status(403).json({ msg: "Email and SLMC number can only be changed by the hospital." });
+    }
+    if (fullName !== undefined && !String(fullName).trim()) {
+      return res.status(400).json({ msg: "Full name is required." });
+    }
+    if (specialization !== undefined && !String(specialization).trim()) {
+      return res.status(400).json({ msg: "Department is required." });
+    }
+
     const updatedDoctor = await Doctor.findByIdAndUpdate(
       req.user.id,
-      { $set: { fullName, nameWithInitials, nic, phone, profileImage } },
+      { $set: { fullName, nameWithInitials, nic, phone, profileImage, specialization } },
       { new: true }
     ).select("-password");
 

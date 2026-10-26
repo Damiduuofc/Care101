@@ -11,6 +11,7 @@ import {
     Loader2, Clock, CalendarDays, Check, User, ChevronDown, Search, X, AlertTriangle, Trash2 
 } from "lucide-react";
 import { getAdminToken } from "@/lib/adminSession";
+import HourTimeline, { TimelineSlot, HourRange } from "@/components/admin/HourTimeline";
 import { 
     Dialog, 
     DialogTrigger, 
@@ -21,86 +22,6 @@ import {
 } from "@/components/ui/dialog";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL;
-
-// ─── Constants & Configurations ──────────────────────────────────────────────
-const ROOM_DEPARTMENTS: Record<string, string> = {
-  "Room 1": "Cardiology",
-  "Room 2": "Cardiology",
-  "Room 3": "Cardiology",
-  "Room 4": "Pediatrics",
-  "Room 5": "Pediatrics",
-  "Room 6": "Pediatrics",
-  "Room 7": "Dermatology",
-  "Room 8": "Dermatology",
-  "Room 9": "Dermatology",
-  "Room 10": "Orthopedics",
-  "Room 11": "Orthopedics",
-  "Room 12": "Orthopedics",
-  "Room 13": "General Medicine",
-  "Room 14": "General Medicine",
-  "Room 15": "General Medicine",
-  "Room 16": "General Medicine",
-  "Room 17": "General Medicine",
-  "Room 18": "General Medicine",
-  "Room 19": "General Medicine",
-  "Room 20": "General Medicine"
-};
-
-const getDoctorDept = (specialization: string) => {
-  const spec = (specialization || "").toLowerCase();
-  if (spec.includes("cardio")) return "Cardiology";
-  if (spec.includes("pedia") || spec.includes("child")) return "Pediatrics";
-  if (spec.includes("derma") || spec.includes("skin")) return "Dermatology";
-  if (spec.includes("ortho") || spec.includes("bone")) return "Orthopedics";
-  return "General Medicine";
-};
-
-const getRoomsForDoctor = (specialization: string) => {
-  const dept = getDoctorDept(specialization);
-  return Object.entries(ROOM_DEPARTMENTS)
-    .filter(([_, rDept]) => rDept === dept)
-    .map(([room]) => room);
-};
-
-const checkTimeOverlap = (startA: string, endA: string, startB: string, endB: string) => {
-  const tStartA = new Date(startA).getTime();
-  const tEndA = new Date(endA).getTime();
-  const tStartB = new Date(startB).getTime();
-  const tEndB = new Date(endB).getTime();
-  return tStartA < tEndB && tEndA > tStartB;
-};
-
-const isRoomBookedForTime = (roomName: string, req: any, allRequests: any[]) => {
-  if (!roomName) return false;
-  return allRequests.some(other => {
-    if (other._id === req._id) return false;
-    if (other.status !== 'approved') return false;
-    if (other.sessionEnded) return false;
-    if (other.allocatedRoom !== roomName) return false;
-    
-    const dateA = new Date(req.date).toDateString();
-    const dateB = new Date(other.date).toDateString();
-    if (dateA !== dateB) return false;
-
-    return checkTimeOverlap(req.startTime, req.endTime, other.startTime, other.endTime);
-  });
-};
-
-const isNurseBookedForTime = (nurseName: string, req: any, allRequests: any[]) => {
-  if (!nurseName) return false;
-  return allRequests.some(other => {
-    if (other._id === req._id) return false;
-    if (other.status !== 'approved') return false;
-    if (other.sessionEnded) return false;
-    if (other.allocatedNurse !== nurseName) return false;
-
-    const dateA = new Date(req.date).toDateString();
-    const dateB = new Date(other.date).toDateString();
-    if (dateA !== dateB) return false;
-
-    return checkTimeOverlap(req.startTime, req.endTime, other.startTime, other.endTime);
-  });
-};
 
 export default function ChannelingRequestPage() {
     const [requests, setRequests] = useState<any[]>([]);
@@ -116,19 +37,13 @@ const [doctorSearchQuery, setDoctorSearchQuery] = useState("");
     const [fetchingDoctors, setFetchingDoctors] = useState(true);
     const [selectedDoctorId, setSelectedDoctorId] = useState("");
     const [scheduleDate, setScheduleDate] = useState("");
-    const [startTimeStr, setStartTimeStr] = useState("");
-    const [endTimeStr, setEndTimeStr] = useState("");
+    const [timelineSlots, setTimelineSlots] = useState<TimelineSlot[]>([]);
+    const [loadingSlots, setLoadingSlots] = useState(false);
+    const [sessionRange, setSessionRange] = useState<HourRange>(null);
     const [isUnlimited, setIsUnlimited] = useState(false);
-    const [queueLimit, setQueueLimit] = useState("");
+    const [queueLimit, setQueueLimit] = useState("20");
     const [formSubmitting, setFormSubmitting] = useState(false);
     const [isDialogOpen, setIsDialogOpen] = useState(false);
-
-    // Approval Dialog States
-    const [approvalDialogReq, setApprovalDialogReq] = useState<any | null>(null);
-    const [approvalRoom, setApprovalRoom] = useState("");
-    const [approvalNurse, setApprovalNurse] = useState("");
-    const [approvalSubmitting, setApprovalSubmitting] = useState(false);
-    const [nursesList, setNursesList] = useState<any[]>([]);
 
     // Searchable dropdown states and refs
     const [searchQuery, setSearchQuery] = useState("");
@@ -138,7 +53,6 @@ const [doctorSearchQuery, setDoctorSearchQuery] = useState("");
     useEffect(() => {
         fetchRequests();
         fetchDoctors();
-        fetchStaff();
     }, []);
 
     useEffect(() => {
@@ -159,6 +73,76 @@ const [doctorSearchQuery, setDoctorSearchQuery] = useState("");
             setIsOpen(false);
         }
     }, [isDialogOpen]);
+
+    // Load the free/blocked hours whenever the doctor or date changes
+    useEffect(() => {
+        setSessionRange(null);
+        setTimelineSlots([]);
+        if (!selectedDoctorId || !scheduleDate) return;
+
+        let cancelled = false;
+        const loadAvailability = async () => {
+            setLoadingSlots(true);
+            try {
+                const token = getAdminToken() || "";
+                const response = await fetch(
+                    `${API_URL}/schedule-requests/availability?date=${scheduleDate}&doctorId=${selectedDoctorId}`,
+                    {
+                        headers: {
+                            "Authorization": `Bearer ${token}`,
+                            "x-auth-token": token,
+                            "ngrok-skip-browser-warning": "true"
+                        }
+                    }
+                );
+                if (response.ok && !cancelled) {
+                    const data = await response.json();
+                    setTimelineSlots(data.timeline || []);
+                }
+            } catch (error) {
+                console.error("Fetch Availability Error:", error);
+            } finally {
+                if (!cancelled) setLoadingSlots(false);
+            }
+        };
+        loadAvailability();
+        return () => { cancelled = true; };
+    }, [selectedDoctorId, scheduleDate]);
+
+    const scheduleDates = useMemo(() => {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        return Array.from({ length: 30 }, (_, i) => {
+            const d = new Date(today);
+            d.setDate(today.getDate() + i);
+            return d;
+        });
+    }, []);
+
+    const toDateKey = (d: Date) =>
+        `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
+    const hourLabel = (h: number) => {
+        const period = h >= 12 && h < 24 ? "PM" : "AM";
+        const display = h % 12 === 0 ? 12 : h % 12;
+        return `${display}:00 ${period}`;
+    };
+
+    const queueNumber = parseInt(queueLimit, 10);
+    const queueValid = isUnlimited || (Number.isFinite(queueNumber) && queueNumber >= 1);
+    const rangeValid = !!sessionRange && timelineSlots
+        .filter(s => s.hour >= sessionRange.start && s.hour <= sessionRange.end)
+        .every(s => s.isAvailable);
+    const canCreate = !!selectedDoctorId && !!scheduleDate && rangeValid && queueValid && !formSubmitting;
+    const createLabel = !selectedDoctorId
+        ? "Choose a doctor"
+        : !scheduleDate
+            ? "Choose a date"
+            : !sessionRange
+                ? "Choose the hours"
+                : !queueValid
+                    ? "Set patient limit"
+                    : "Create & approve session";
 
     const fetchDoctors = async () => {
         try {
@@ -181,52 +165,16 @@ const [doctorSearchQuery, setDoctorSearchQuery] = useState("");
         }
     };
 
-    const fetchStaff = async () => {
-        try {
-            const token = getAdminToken() || "";
-            const response = await fetch(`${API_URL}/admin/staff`, {
-                headers: { 
-                    "Authorization": `Bearer ${token}`,
-                    "x-auth-token": token,
-                    "ngrok-skip-browser-warning": "true" 
-                }
-            });
-            if (response.ok) {
-                const data = await response.json();
-                setNursesList(Array.isArray(data) ? data.filter((s: any) => s.role === "nurse") : []);
-            }
-        } catch (error) {
-            console.error("Fetch Staff Error:", error);
-        }
-    };
-
     const handleCreateSchedule = async (e: React.FormEvent) => {
         e.preventDefault();
 
-        if (!selectedDoctorId || !scheduleDate || !startTimeStr || !endTimeStr) {
-            alert("Please fill in all required fields.");
-            return;
-        }
+        if (!canCreate || !sessionRange) return;
 
-        if (!isUnlimited && !queueLimit) {
-            alert("Please provide a queue limit or select unlimited.");
-            return;
-        }
-
-        const baseDate = new Date(scheduleDate);
-        const [startHours, startMinutes] = startTimeStr.split(":");
-        const [endHours, endMinutes] = endTimeStr.split(":");
-
+        const baseDate = new Date(`${scheduleDate}T00:00:00`);
         const startDateTime = new Date(baseDate);
-        startDateTime.setHours(parseInt(startHours, 10), parseInt(startMinutes, 10), 0, 0);
-
+        startDateTime.setHours(sessionRange.start, 0, 0, 0);
         const endDateTime = new Date(baseDate);
-        endDateTime.setHours(parseInt(endHours, 10), parseInt(endMinutes, 10), 0, 0);
-
-        if (endDateTime <= startDateTime) {
-            alert("End time must be after start time.");
-            return;
-        }
+        endDateTime.setHours(sessionRange.end + 1, 0, 0, 0);
 
         setFormSubmitting(true);
         try {
@@ -239,22 +187,28 @@ const [doctorSearchQuery, setDoctorSearchQuery] = useState("");
                 },
                 body: JSON.stringify({
                     doctorId: selectedDoctorId,
-                    date: baseDate.toISOString(),
+                    date: scheduleDate,
                     startTime: startDateTime.toISOString(),
                     endTime: endDateTime.toISOString(),
                     isUnlimited,
-                    queueLimit: isUnlimited ? null : parseInt(queueLimit, 10)
+                    queueLimit: isUnlimited ? null : queueNumber
                 })
             });
 
             if (response.ok) {
-                alert("Doctor schedule created and approved successfully.");
+                const data = await response.json();
+                const room = data.request?.allocatedRoom;
+                const nurse = data.request?.allocatedNurse;
+                alert(
+                    room && nurse
+                        ? `Session approved. Room: ${room}, Nurse: ${nurse}.`
+                        : "Session approved, but no free room or nurse was found for this time. Please assign one in Room Allocation."
+                );
                 setSelectedDoctorId("");
                 setScheduleDate("");
-                setStartTimeStr("");
-                setEndTimeStr("");
+                setSessionRange(null);
                 setIsUnlimited(false);
-                setQueueLimit("");
+                setQueueLimit("20");
                 setIsDialogOpen(false);
                 fetchRequests();
             } else {
@@ -313,6 +267,10 @@ const [doctorSearchQuery, setDoctorSearchQuery] = useState("");
             
             if (response.ok) {
                 const data = await response.json();
+                // Room and nurse are auto-assigned by the server on approval
+                if (newStatus === "approved" && (!data.request?.allocatedRoom || !data.request?.allocatedNurse)) {
+                    alert("Approved, but no free room or nurse was found for this time. Please assign one in Room Allocation.");
+                }
                 setRequests(prev => 
                     prev.map(req => req._id === id ? { 
                         ...req, 
@@ -367,88 +325,6 @@ const [doctorSearchQuery, setDoctorSearchQuery] = useState("");
             setLoadingAction(null);
         }
     };
-
-    // Opens the approval dialog pre-filled with an auto-assigned free room and nurse
-    const openApprovalDialog = async (selectedReq: any) => {
-        setApprovalDialogReq(selectedReq);
-        setApprovalRoom("");
-        setApprovalNurse("");
-        try {
-            const token = getAdminToken() || "";
-            const response = await fetch(`${API_URL}/schedule-requests/${selectedReq._id}/auto-allocation`, {
-                headers: { 
-                    "Authorization": `Bearer ${token}`,
-                    "x-auth-token": token,
-                    "ngrok-skip-browser-warning": "true" 
-                }
-            });
-            if (response.ok) {
-                const data = await response.json();
-                setApprovalRoom(data.allocatedRoom || "");
-                setApprovalNurse(data.allocatedNurse || "");
-            }
-        } catch (error) {
-            console.error("Auto Allocation Error:", error);
-        }
-    };
-
-    const handleConfirmApproval = async (id: string) => {
-        
-        setApprovalSubmitting(true);
-        try {
-            const token = getAdminToken() || "";
-            const response = await fetch(`${API_URL}/schedule-requests/${id}/status`, {
-                method: "PUT",
-                headers: { 
-                    "Content-Type": "application/json",
-                    "Authorization": `Bearer ${token}`,
-                    "x-auth-token": token
-                },
-                body: JSON.stringify({ 
-                    status: "approved",
-                    allocatedRoom: approvalRoom,
-                    allocatedNurse: approvalNurse
-                }) 
-            });
-            
-            if (response.ok) {
-                const data = await response.json();
-                setRequests(prev => 
-                    prev.map(req => req._id === id ? { 
-                        ...req, 
-                        status: "approved",
-                        allocatedRoom: data.request?.allocatedRoom ?? approvalRoom,
-                        allocatedNurse: data.request?.allocatedNurse ?? approvalNurse 
-                    } : req)
-                );
-                setApprovalDialogReq(null);
-            } else {
-                const errData = await response.json();
-                alert(errData.msg || "Failed to approve schedule");
-            }
-        } catch (error) {
-            console.error("Approval Error:", error);
-            alert("An error occurred. Please try again.");
-        } finally {
-            setApprovalSubmitting(false);
-        }
-    };
-
-    const modalApprovalConflictMessage = useMemo(() => {
-        if (!approvalDialogReq) return null;
-        
-        const isRBooked = isRoomBookedForTime(approvalRoom, approvalDialogReq, requests);
-        if (isRBooked) {
-            return `⚠️ Conflict: Room ${approvalRoom} is already booked at this time by another approved doctor session.`;
-        }
-
-        const isNBooked = isNurseBookedForTime(approvalNurse, approvalDialogReq, requests);
-        if (isNBooked) {
-            return `⚠️ Conflict: Nurse ${approvalNurse} is already assigned at this time to another approved doctor session.`;
-        }
-
-        return null;
-    }, [approvalDialogReq, approvalRoom, approvalNurse, requests]);
 
     const pendingRequests = requests.filter(r => r.status === "pending");
     const historyRequests = requests.filter(r => r.status !== "pending");
@@ -508,24 +384,25 @@ const filteredHistoryRequests = historyRequests.filter((req: any) => {
                                     <span className="text-base font-bold leading-none">+</span> Schedule Doctor
                                 </Button>
                             </DialogTrigger>
-                            <DialogContent className="max-w-xl sm:rounded-2xl border-slate-200 shadow-xl bg-white p-0 overflow-hidden">
+                            <DialogContent className="max-w-4xl sm:rounded-2xl border-slate-200 shadow-xl bg-white p-0 overflow-hidden max-h-[92vh] flex flex-col">
                                 <DialogHeader className="border-b border-slate-100 bg-slate-50/50 p-6">
                                     <DialogTitle className="text-base font-bold text-slate-900 flex items-center gap-2">
                                         <Clock className="h-5 w-5 text-cyan-600" />
-                                        Schedule Doctor Time Slot
+                                        Schedule a Doctor
                                     </DialogTitle>
                                     <DialogDescription className="text-slate-500 text-xs mt-1">
-                                        Create and automatically approve a channeling slot for a specific doctor.
+                                        Pick a doctor and a date, then click the free hours.
                                     </DialogDescription>
                                 </DialogHeader>
 
-                                <div className="p-6">
-                                    <form onSubmit={handleCreateSchedule} className="space-y-4">
+                                <form onSubmit={handleCreateSchedule} className="flex-1 min-h-0 flex flex-col">
+                                <div className="flex-1 min-h-0 overflow-y-auto p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    <div className="space-y-5">
                                         
 {/* 1. Doctor Selection */}
 <div>
   <label className="block text-xs font-semibold text-slate-700 mb-1">
-    Select Doctor
+    1. Doctor
   </label>
   <div className="relative" ref={dropdownRef}>
 
@@ -602,101 +479,166 @@ const filteredHistoryRequests = historyRequests.filter((req: any) => {
                                             </div>
                                         </div>
 
-                                        {/* 2. Date Selection */}
+                                        {/* 2. Date */}
                                         <div>
-                                            <label className="block text-xs font-semibold text-slate-700 mb-1">
-                                                Select Date
-                                            </label>
-<input
-    type="date"
-    value={scheduleDate}
-    min={new Date().toISOString().split("T")[0]}
-    onChange={(e) => setScheduleDate(e.target.value)}
-    className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-4 focus:ring-cyan-500/10 focus:border-cyan-500 transition-all shadow-sm"
-    required
-/>
-                                        </div>
-
-                                        {/* 3. Time Selection */}
-                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                            <div>
-                                                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                                                    Start Time
-                                                </label>
+                                            <div className="flex items-center justify-between mb-1">
+                                                <label className="block text-xs font-semibold text-slate-700">2. Date</label>
                                                 <input
-                                                    type="time"
-                                                    value={startTimeStr}
-                                                    onChange={(e) => setStartTimeStr(e.target.value)}
-                                                    className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-4 focus:ring-cyan-500/10 focus:border-cyan-500 transition-all shadow-sm"
-                                                    required
+                                                    type="date"
+                                                    value={scheduleDate}
+                                                    min={toDateKey(new Date())}
+                                                    onChange={(e) => setScheduleDate(e.target.value)}
+                                                    aria-label="Pick any date"
+                                                    className="text-[11px] text-slate-500 bg-transparent border-none focus:outline-none cursor-pointer"
                                                 />
                                             </div>
-                                            <div>
-                                                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                                                    End Time
-                                                </label>
-                                                <input
-                                                    type="time"
-                                                    value={endTimeStr}
-                                                    onChange={(e) => setEndTimeStr(e.target.value)}
-                                                    className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-4 focus:ring-cyan-500/10 focus:border-cyan-500 transition-all shadow-sm"
-                                                    required
-                                                />
+                                            <div className="flex gap-2 overflow-x-auto pb-2 -mx-1 px-1">
+                                                {scheduleDates.map((d) => {
+                                                    const key = toDateKey(d);
+                                                    const selected = key === scheduleDate;
+                                                    return (
+                                                        <button
+                                                            type="button"
+                                                            key={key}
+                                                            onClick={() => setScheduleDate(key)}
+                                                            aria-pressed={selected}
+                                                            className={`shrink-0 w-14 py-2 rounded-xl border text-center transition-colors ${
+                                                                selected
+                                                                    ? "bg-cyan-600 border-cyan-600 text-white"
+                                                                    : "bg-white border-slate-200 text-slate-800 hover:border-cyan-400"
+                                                            }`}
+                                                        >
+                                                            <span className={`block text-[10px] font-semibold ${selected ? "text-white" : "text-slate-500"}`}>
+                                                                {d.toLocaleDateString("en-US", { weekday: "short" })}
+                                                            </span>
+                                                            <span className="block text-lg font-bold leading-tight">{d.getDate()}</span>
+                                                            <span className={`block text-[9px] font-semibold ${selected ? "text-white" : "text-slate-400"}`}>
+                                                                {d.toLocaleDateString("en-US", { month: "short" })}
+                                                            </span>
+                                                        </button>
+                                                    );
+                                                })}
                                             </div>
                                         </div>
 
-                                        {/* 4. Queue Management */}
-                                        <div className="border-t border-slate-100 pt-4 space-y-4">
-                                            <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider">Queue Management</h4>
-                                            
-                                            <div className="flex items-center justify-between bg-slate-50/50 p-4 rounded-xl border border-slate-100">
-                                                <div>
-                                                    <p className="text-sm font-bold text-slate-800">Unlimited Queue</p>
-                                                    <p className="text-xs text-slate-500">Allow patients to book slots without limits</p>
+                                        {/* From / To — filled from the timeline */}
+                                        <div className="grid grid-cols-2 gap-3">
+                                            {[
+                                                { label: "From", value: sessionRange ? hourLabel(sessionRange.start) : null },
+                                                { label: "To", value: sessionRange ? hourLabel(sessionRange.end + 1) : null },
+                                            ].map((f) => (
+                                                <div
+                                                    key={f.label}
+                                                    className={`rounded-xl border px-4 py-2.5 ${f.value ? "border-cyan-500 bg-cyan-50/60" : "border-slate-200 bg-white"}`}
+                                                >
+                                                    <p className="text-[11px] font-semibold text-slate-500">{f.label}</p>
+                                                    <p className={`text-base font-bold ${f.value ? "text-slate-900" : "text-slate-300"}`}>{f.value || "--:--"}</p>
                                                 </div>
-                                                <input
-                                                    type="checkbox"
-                                                    checked={isUnlimited}
-                                                    onChange={(e) => setIsUnlimited(e.target.checked)}
-                                                    className="h-5 w-5 rounded text-cyan-600 focus:ring-cyan-500 border-slate-300"
-                                                />
-                                            </div>
+                                            ))}
+                                        </div>
 
+                                        {/* 4. Patients */}
+                                        <div>
+                                            <label className="block text-xs font-semibold text-slate-700 mb-1">4. Patients</label>
+                                            <div className="grid grid-cols-2 bg-slate-100 rounded-xl p-1">
+                                                {[{ label: "Set a limit", value: false }, { label: "Unlimited", value: true }].map((opt) => (
+                                                    <button
+                                                        type="button"
+                                                        key={opt.label}
+                                                        onClick={() => setIsUnlimited(opt.value)}
+                                                        aria-pressed={isUnlimited === opt.value}
+                                                        className={`py-2 rounded-lg text-sm font-semibold transition-colors ${
+                                                            isUnlimited === opt.value ? "bg-white text-slate-900 shadow-sm" : "text-slate-500"
+                                                        }`}
+                                                    >
+                                                        {opt.label}
+                                                    </button>
+                                                ))}
+                                            </div>
                                             {!isUnlimited && (
-                                                <div>
-                                                    <label className="block text-xs font-semibold text-slate-700 mb-1">
-                                                        Maximum Patients (Queue Limit)
-                                                    </label>
-                                                    <input
-                                                        type="number"
-                                                        min="1"
-                                                        placeholder="e.g. 25"
-                                                        value={queueLimit}
-                                                        onChange={(e) => setQueueLimit(e.target.value)}
-                                                        className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-4 focus:ring-cyan-500/10 focus:border-cyan-500 transition-all shadow-sm"
-                                                        required
-                                                    />
+                                                <div className="mt-3 flex items-center gap-2 rounded-xl border border-slate-200 p-2">
+                                                    <button
+                                                        type="button"
+                                                        aria-label="Fewer patients"
+                                                        onClick={() => setQueueLimit(String(Math.max(1, (Number.isFinite(queueNumber) ? queueNumber : 0) - 1)))}
+                                                        className="h-10 w-10 rounded-lg bg-slate-100 text-lg font-bold text-slate-700 hover:bg-slate-200"
+                                                    >
+                                                        −
+                                                    </button>
+                                                    <div className="flex-1 text-center">
+                                                        <input
+                                                            type="text"
+                                                            inputMode="numeric"
+                                                            value={queueLimit}
+                                                            onChange={(e) => setQueueLimit(e.target.value.replace(/[^0-9]/g, "").slice(0, 3))}
+                                                            aria-label="Maximum patients"
+                                                            className="w-16 text-center text-xl font-bold text-slate-900 bg-transparent focus:outline-none"
+                                                        />
+                                                        <p className="text-[11px] text-slate-500">max patients</p>
+                                                    </div>
+                                                    <button
+                                                        type="button"
+                                                        aria-label="More patients"
+                                                        onClick={() => setQueueLimit(String((Number.isFinite(queueNumber) ? queueNumber : 0) + 1))}
+                                                        className="h-10 w-10 rounded-lg bg-slate-100 text-lg font-bold text-slate-700 hover:bg-slate-200"
+                                                    >
+                                                        +
+                                                    </button>
                                                 </div>
                                             )}
                                         </div>
+                                    </div>
 
-                                        {/* Submit Button */}
-                                        <Button
-                                            type="submit"
-                                            disabled={formSubmitting}
-                                            className="w-full text-white bg-cyan-600 hover:bg-cyan-700 text-sm font-semibold rounded-xl py-2.5 shadow-md flex items-center justify-center gap-2 mt-4"
-                                        >
-                                            {formSubmitting ? (
-                                                <>
-                                                    <Loader2 className="h-4 w-4 animate-spin text-white" />
-                                                    Creating Schedule...
-                                                </>
-                                            ) : (
-                                                "Create & Approve Schedule"
+                                    {/* 3. Hours */}
+                                    <div>
+                                        <div className="flex items-center justify-between mb-1">
+                                            <label className="block text-xs font-semibold text-slate-700">3. Hours</label>
+                                            {sessionRange && (
+                                                <button type="button" onClick={() => setSessionRange(null)} className="text-xs font-semibold text-cyan-600 hover:underline">
+                                                    Clear
+                                                </button>
                                             )}
-                                        </Button>
-                                    </form>
+                                        </div>
+                                        <p className="text-[11px] text-slate-500 mb-3">
+                                            {sessionRange ? "Click another free hour to change the end." : "Click a start hour, then an end hour."}
+                                        </p>
+                                        <div className="rounded-2xl border border-slate-200 p-4 pt-5 min-h-[200px]">
+                                            {!selectedDoctorId || !scheduleDate ? (
+                                                <p className="text-xs text-slate-400 text-center py-16">
+                                                    {!selectedDoctorId ? "Choose a doctor first." : "Choose a date first."}
+                                                </p>
+                                            ) : loadingSlots ? (
+                                                <div className="flex justify-center py-16">
+                                                    <Loader2 className="h-5 w-5 animate-spin text-cyan-600" />
+                                                </div>
+                                            ) : timelineSlots.length > 0 && timelineSlots.every(s => !s.isAvailable) ? (
+                                                <div className="text-center py-14">
+                                                    <p className="text-sm font-bold text-red-600">No free hours</p>
+                                                    <p className="text-xs text-slate-500 mt-1">Please choose another date.</p>
+                                                </div>
+                                            ) : (
+                                                <HourTimeline slots={timelineSlots} range={sessionRange} onChange={setSessionRange} />
+                                            )}
+                                        </div>
+                                    </div>
                                 </div>
+
+                                {/* Submit */}
+                                <div className="border-t border-slate-100 p-4 bg-slate-50/50">
+                                    <Button
+                                        type="submit"
+                                        disabled={!canCreate}
+                                        className="w-full text-white bg-cyan-600 hover:bg-cyan-700 disabled:bg-slate-200 disabled:text-slate-500 disabled:opacity-100 text-sm font-semibold rounded-xl py-2.5 flex items-center justify-center gap-2"
+                                    >
+                                        {formSubmitting ? (
+                                            <>
+                                                <Loader2 className="h-4 w-4 animate-spin text-white" />
+                                                Creating...
+                                            </>
+                                        ) : createLabel}
+                                    </Button>
+                                </div>
+                                </form>
                             </DialogContent>
                         </Dialog>
                     </div>
@@ -738,7 +680,6 @@ const filteredHistoryRequests = historyRequests.filter((req: any) => {
                                         req={req} 
                                         onAction={handleAction} 
                                         onDelete={handleDelete}
-                                        onApproveClick={openApprovalDialog}
                                         loadingId={loadingAction} 
                                         formatDate={formatDate}
                                         formatTime={formatTime}
@@ -780,114 +721,6 @@ const filteredHistoryRequests = historyRequests.filter((req: any) => {
                         </TabsContent>
                     </Tabs>
                 )}
-                {/* --- APPROVAL RESOURCE PAIR ALLOCATION DIALOG --- */}
-                {approvalDialogReq && (
-                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
-                        <Card className="w-full max-w-md bg-white border border-slate-200 shadow-2xl animate-in zoom-in-95 duration-150">
-                            <CardHeader className="bg-slate-50 border-b border-slate-100 flex flex-row justify-between items-center py-4 px-6">
-                                <div>
-                                    <h3 className="text-base text-slate-800 font-bold">Approve & Allocate Resources</h3>
-                                    <p className="text-xs text-slate-500 mt-0.5">Assign Room and Nurse for Dr. {approvalDialogReq.doctorName}</p>
-                                </div>
-                                <button 
-                                    onClick={() => setApprovalDialogReq(null)}
-                                    className="text-slate-400 hover:text-slate-600"
-                                >
-                                    <X size={20} />
-                                </button>
-                            </CardHeader>
-
-                            <CardContent className="p-6 space-y-4">
-                                <div className="bg-slate-50 p-3 rounded-lg border border-slate-100 text-xs space-y-1">
-                                    <p className="text-slate-600"><strong>Specialization:</strong> {approvalDialogReq.specialization || "General Medicine"}</p>
-                                    <p className="text-slate-600"><strong>Date:</strong> {formatDate(approvalDialogReq.date)}</p>
-                                    <p className="text-slate-600"><strong>Time:</strong> {formatTime(approvalDialogReq.startTime)} – {formatTime(approvalDialogReq.endTime)}</p>
-                                </div>
-
-                                {/* Room select */}
-                                <div className="space-y-1.5">
-                                    <label className="text-xs font-semibold text-slate-500 uppercase flex items-center justify-between">
-                                        <span>Room (auto-assigned)</span>
-                                        <span className="text-[10px] text-cyan-600 font-bold lowercase">
-                                            ({getDoctorDept(approvalDialogReq.specialization)} rooms)
-                                        </span>
-                                    </label>
-                                    <select 
-                                        value={approvalRoom}
-                                        onChange={(e) => setApprovalRoom(e.target.value)}
-                                        className="w-full h-10 px-3 py-2 rounded-md border text-xs focus:outline-none focus:ring-2 focus:ring-cyan-500 bg-white border-slate-200"
-                                    >
-                                        <option value="">Auto-assign room</option>
-                                        {getRoomsForDoctor(approvalDialogReq.specialization).map(room => {
-                                            const isBooked = isRoomBookedForTime(room, approvalDialogReq, requests);
-                                            return (
-                                                <option 
-                                                    key={room} 
-                                                    value={room} 
-                                                    disabled={isBooked}
-                                                    className={isBooked ? "text-slate-300" : ""}
-                                                >
-                                                    {room} {isBooked ? "(Booked)" : ""}
-                                                </option>
-                                            );
-                                        })}
-                                    </select>
-                                </div>
-
-                                {/* Nurse select */}
-                                <div className="space-y-1.5">
-                                    <label className="text-xs font-semibold text-slate-500 uppercase">Nurse (auto-assigned)</label>
-                                    <select 
-                                        value={approvalNurse}
-                                        onChange={(e) => setApprovalNurse(e.target.value)}
-                                        className="w-full h-10 px-3 py-2 rounded-md border text-xs focus:outline-none focus:ring-2 focus:ring-cyan-500 bg-white border-slate-200"
-                                    >
-                                        <option value="">Auto-assign nurse</option>
-                                        {nursesList.map(n => {
-                                            const isBooked = isNurseBookedForTime(n.name, approvalDialogReq, requests);
-                                            return (
-                                                <option 
-                                                    key={n._id} 
-                                                    value={n.name}
-                                                    disabled={isBooked}
-                                                    className={isBooked ? "text-slate-300" : ""}
-                                                >
-                                                    {n.name} {isBooked ? "(Booked)" : ""}
-                                                </option>
-                                            );
-                                        })}
-                                    </select>
-                                </div>
-
-                                {/* Conflict Check Info */}
-                                {modalApprovalConflictMessage && (
-                                    <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700 flex items-start gap-2">
-                                        <AlertTriangle className="h-4 w-4 mt-0.5 flex-shrink-0" />
-                                        <span className="font-semibold leading-relaxed">{modalApprovalConflictMessage}</span>
-                                    </div>
-                                )}
-
-                                {/* Actions */}
-                                <div className="flex gap-3 pt-2">
-                                    <Button
-                                        onClick={() => setApprovalDialogReq(null)}
-                                        variant="outline"
-                                        className="flex-1 text-xs"
-                                    >
-                                        Cancel
-                                    </Button>
-                                    <Button
-                                        onClick={() => handleConfirmApproval(approvalDialogReq._id)}
-                                        disabled={approvalSubmitting || !!modalApprovalConflictMessage}
-                                        className="flex-1 text-xs bg-cyan-600 hover:bg-cyan-700 text-white"
-                                    >
-                                        {approvalSubmitting ? <Loader2 className="animate-spin h-4 w-4" /> : "Approve Request"}
-                                    </Button>
-                                </div>
-                            </CardContent>
-                        </Card>
-                    </div>
-                )}
             </main>
         </div>     
     );
@@ -896,7 +729,7 @@ const filteredHistoryRequests = historyRequests.filter((req: any) => {
 // --- SUB COMPONENTS ---
 
 
-function RequestCard({ req, onAction, onDelete, onApproveClick, loadingId, isHistory, formatDate, formatTime }: any) {
+function RequestCard({ req, onAction, onDelete, loadingId, isHistory, formatDate, formatTime }: any) {
     const isLoading = loadingId === req._id;
 
     const getStatusBadge = (status: string) => {
@@ -938,6 +771,11 @@ function RequestCard({ req, onAction, onDelete, onApproveClick, loadingId, isHis
                         <Badge variant="outline" className="border-slate-200 text-slate-500 font-bold">
                             {req.isUnlimited ? "∞ Unlimited" : `${req.queueLimit || 0} Slots`}
                         </Badge>
+                        {req.status === "approved" && (
+                            <span className={`text-xs font-semibold ${req.allocatedRoom && req.allocatedNurse ? "text-cyan-700" : "text-amber-600"}`}>
+                                {req.allocatedRoom || "No room"} · {req.allocatedNurse || "No nurse"}
+                            </span>
+                        )}
                     </div>
 
                     {/* 3. Actions */}
@@ -972,7 +810,7 @@ function RequestCard({ req, onAction, onDelete, onApproveClick, loadingId, isHis
                                 </Button>
                                 <Button 
                                     size="sm"
-                                    onClick={() => onApproveClick(req)}
+                                    onClick={() => onAction(req._id, "approved")}
                                     className="bg-cyan-600 hover:bg-cyan-700 text-white min-w-[90px]"
                                     disabled={isLoading}
                                 >

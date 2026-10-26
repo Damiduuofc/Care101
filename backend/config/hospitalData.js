@@ -4,7 +4,7 @@ export const hospitalData = {
   emergencyContact: "1990",
   hours: {
     emergency: "24/7",
-    opd: "8:00 AM - 8:00 PM Daily"
+    opd: "8:00 AM - 23:00 PM Daily"
   },
   emergencyWarning: "🚨 EMERGENCY: Please call 1990 or visit the ER immediately."
 };

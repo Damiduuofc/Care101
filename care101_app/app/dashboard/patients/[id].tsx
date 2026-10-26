@@ -417,13 +417,7 @@ export default function PatientDetailScreen() {
                                     <Text style={styles.contactValue}>{patient.mobileNumber || 'N/A'}</Text>
                                 </View>
                             </View>
-                            <View style={styles.contactRow}>
-                                <Mail size={20} color="#06b6d4" />
-                                <View style={styles.contactInfo}>
-                                    <Text style={styles.contactLabel}>Email</Text>
-                                    <Text style={styles.contactValue}>{patient.email}</Text>
-                                </View>
-                            </View>
+      
                             <View style={styles.contactRow}>
                                 <MapPin size={20} color="#06b6d4" />
                                 <View style={styles.contactInfo}>
@@ -475,25 +469,6 @@ export default function PatientDetailScreen() {
                             </View>
                         </View>
                     )}
-
-                    {/* Summary Stats */}
-                    <View style={styles.section}>
-                        <Text style={styles.sectionTitle}>Summary</Text>
-                        <View style={styles.statsGrid}>
-                            <View style={styles.statCard}>
-                                <Text style={styles.statValue}>{summary.totalAppointments}</Text>
-                                <Text style={styles.statLabel}>Appointments</Text>
-                            </View>
-                            <View style={styles.statCard}>
-                                <Text style={styles.statValue}>{summary.totalRecords}</Text>
-                                <Text style={styles.statLabel}>Records</Text>
-                            </View>
-                            <View style={styles.statCard}>
-                                <Text style={styles.statValue}>{summary.totalSurgeries}</Text>
-                                <Text style={styles.statLabel}>Surgeries</Text>
-                            </View>
-                        </View>
-                    </View>
 
                     {/* Pending Lab Requests */}
                     {patientData.labRequests && patientData.labRequests.filter((r: any) => r.status === 'pending').length > 0 && (

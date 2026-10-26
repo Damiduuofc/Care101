@@ -1,11 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
   TextInput,
-  Switch,
   StatusBar,
   KeyboardAvoidingView,
   Platform,
@@ -15,50 +14,62 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import {
-  Calendar as CalendarIcon,
-  Clock,
-  Send,
-  Users,
-  ArrowLeft,
-  ChevronLeft,
-  ChevronRight,
-  Trash2,
-} from 'lucide-react-native';
-import DateTimePicker from '@react-native-community/datetimepicker';
+import { Clock, Send, ArrowLeft, Trash2, Minus, Plus } from 'lucide-react-native';
 import * as SecureStore from 'expo-secure-store';
+import HourTimeline, { TimelineSlot, HourRange } from '../../../components/HourTimeline';
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL;
+const DAYS_AHEAD = 60;
+const CYAN = '#06B6D4';
+
+const toDateKey = (d: Date) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+const hourLabel = (h: number) => {
+  const period = h >= 12 && h < 24 ? 'PM' : 'AM';
+  const display = h % 12 === 0 ? 12 : h % 12;
+  return `${display}:00 ${period}`;
+};
 
 export default function AppointmentScreen() {
   const router = useRouter();
 
-  // Selected Date State
-  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
+  // Date strip: today + next DAYS_AHEAD days
+  const dates = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return Array.from({ length: DAYS_AHEAD }, (_, i) => {
+      const d = new Date(today);
+      d.setDate(today.getDate() + i);
+      return d;
+    });
+  }, []);
 
-  // Time States
-  const [startTime, setStartTime] = useState<Date>(new Date());
-  const [endTime, setEndTime] = useState<Date>(new Date());
-  const [showStartTimePicker, setShowStartTimePicker] = useState(false);
-  const [showEndTimePicker, setShowEndTimePicker] = useState(false);
+  const [selectedDate, setSelectedDate] = useState<Date | null>(null);
 
-  // Queue Constraints
+  // Timeline
+  const [slots, setSlots] = useState<TimelineSlot[]>([]);
+  const [department, setDepartment] = useState('');
+  const [loadingSlots, setLoadingSlots] = useState(false);
+  const [range, setRange] = useState<HourRange>(null);
+
+  // Queue
   const [isUnlimited, setIsUnlimited] = useState(false);
-  const [queueLimit, setQueueLimit] = useState('');
+  const [queueLimit, setQueueLimit] = useState('20');
 
-  // Submit State
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Schedule History State
+  // Schedule History
   const [schedules, setSchedules] = useState<any[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(true);
-
-  // Calendar State
-  const [currentMonth, setCurrentMonth] = useState(new Date());
 
   useEffect(() => {
     fetchSchedules();
   }, []);
+
+  useEffect(() => {
+    if (selectedDate) fetchAvailability(selectedDate);
+  }, [selectedDate]);
 
   const fetchSchedules = async () => {
     try {
@@ -74,6 +85,30 @@ export default function AppointmentScreen() {
       console.error("Fetch Schedules Error:", error);
     } finally {
       setLoadingHistory(false);
+    }
+  };
+
+  const fetchAvailability = async (date: Date) => {
+    setLoadingSlots(true);
+    setRange(null);
+    setSlots([]);
+    try {
+      const token = await SecureStore.getItemAsync('token');
+      const response = await fetch(`${API_URL}/schedule-requests/availability?date=${toDateKey(date)}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setSlots(data.timeline || []);
+        setDepartment(data.department || '');
+      } else {
+        Alert.alert("Error", "Could not load free hours for this day.");
+      }
+    } catch (error) {
+      console.error("Fetch Availability Error:", error);
+      Alert.alert("Error", "Could not connect to server.");
+    } finally {
+      setLoadingSlots(false);
     }
   };
 
@@ -151,71 +186,36 @@ export default function AppointmentScreen() {
     );
   };
 
-  // Helper for Formatting
-  const formatDate = (date: Date) => {
-    return date.toLocaleDateString('en-US', {
-      weekday: 'short',
-      month: 'short',
-      day: 'numeric',
-    });
+  const queueNumber = parseInt(queueLimit, 10);
+  const queueValid = isUnlimited || (Number.isFinite(queueNumber) && queueNumber >= 1);
+  const rangeValid =
+    !!range && slots.filter(s => s.hour >= range.start && s.hour <= range.end).every(s => s.isAvailable);
+  const canSend = !!selectedDate && rangeValid && queueValid && !isSubmitting;
+  const freeCount = slots.filter(s => s.isAvailable).length;
+
+  const sendLabel = !selectedDate
+    ? 'Choose a date'
+    : !range
+      ? 'Choose your hours'
+      : !queueValid
+        ? 'Set patient limit'
+        : 'Send request';
+
+  const changeQueue = (delta: number) => {
+    const next = Math.max(1, (Number.isFinite(queueNumber) ? queueNumber : 0) + delta);
+    setQueueLimit(String(next));
   };
-
-  const formatTime = (time: Date) => {
-    return time.toLocaleTimeString('en-US', {
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  };
-
-  // Build Calendar Grid
-  const getDaysInMonth = (date: Date) => {
-    const year = date.getFullYear();
-    const month = date.getMonth();
-    const days = new Date(year, month + 1, 0).getDate();
-    const firstDayIndex = new Date(year, month, 1).getDay();
-
-    let daysArray = [];
-    for (let i = 0; i < firstDayIndex; i++) {
-      daysArray.push(null);
-    }
-    for (let i = 1; i <= days; i++) {
-      daysArray.push(new Date(year, month, i));
-    }
-    return daysArray;
-  };
-
-  const prevMonth = () => {
-    setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1, 1));
-  };
-
-  const nextMonth = () => {
-    setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1));
-  };
-
-  const isSameDay = (d1: Date, d2: Date) => {
-    return (
-      d1.getFullYear() === d2.getFullYear() &&
-      d1.getMonth() === d2.getMonth() &&
-      d1.getDate() === d2.getDate()
-    );
-  };
-
-  const daysGrid = getDaysInMonth(currentMonth);
-  const weekDays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
   const handleSubmit = async () => {
-    if (!isUnlimited && !queueLimit.trim()) {
-      Alert.alert("Required", "Please provide a valid queue limit or set it to unlimited.");
-      return;
-    }
+    if (!canSend || !selectedDate || !range) return;
 
-    if (endTime <= startTime) {
-      Alert.alert("Invalid Time", "End time must be after the start time.");
-      return;
-    }
+    const y = selectedDate.getFullYear();
+    const m = selectedDate.getMonth();
+    const d = selectedDate.getDate();
+    const startTime = new Date(y, m, d, range.start, 0, 0, 0);
+    const endTime = new Date(y, m, d, range.end + 1, 0, 0, 0);
 
     setIsSubmitting(true);
-
     try {
       const token = await SecureStore.getItemAsync('token');
       const response = await fetch(`${API_URL}/schedule-requests/request`, {
@@ -225,28 +225,30 @@ export default function AppointmentScreen() {
           Authorization: `Bearer ${token}`
         },
         body: JSON.stringify({
-          date: selectedDate.toISOString(),
+          // Noon keeps the calendar day stable across time zones
+          date: new Date(y, m, d, 12).toISOString(),
           startTime: startTime.toISOString(),
           endTime: endTime.toISOString(),
           isUnlimited,
-          queueLimit: isUnlimited ? null : parseInt(queueLimit, 10),
+          queueLimit: isUnlimited ? null : queueNumber,
         })
       });
 
       if (response.ok) {
-        Alert.alert("Success", "Your schedule request has been sent to the hospital.");
-        router.back();
+        Alert.alert("Request sent", "The hospital will confirm your session soon.");
+        setRange(null);
+        fetchSchedules();
+        fetchAvailability(selectedDate);
       } else {
-        const errData = await response.json();
-       
+        const errData = await response.json().catch(() => ({}));
+        Alert.alert("Not sent", errData.msg || "Please try again.");
+        fetchAvailability(selectedDate);
       }
     } catch (error) {
       console.error(error);
-      Alert.alert("Success", "Request sent! (Offline Mode)");
-      router.back();
+      Alert.alert("Not sent", "Could not connect to server.");
     } finally {
       setIsSubmitting(false);
-      fetchSchedules();
     }
   };
 
@@ -259,7 +261,7 @@ export default function AppointmentScreen() {
         <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
           <ArrowLeft size={24} color="#0f172a" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Update Schedule</Text>
+        <Text style={styles.headerTitle}>New Session</Text>
         <View style={{ width: 40 }} />
       </View>
 
@@ -269,154 +271,151 @@ export default function AppointmentScreen() {
       >
         <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
 
-          <View style={styles.container}>
-            <Text style={styles.sectionHeading}>Update Schedule</Text>
+          {/* 1. DATE */}
+          <View style={styles.stepHeader}>
+            <Text style={styles.stepNumber}>1</Text>
+            <Text style={styles.stepTitle}>Date</Text>
+            <Text style={styles.stepMeta}>
+              {(selectedDate || dates[0]).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+            </Text>
           </View>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.dateStrip}>
+            {dates.map((day) => {
+              const isSelected = !!selectedDate && toDateKey(day) === toDateKey(selectedDate);
+              return (
+                <TouchableOpacity
+                  key={toDateKey(day)}
+                  style={[styles.dateChip, isSelected && styles.dateChipSelected]}
+                  onPress={() => setSelectedDate(day)}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: isSelected }}
+                  accessibilityLabel={day.toDateString()}
+                >
+                  <Text style={[styles.dateChipDay, isSelected && styles.dateChipTextSelected]}>
+                    {day.toLocaleDateString('en-US', { weekday: 'short' })}
+                  </Text>
+                  <Text style={[styles.dateChipNum, isSelected && styles.dateChipTextSelected]}>
+                    {day.getDate()}
+                  </Text>
+                  {day.getDate() === 1 && (
+                    <Text style={[styles.dateChipMonth, isSelected && styles.dateChipTextSelected]}>
+                      {day.toLocaleDateString('en-US', { month: 'short' })}
+                    </Text>
+                  )}
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
 
-          <Text style={styles.sectionHeadingSmall}>Select Date</Text>
-
-          {/* CUSTOM CALENDAR */}
-          <View style={styles.calendarContainer}>
-            <View style={styles.calendarHeader}>
-              <TouchableOpacity onPress={prevMonth} style={styles.monthNav}>
-                <ChevronLeft size={20} color="#64748b" />
-              </TouchableOpacity>
-              <Text style={styles.monthTitle}>
-                {currentMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
-              </Text>
-              <TouchableOpacity onPress={nextMonth} style={styles.monthNav}>
-                <ChevronRight size={20} color="#64748b" />
-              </TouchableOpacity>
-            </View>
-
-            <View style={styles.weekDaysContainer}>
-              {weekDays.map(day => (
-                <Text key={day} style={styles.weekDayText}>{day}</Text>
-              ))}
-            </View>
-
-            <View style={styles.daysGrid}>
-              {daysGrid.map((day, index) => {
-                const isSelected = day ? isSameDay(day, selectedDate) : false;
-                const isPast = day ? day < new Date(new Date().setHours(0, 0, 0, 0)) : true;
-
-                return (
-                  <View key={index} style={styles.dayWrapper}>
-                    {day ? (
-                      <TouchableOpacity
-                        disabled={isPast}
-                        style={[
-                          styles.dayButton,
-                          isSelected && styles.dayButtonSelected,
-                          isPast && styles.dayButtonDisabled
-                        ]}
-                        onPress={() => setSelectedDate(day)}
-                      >
-                        <Text style={[
-                          styles.dayText,
-                          isSelected && styles.dayTextSelected,
-                          isPast && styles.dayTextDisabled
-                        ]}>
-                          {day.getDate()}
-                        </Text>
-                      </TouchableOpacity>
-                    ) : (
-                      <View style={styles.dayButton} />
-                    )}
+          {/* 2. HOURS */}
+          {selectedDate && (
+            <>
+              <View style={styles.stepHeader}>
+                <Text style={styles.stepNumber}>2</Text>
+                <Text style={styles.stepTitle}>Hours</Text>
+                {!!department && !range && (
+                  <View style={styles.deptBadge}>
+                    <Text style={styles.deptBadgeText}>{department}</Text>
                   </View>
-                );
-              })}
-            </View>
-          </View>
+                )}
+                {range && (
+                  <TouchableOpacity onPress={() => setRange(null)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                    <Text style={styles.clearText}>Clear</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+              <Text style={styles.hint}>
+                {range ? 'Tap another free hour to change the end.' : 'Tap a start hour, then an end hour.'}
+              </Text>
 
-          <View style={styles.formContainer}>
-
-            {/* TIME SELECTION */}
-            <Text style={styles.sectionHeading}>Select Time</Text>
-            <View style={styles.timeGrid}>
-              <View style={styles.timeInputBox}>
-                <Text style={styles.label}>Start Time</Text>
-                <TouchableOpacity
-                  style={styles.timePickerButton}
-                  onPress={() => setShowStartTimePicker(true)}
-                >
-                  <Clock size={16} color="#0ea5e9" style={{ marginRight: 8 }} />
-                  <Text style={styles.timeText}>{formatTime(startTime)}</Text>
-                </TouchableOpacity>
+              <View style={styles.card}>
+                {loadingSlots ? (
+                  <ActivityIndicator color={CYAN} style={{ marginVertical: 32 }} />
+                ) : slots.length > 0 && freeCount === 0 ? (
+                  <View style={styles.emptyDay}>
+                    <Text style={styles.emptyDayTitle}>No free hours</Text>
+                    <Text style={styles.emptyDayText}>Please choose another date.</Text>
+                  </View>
+                ) : (
+                  <HourTimeline slots={slots} range={range} onChange={setRange} />
+                )}
               </View>
 
-              <View style={styles.timeInputBox}>
-                <Text style={styles.label}>End Time</Text>
-                <TouchableOpacity
-                  style={styles.timePickerButton}
-                  onPress={() => setShowEndTimePicker(true)}
-                >
-                  <Clock size={16} color="#ef4444" style={{ marginRight: 8 }} />
-                  <Text style={styles.timeText}>{formatTime(endTime)}</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-
-            {/* QUEUE LIMIT SELECTION */}
-            <Text style={[styles.sectionHeading, { marginTop: 24 }]}>Queue Management</Text>
-
-            <View style={styles.switchContainer}>
-              <View style={styles.switchTextGroup}>
-                <View style={styles.iconCircle}>
-                  <Users size={20} color="#06B6D4" />
+              {/* From / To — filled from the timeline */}
+              <View style={styles.timeRow}>
+                <View style={[styles.timeField, range && styles.timeFieldFilled]}>
+                  <Text style={styles.timeFieldLabel}>From</Text>
+                  <Text style={[styles.timeFieldValue, !range && styles.timeFieldEmpty]}>
+                    {range ? hourLabel(range.start) : '--:--'}
+                  </Text>
                 </View>
-                <View>
-                  <Text style={styles.switchTitle}>Unlimited Queue</Text>
-                  <Text style={styles.switchSubtitle}>Accept unlimited appointments</Text>
+                <View style={[styles.timeField, range && styles.timeFieldFilled]}>
+                  <Text style={styles.timeFieldLabel}>To</Text>
+                  <Text style={[styles.timeFieldValue, !range && styles.timeFieldEmpty]}>
+                    {range ? hourLabel(range.end + 1) : '--:--'}
+                  </Text>
                 </View>
               </View>
-              <Switch
-                trackColor={{ false: "#e2e8f0", true: "#a7f3d0" }}
-                thumbColor={isUnlimited ? "#06B6D4" : "#f8fafc"}
-                onValueChange={setIsUnlimited}
-                value={isUnlimited}
-              />
-            </View>
 
-            {!isUnlimited && (
-              <View style={styles.inputGroup}>
-                <Text style={styles.label}>Maximum Patients (Queue Limit)</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="e.g. 20"
-                  keyboardType="numeric"
-                  value={queueLimit}
-                  onChangeText={setQueueLimit}
-                />
+              {/* 3. QUEUE */}
+              <View style={styles.stepHeader}>
+                <Text style={styles.stepNumber}>3</Text>
+                <Text style={styles.stepTitle}>Patients</Text>
               </View>
-            )}
+              <View style={styles.segment}>
+                {[
+                  { label: 'Set a limit', value: false },
+                  { label: 'Unlimited', value: true },
+                ].map(opt => {
+                  const active = isUnlimited === opt.value;
+                  return (
+                    <TouchableOpacity
+                      key={opt.label}
+                      style={[styles.segmentBtn, active && styles.segmentBtnActive]}
+                      onPress={() => setIsUnlimited(opt.value)}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected: active }}
+                    >
+                      <Text style={[styles.segmentText, active && styles.segmentTextActive]}>{opt.label}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
 
-            {/* SUMMARY CARD */}
-            <View style={styles.summaryCard}>
-              <Text style={styles.summaryTitle}>Request Summary</Text>
-              <View style={styles.summaryRow}>
-                <CalendarIcon size={16} color="#64748b" />
-                <Text style={styles.summaryText}>{formatDate(selectedDate)}</Text>
-              </View>
-              <View style={styles.summaryRow}>
-                <Clock size={16} color="#64748b" />
-                <Text style={styles.summaryText}>
-                  {formatTime(startTime)} - {formatTime(endTime)}
-                </Text>
-              </View>
-              <View style={styles.summaryRow}>
-                <Users size={16} color="#64748b" />
-                <Text style={styles.summaryText}>
-                  {isUnlimited ? 'Unlimited Patients' : `Max ${queueLimit || 0} Patients`}
-                </Text>
-              </View>
-            </View>
-
-          </View>
-
+              {!isUnlimited && (
+                <View style={styles.stepper}>
+                  <TouchableOpacity
+                    style={styles.stepperBtn}
+                    onPress={() => changeQueue(-1)}
+                    accessibilityLabel="Fewer patients"
+                  >
+                    <Minus size={20} color="#0f172a" />
+                  </TouchableOpacity>
+                  <View style={styles.stepperValueBox}>
+                    <TextInput
+                      style={styles.stepperInput}
+                      keyboardType="number-pad"
+                      value={queueLimit}
+                      onChangeText={t => setQueueLimit(t.replace(/[^0-9]/g, ''))}
+                      maxLength={3}
+                      accessibilityLabel="Maximum patients"
+                    />
+                    <Text style={styles.stepperUnit}>max patients</Text>
+                  </View>
+                  <TouchableOpacity
+                    style={styles.stepperBtn}
+                    onPress={() => changeQueue(1)}
+                    accessibilityLabel="More patients"
+                  >
+                    <Plus size={20} color="#0f172a" />
+                  </TouchableOpacity>
+                </View>
+              )}
+            </>
+          )}
 
           {/* SCHEDULE HISTORY SECTION */}
-          <Text style={styles.sectionHeading}>Approved & Pending Schedules</Text>
+          <Text style={styles.sectionHeading}>My sessions</Text>
           <View style={styles.historyContainer}>
             {loadingHistory ? (
               <ActivityIndicator color="#06B6D4" style={{ marginVertical: 20 }} />
@@ -492,49 +491,34 @@ export default function AppointmentScreen() {
         </ScrollView>
       </KeyboardAvoidingView>
 
-      {/* FOOTER ACTIONS */}
+      {/* FOOTER ACTION */}
       <View style={styles.footer}>
+        {range && selectedDate && (
+          <Text style={styles.footerSummary}>
+            {selectedDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+            {'  ·  '}
+            {hourLabel(range.start)} – {hourLabel(range.end + 1)}
+            {'  ·  '}
+            {isUnlimited ? 'Unlimited' : `${queueValid ? queueNumber : '?'} patients`}
+          </Text>
+        )}
         <TouchableOpacity
-          style={[styles.submitButton, isSubmitting && styles.submitButtonDisabled]}
+          style={[styles.submitButton, !canSend && styles.submitButtonDisabled]}
           onPress={handleSubmit}
-          disabled={isSubmitting}
+          disabled={!canSend}
+          accessibilityRole="button"
+          accessibilityState={{ disabled: !canSend }}
         >
           {isSubmitting ? (
             <ActivityIndicator color="#fff" />
           ) : (
             <>
-              <Send size={20} color="#fff" style={{ marginRight: 8 }} />
-              <Text style={styles.submitText}>Send Request to Hospital</Text>
+              {canSend && <Send size={18} color="#fff" style={{ marginRight: 8 }} />}
+              <Text style={[styles.submitText, !canSend && styles.submitTextDisabled]}>{sendLabel}</Text>
             </>
           )}
         </TouchableOpacity>
       </View>
-
-      {/* INVISIBLE PLATFORM DATE/TIME PICKERS */}
-      {showStartTimePicker && (
-        <DateTimePicker
-          value={startTime}
-          mode="time"
-          display="default"
-          onChange={(event, date) => {
-            setShowStartTimePicker(Platform.OS === 'ios');
-            if (date) setStartTime(date);
-          }}
-        />
-      )}
-
-      {showEndTimePicker && (
-        <DateTimePicker
-          value={endTime}
-          mode="time"
-          display="default"
-          onChange={(event, date) => {
-            setShowEndTimePicker(Platform.OS === 'ios');
-            if (date) setEndTime(date);
-          }}
-        />
-      )}
-
     </SafeAreaView>
   );
 }
@@ -555,232 +539,166 @@ const styles = StyleSheet.create({
   headerTitle: { fontSize: 18, fontWeight: '700', color: '#0f172a' },
   scrollContent: { paddingBottom: 40 },
 
-  sectionHeading: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#334155',
+  // Steps
+  stepHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
     marginHorizontal: 20,
-    marginTop: 24,
+    marginTop: 28,
+    marginBottom: 12,
+  },
+  stepNumber: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: '#0f172a',
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '700',
+    textAlign: 'center',
+    lineHeight: 24,
+    overflow: 'hidden',
+    marginRight: 10,
+  },
+  stepTitle: { flex: 1, fontSize: 17, fontWeight: '700', color: '#0f172a' },
+  stepMeta: { fontSize: 13, fontWeight: '600', color: '#64748b' },
+  deptBadge: { backgroundColor: '#ecfeff', borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4 },
+  deptBadgeText: { fontSize: 12, fontWeight: '700', color: '#0e7490' },
+  hint: { marginHorizontal: 20, marginTop: -4, marginBottom: 12, fontSize: 13, color: '#64748b' },
+  clearText: { fontSize: 14, fontWeight: '600', color: CYAN },
+  sectionHeading: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#0f172a',
+    marginHorizontal: 20,
+    marginTop: 36,
     marginBottom: 12
   },
 
-  // Calendar Styles
-  calendarContainer: {
+  // Date strip
+  dateStrip: { paddingHorizontal: 20, gap: 8 },
+  dateChip: {
+    width: 56,
+    paddingVertical: 12,
+    borderRadius: 14,
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    alignItems: 'center',
+  },
+  dateChipSelected: { backgroundColor: CYAN, borderColor: CYAN },
+  dateChipDay: { fontSize: 12, fontWeight: '600', color: '#64748b' },
+  dateChipNum: { fontSize: 20, fontWeight: '700', color: '#0f172a', marginTop: 2 },
+  dateChipMonth: { fontSize: 10, fontWeight: '700', color: '#64748b', marginTop: 2 },
+  dateChipTextSelected: { color: '#fff' },
+
+  // Timeline card
+  card: {
     backgroundColor: '#fff',
     marginHorizontal: 20,
     borderRadius: 16,
-    padding: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  calendarHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  monthTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#0f172a',
-  },
-  monthNav: {
-    padding: 8,
-    backgroundColor: '#f1f5f9',
-    borderRadius: 8,
-  },
-  weekDaysContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    marginBottom: 8,
-  },
-  weekDayText: {
-    fontSize: 12,
-    color: '#94a3b8',
-    fontWeight: '600',
-    width: 36,
-    textAlign: 'center',
-  },
-  daysGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-around',
-  },
-  dayWrapper: {
-    width: '14.28%', // 100/7
-    aspectRatio: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 4,
-  },
-  dayButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  dayButtonSelected: {
-    backgroundColor: '#06B6D4',
-  },
-  dayButtonDisabled: {
-    opacity: 0.3,
-  },
-  dayText: {
-    fontSize: 14,
-    color: '#334155',
-    fontWeight: '500',
-  },
-  dayTextSelected: {
-    color: '#fff',
-    fontWeight: '700',
-  },
-  dayTextDisabled: {
-    color: '#cbd5e1',
-  },
-
-  formContainer: {
-    paddingHorizontal: 20,
-  },
-
-  timeGrid: {
-    flexDirection: 'row',
-    gap: 16,
-  },
-  timeInputBox: {
-    flex: 1,
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-  },
-  label: {
-    fontSize: 12,
-    color: '#64748b',
-    fontWeight: '600',
-    marginBottom: 8,
-  },
-  timePickerButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#f8fafc',
-    padding: 12,
-    borderRadius: 8,
-  },
-  timeText: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#0f172a',
-  },
-
-  switchContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: '#fff',
-    padding: 16,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-    marginBottom: 16,
-  },
-  switchTextGroup: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
-  iconCircle: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#ecfdf5',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 12,
-  },
-  switchTitle: { fontSize: 16, fontWeight: '600', color: '#0f172a' },
-  switchSubtitle: { fontSize: 12, color: '#64748b', marginTop: 2 },
-
-  inputGroup: {
-    backgroundColor: '#fff',
-    padding: 16,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-    marginBottom: 16,
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: '#cbd5e1',
-    borderRadius: 12,
+    paddingVertical: 16,
     paddingHorizontal: 16,
-    paddingVertical: 14,
-    fontSize: 16,
-    backgroundColor: '#f8fafc',
-    color: '#0f172a',
-  },
-
-  summaryCard: {
-    backgroundColor: '#f1f5f9',
-    borderRadius: 16,
-    padding: 16,
-    marginTop: 8,
     borderWidth: 1,
     borderColor: '#e2e8f0',
   },
-  summaryTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#334155',
-    marginBottom: 12,
+  emptyDay: { alignItems: 'center', paddingVertical: 28 },
+  emptyDayTitle: { fontSize: 16, fontWeight: '700', color: '#dc2626' },
+  emptyDayText: { fontSize: 13, color: '#64748b', marginTop: 4 },
+
+  // From / To
+  timeRow: { flexDirection: 'row', gap: 12, marginHorizontal: 20, marginTop: 12 },
+  timeField: {
+    flex: 1,
+    backgroundColor: '#fff',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
   },
-  summaryRow: {
+  timeFieldFilled: { borderColor: CYAN, backgroundColor: '#ecfeff' },
+  timeFieldLabel: { fontSize: 12, fontWeight: '600', color: '#64748b' },
+  timeFieldValue: { fontSize: 18, fontWeight: '700', color: '#0f172a', marginTop: 2 },
+  timeFieldEmpty: { color: '#cbd5e1' },
+
+  // Queue
+  segment: {
+    flexDirection: 'row',
+    marginHorizontal: 20,
+    backgroundColor: '#e2e8f0',
+    borderRadius: 12,
+    padding: 4,
+  },
+  segmentBtn: { flex: 1, paddingVertical: 10, borderRadius: 9, alignItems: 'center' },
+  segmentBtnActive: {
+    backgroundColor: '#fff',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 3,
+    elevation: 1,
+  },
+  segmentText: { fontSize: 14, fontWeight: '600', color: '#64748b' },
+  segmentTextActive: { color: '#0f172a' },
+  stepper: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 8,
+    marginHorizontal: 20,
+    marginTop: 12,
+    backgroundColor: '#fff',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    padding: 8,
   },
-  summaryText: {
-    fontSize: 14,
-    color: '#475569',
-    marginLeft: 8,
-    fontWeight: '500',
+  stepperBtn: {
+    width: 48,
+    height: 48,
+    borderRadius: 12,
+    backgroundColor: '#f1f5f9',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
+  stepperValueBox: { flex: 1, alignItems: 'center' },
+  stepperInput: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#0f172a',
+    textAlign: 'center',
+    minWidth: 60,
+    padding: 0,
+  },
+  stepperUnit: { fontSize: 12, color: '#64748b', marginTop: 2 },
 
+  // Footer
   footer: {
     paddingHorizontal: 20,
-    paddingVertical: 16,
+    paddingTop: 12,
+    paddingBottom: 16,
     backgroundColor: '#fff',
     borderTopWidth: 1,
     borderTopColor: '#f1f5f9',
   },
+  footerSummary: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#334155',
+    textAlign: 'center',
+    marginBottom: 10,
+  },
   submitButton: {
     flexDirection: 'row',
-    backgroundColor: '#06B6D4',
+    backgroundColor: CYAN,
     paddingVertical: 16,
-    borderRadius: 12,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  submitButtonDisabled: {
-    opacity: 0.7,
-  },
-  submitText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  sectionHeadingSmall: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#64748b',
-    marginHorizontal: 20,
-    marginTop: 8,
-    marginBottom: 8
-  },
+  submitButtonDisabled: { backgroundColor: '#e2e8f0' },
+  submitText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  submitTextDisabled: { color: '#94a3b8' },
+
   historyContainer: {
     paddingHorizontal: 20,
     marginTop: 8,

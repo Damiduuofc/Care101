@@ -5,40 +5,59 @@ import {
 } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { User, Lock, LogOut, Edit3, ChevronRight, CreditCard, Clock, Camera, Save, X } from 'lucide-react-native';
+import {
+  User, Lock, LogOut, Pencil, ChevronRight, Camera, X, Phone, Mail, CreditCard,
+  Stethoscope, Building2, BadgeCheck, Eye, EyeOff, ChevronDown, Check
+} from 'lucide-react-native';
 import * as SecureStore from 'expo-secure-store';
 import * as ImagePicker from 'expo-image-picker';
-import BottomNavBar from '../../components/BottomNavBar'; 
+import BottomNavBar from '../../components/BottomNavBar';
+import { departments, departmentLabel } from '../lib/data';
 
 const API_URL = `${process.env.EXPO_PUBLIC_API_URL}/doctor`;
 
-// ✅ THEME COLORS
 const THEME = {
-  primary: '#0891b2', // Cyan 700
-  secondary: '#06b6d4', // Cyan 500
-  light: '#ecfeff', // Cyan 50
-  border: '#cffafe', // Cyan 100
+  primary: '#06B6D4',
+  primaryDark: '#0891b2',
+  light: '#ecfeff',
   text: '#0f172a',
   subtext: '#64748b',
+  muted: '#94a3b8',
+  border: '#e2e8f0',
+  surface: '#f8fafc',
   danger: '#ef4444',
-  gold: '#f59e0b',
-  bg: '#fff'
 };
+
+type EditableFields = {
+  fullName: string;
+  nameWithInitials: string;
+  nic: string;
+  phone: string;
+  specialization: string;
+  profileImage: string | null;
+};
+
+// The API returns "N/A" for empty values; treat those as blank when editing
+const clean = (v?: string | null) => (!v || v === 'N/A' ? '' : v);
 
 export default function ProfileScreen() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [isEditing, setIsEditing] = useState(false);
   const [saving, setSaving] = useState(false);
-  
-  // Profile Data State
+
   const [profile, setProfile] = useState<any>({});
-  
+  const [form, setForm] = useState<EditableFields>({
+    fullName: '', nameWithInitials: '', nic: '', phone: '', specialization: '', profileImage: null,
+  });
+  const [deptPickerVisible, setDeptPickerVisible] = useState(false);
+
   // Password Modal State
   const [pwdModalVisible, setPwdModalVisible] = useState(false);
-  const [passwords, setPasswords] = useState({ current: '', new: '' });
+  const [passwords, setPasswords] = useState({ current: '', new: '', confirm: '' });
+  const [showPasswords, setShowPasswords] = useState(false);
+  const [changingPwd, setChangingPwd] = useState(false);
 
-  // Permissions
   const [permissionResponse, requestPermission] = ImagePicker.useMediaLibraryPermissions();
 
   useFocusEffect(
@@ -66,6 +85,38 @@ export default function ProfileScreen() {
 
   // --- ACTIONS ---
 
+  const startEditing = () => {
+    setForm({
+      fullName: clean(profile.fullName),
+      nameWithInitials: clean(profile.nameWithInitials),
+      nic: clean(profile.nic),
+      phone: clean(profile.phone),
+      specialization: profile.specialization || '',
+      profileImage: profile.profileImage || null,
+    });
+    setIsEditing(true);
+  };
+
+  const hasChanges =
+    form.fullName !== clean(profile.fullName) ||
+    form.nameWithInitials !== clean(profile.nameWithInitials) ||
+    form.nic !== clean(profile.nic) ||
+    form.phone !== clean(profile.phone) ||
+    form.specialization !== (profile.specialization || '') ||
+    form.profileImage !== (profile.profileImage || null);
+  const formValid = form.fullName.trim().length > 0;
+
+  const cancelEditing = () => {
+    if (!hasChanges) {
+      setIsEditing(false);
+      return;
+    }
+    Alert.alert("Discard changes?", "Your edits will not be saved.", [
+      { text: "Keep editing", style: "cancel" },
+      { text: "Discard", style: "destructive", onPress: () => setIsEditing(false) },
+    ]);
+  };
+
   const pickImage = async () => {
     if (permissionResponse?.status !== 'granted') {
       const { granted } = await requestPermission();
@@ -83,14 +134,14 @@ export default function ProfileScreen() {
         quality: 0.5,
         base64: true,
       });
-      
+
       if (!result.canceled && result.assets && result.assets.length > 0) {
         if (!result.assets[0].base64) {
           Alert.alert("Error", "Could not generate image data.");
           return;
         }
         const base64Img = `data:image/jpeg;base64,${result.assets[0].base64}`;
-        setProfile({ ...profile, profileImage: base64Img }); 
+        setForm(f => ({ ...f, profileImage: base64Img }));
       }
     } catch (error) {
       Alert.alert("Error", "Failed to pick image");
@@ -98,20 +149,31 @@ export default function ProfileScreen() {
   };
 
   const handleSaveProfile = async () => {
+    if (!formValid || !hasChanges) return;
     setSaving(true);
     try {
       const token = await SecureStore.getItemAsync('token');
+      // Only the doctor-editable fields are sent; email/SLMC stay with the hospital
       const res = await fetch(`${API_URL}/profile`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify(profile)
+        body: JSON.stringify({
+          fullName: form.fullName.trim(),
+          nameWithInitials: form.nameWithInitials.trim(),
+          nic: form.nic.trim(),
+          phone: form.phone.trim(),
+          specialization: form.specialization,
+          profileImage: form.profileImage,
+        })
       });
 
       if (res.ok) {
-        Alert.alert("Success", "Profile updated successfully!");
+        setProfile({ ...profile, ...form });
         setIsEditing(false);
+        Alert.alert("Saved", "Your profile has been updated.");
       } else {
-        Alert.alert("Error", "Failed to update profile");
+        const data = await res.json().catch(() => ({}));
+        Alert.alert("Not saved", data.msg || "Failed to update profile");
       }
     } catch (error) {
       Alert.alert("Error", "Network Error");
@@ -120,41 +182,51 @@ export default function ProfileScreen() {
     }
   };
 
+  const closePasswordModal = () => {
+    setPwdModalVisible(false);
+    setPasswords({ current: '', new: '', confirm: '' });
+    setShowPasswords(false);
+  };
+
+  const pwdMismatch = passwords.confirm.length > 0 && passwords.new !== passwords.confirm;
+  const pwdTooShort = passwords.new.length > 0 && passwords.new.length < 6;
+  const canChangePwd =
+    !!passwords.current && passwords.new.length >= 6 && passwords.new === passwords.confirm && !changingPwd;
+
   const handleChangePassword = async () => {
-    if (!passwords.current || !passwords.new) {
-        Alert.alert("Error", "Please fill all fields");
-        return;
-    }
+    if (!canChangePwd) return;
+    setChangingPwd(true);
     try {
-        const token = await SecureStore.getItemAsync('token');
-        const res = await fetch(`${API_URL}/change-password`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-            body: JSON.stringify({ currentPassword: passwords.current, newPassword: passwords.new })
-        });
-        const data = await res.json();
-        if (res.ok) {
-            Alert.alert("Success", "Password Changed!");
-            setPwdModalVisible(false);
-            setPasswords({ current: '', new: '' });
-        } else {
-            Alert.alert("Error", data.msg || "Failed to change password");
-        }
+      const token = await SecureStore.getItemAsync('token');
+      const res = await fetch(`${API_URL}/change-password`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ currentPassword: passwords.current, newPassword: passwords.new })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        Alert.alert("Done", "Your password has been changed.");
+        closePasswordModal();
+      } else {
+        Alert.alert("Not changed", data.msg || "Failed to change password");
+      }
     } catch (error) {
-        Alert.alert("Error", "Network Error");
+      Alert.alert("Error", "Network Error");
+    } finally {
+      setChangingPwd(false);
     }
   };
 
   const handleLogout = () => {
-    Alert.alert("Logout", "Are you sure you want to logout?", [
+    Alert.alert("Log out", "Are you sure you want to log out?", [
       { text: "Cancel", style: "cancel" },
-      { 
-        text: "Logout", 
-        style: "destructive", 
+      {
+        text: "Log out",
+        style: "destructive",
         onPress: async () => {
           try {
             await SecureStore.deleteItemAsync('token');
-            router.replace('/ads' as any); 
+            router.replace('/ads' as any);
           } catch (error) {
             router.replace('/ads' as any);
           }
@@ -163,138 +235,233 @@ export default function ProfileScreen() {
     ]);
   };
 
+  if (loading) return <ActivityIndicator style={{ marginTop: 50 }} size="large" color={THEME.primary} />;
 
+  const avatarUri = isEditing ? form.profileImage : profile.profileImage;
+  const department = departmentLabel(profile.specialization) || 'General Practitioner';
+  // Keep the doctor's current value selectable even if it isn't in the signup list
+  const deptOptions = departments.map(d => d.name);
+  const currentDept = departmentLabel(form.specialization);
+  if (currentDept && !deptOptions.includes(currentDept)) deptOptions.unshift(currentDept);
 
-  if (loading) return <ActivityIndicator style={{marginTop:50}} size="large" color={THEME.primary} />;
+  // ─── EDIT MODE ───────────────────────────────────────────────────────────
+  if (isEditing) {
+    return (
+      <SafeAreaView edges={['top']} style={styles.container}>
+        <StatusBar barStyle="dark-content" backgroundColor="#fff" />
 
-  return (
-    <SafeAreaView edges={['top']} style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor="#fff" />
-      
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        
-        {/* --- HEADER --- */}
-        <View style={styles.header}>
-          <TouchableOpacity onPress={pickImage} disabled={!isEditing} style={styles.avatarContainer}>
-            {profile?.profileImage ? (
-                <Image source={{ uri: profile.profileImage }} style={styles.avatar} />
+        <View style={styles.topBar}>
+          <TouchableOpacity onPress={cancelEditing} style={styles.topBarSide} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <X size={24} color={THEME.text} />
+          </TouchableOpacity>
+          <Text style={styles.topBarTitle}>Edit profile</Text>
+          <View style={styles.topBarSide} />
+        </View>
+
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
+          <ScrollView contentContainerStyle={styles.editContent} keyboardShouldPersistTaps="handled">
+            <TouchableOpacity style={styles.editAvatarWrap} onPress={pickImage} accessibilityLabel="Change photo">
+              <Avatar uri={avatarUri} size={104} />
+              <View style={styles.cameraBadge}>
+                <Camera size={16} color="#fff" />
+              </View>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={pickImage}>
+              <Text style={styles.changePhotoText}>Change photo</Text>
+            </TouchableOpacity>
+
+            <Field
+              label="Full name"
+              value={form.fullName}
+              onChangeText={(t: string) => setForm(f => ({ ...f, fullName: t }))}
+              error={!formValid ? 'Full name is required' : undefined}
+              autoCapitalize="words"
+            />
+            <Field
+              label="Name with initials"
+              value={form.nameWithInitials}
+              onChangeText={(t: string) => setForm(f => ({ ...f, nameWithInitials: t }))}
+              autoCapitalize="words"
+            />
+            <Field
+              label="NIC"
+              value={form.nic}
+              onChangeText={(t: string) => setForm(f => ({ ...f, nic: t }))}
+              autoCapitalize="characters"
+            />
+            <Field
+              label="Phone"
+              value={form.phone}
+              onChangeText={(t: string) => setForm(f => ({ ...f, phone: t.replace(/[^0-9+ ]/g, '') }))}
+              keyboardType="phone-pad"
+            />
+
+            <View style={styles.field}>
+              <Text style={styles.fieldLabel}>Department</Text>
+              <TouchableOpacity
+                style={styles.selectInput}
+                onPress={() => setDeptPickerVisible(true)}
+                accessibilityRole="button"
+                accessibilityLabel={`Department, ${departmentLabel(form.specialization) || 'not set'}`}
+              >
+                <Text style={[styles.selectValue, !form.specialization && { color: THEME.muted }]} numberOfLines={1}>
+                  {departmentLabel(form.specialization) || 'Choose department'}
+                </Text>
+                <ChevronDown size={18} color={THEME.subtext} />
+              </TouchableOpacity>
+            </View>
+
+            <LockedField label="Email" value={profile.email} />
+            {!!profile.slmcReg && <LockedField label="SLMC number" value={profile.slmcReg} />}
+            <Text style={styles.lockedNote}>Locked fields can only be changed by the hospital.</Text>
+          </ScrollView>
+        </KeyboardAvoidingView>
+
+        {/* DEPARTMENT PICKER */}
+        <Modal visible={deptPickerVisible} transparent animationType="slide" onRequestClose={() => setDeptPickerVisible(false)}>
+          <View style={styles.modalOverlay}>
+            <TouchableOpacity style={{ flex: 1 }} onPress={() => setDeptPickerVisible(false)} accessibilityLabel="Close" />
+            <View style={[styles.sheet, { maxHeight: '70%' }]}>
+              <View style={styles.sheetHandle} />
+              <Text style={[styles.sheetTitle, { marginBottom: 12 }]}>Department</Text>
+              <ScrollView>
+                {deptOptions.map(name => {
+                  const selected = name === currentDept;
+                  return (
+                    <TouchableOpacity
+                      key={name}
+                      style={[styles.optionRow, selected && styles.optionRowSelected]}
+                      onPress={() => {
+                        setForm(f => ({ ...f, specialization: name }));
+                        setDeptPickerVisible(false);
+                      }}
+                      accessibilityState={{ selected }}
+                    >
+                      <Text style={[styles.optionText, selected && styles.optionTextSelected]}>{departmentLabel(name)}</Text>
+                      {selected && <Check size={18} color={THEME.primaryDark} />}
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+            </View>
+          </View>
+        </Modal>
+
+        <View style={styles.saveBar}>
+          <TouchableOpacity
+            style={[styles.saveBtn, (!hasChanges || !formValid || saving) && styles.saveBtnDisabled]}
+            onPress={handleSaveProfile}
+            disabled={!hasChanges || !formValid || saving}
+          >
+            {saving ? (
+              <ActivityIndicator color="#fff" />
             ) : (
-                <View style={[styles.avatar, {justifyContent:'center', alignItems:'center'}]}>
-                    <User size={40} color="#cbd5e1" />
-                </View>
-            )}
-            {isEditing && (
-                <View style={styles.editBadge}>
-                    <Camera size={14} color="#fff" />
-                </View>
+              <Text style={[styles.saveText, (!hasChanges || !formValid) && styles.saveTextDisabled]}>
+                {hasChanges ? 'Save changes' : 'No changes yet'}
+              </Text>
             )}
           </TouchableOpacity>
-          
-          <Text style={styles.greeting}>
-             {isEditing ? "Edit Profile" : `Dr. ${profile.fullName ? profile.fullName.split(' ')[0] : 'User'}`}
-          </Text>
-          
-          {/* ✅ SPECIALIZATION IS NOW READ-ONLY */}
-          <Text style={styles.specialization}>{profile.specialization || "General Practitioner"}</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  // ─── VIEW MODE ───────────────────────────────────────────────────────────
+  return (
+    <SafeAreaView edges={['top']} style={styles.container}>
+      <StatusBar barStyle="dark-content" backgroundColor={THEME.light} />
+
+      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+
+        {/* HERO */}
+        <View style={styles.hero}>
+          <TouchableOpacity style={styles.heroEdit} onPress={startEditing} accessibilityLabel="Edit profile">
+            <Pencil size={16} color={THEME.primaryDark} />
+            <Text style={styles.heroEditText}>Edit</Text>
+          </TouchableOpacity>
+
+          <Avatar uri={avatarUri} size={96} ring />
+          <Text style={styles.name} numberOfLines={2}>Dr. {clean(profile.fullName) || 'Doctor'}</Text>
+          <View style={styles.deptPill}>
+            <Stethoscope size={14} color={THEME.primaryDark} />
+            <Text style={styles.deptPillText}>{department}</Text>
+          </View>
+          {!!profile.hospital && <Text style={styles.hospital}>{profile.hospital}</Text>}
         </View>
 
-         {/* --- DETAILS FORM --- */}
-        <View style={styles.detailsContainer}>
-          <EditableRow 
-            label="Full Name" 
-            value={profile.fullName || ""} 
-            isEditing={isEditing} 
-            onChange={(t: string) => setProfile({...profile, fullName: t})} 
-          />
-          <EditableRow 
-            label="Name w/ Initials" 
-            value={profile.nameWithInitials || ""} 
-            isEditing={isEditing} 
-            onChange={(t: string) => setProfile({...profile, nameWithInitials: t})} 
-          />
-          <EditableRow 
-            label="NIC" 
-            value={profile.nic || ""} 
-            isEditing={isEditing} 
-            onChange={(t: string) => setProfile({...profile, nic: t})} 
-          />
-          <EditableRow 
-            label="Phone" 
-            value={profile.phone || ""} 
-            isEditing={isEditing} 
-            onChange={(t: string) => setProfile({...profile, phone: t})} 
-          />
-          <DetailRow label="Email" value={profile.email || ""} /> 
+        {/* PERSONAL */}
+        <Text style={styles.groupTitle}>Personal</Text>
+        <View style={styles.card}>
+          <InfoRow icon={User} label="Name with initials" value={clean(profile.nameWithInitials)} />
+          <InfoRow icon={CreditCard} label="NIC" value={clean(profile.nic)} />
+          <InfoRow icon={Phone} label="Phone" value={clean(profile.phone)} />
+          <InfoRow icon={Mail} label="Email" value={profile.email} last />
         </View>
 
-        {/* --- MENU OPTIONS --- */}
-        {!isEditing && (
-            <View style={styles.menuContainer}>
-                <MenuOption 
-                    icon={Lock} 
-                    label="Change Password" 
-                    color={THEME.primary} 
-                    onPress={() => setPwdModalVisible(true)} 
-                />
-          
-            </View>
-        )}
-
-        {/* --- FOOTER BUTTONS --- */}
-        <View style={styles.footerActions}>
-          {isEditing ? (
-             <>
-                <TouchableOpacity style={styles.cancelBtn} onPress={() => setIsEditing(false)}>
-                    <X size={18} color={THEME.subtext} style={{marginRight: 8}} />
-                    <Text style={styles.cancelText}>Cancel</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.saveBtn} onPress={handleSaveProfile} disabled={saving}>
-                    {saving ? <ActivityIndicator color="#fff" /> : (
-                        <>
-                            <Save size={18} color="#fff" style={{marginRight: 8}} />
-                            <Text style={styles.saveText}>Save Changes</Text>
-                        </>
-                    )}
-                </TouchableOpacity>
-             </>
-          ) : (
-             <>
-                <TouchableOpacity style={styles.editProfileBtn} onPress={() => setIsEditing(true)}>
-                    <Edit3 size={18} color="#fff" style={{marginRight: 8}} />
-                    <Text style={styles.btnText}>Edit Profile</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
-                    <LogOut size={18} color="#fff" style={{marginRight: 8}} />
-                    <Text style={styles.btnText}>Logout</Text>
-                </TouchableOpacity>
-             </>
-          )}
+        {/* WORK */}
+        <Text style={styles.groupTitle}>Work</Text>
+        <View style={styles.card}>
+          <InfoRow icon={Stethoscope} label="Department" value={department} />
+          {!!profile.slmcReg && <InfoRow icon={BadgeCheck} label="SLMC number" value={profile.slmcReg} locked />}
+          <InfoRow icon={Building2} label="Hospital" value={profile.hospital} last />
         </View>
 
+        {/* ACCOUNT */}
+        <Text style={styles.groupTitle}>Account</Text>
+        <View style={styles.card}>
+          <ActionRow icon={Lock} label="Change password" onPress={() => setPwdModalVisible(true)} />
+          <ActionRow icon={LogOut} label="Log out" onPress={handleLogout} danger last />
+        </View>
       </ScrollView>
 
-      {/* --- PASSWORD MODAL --- */}
-      <Modal visible={pwdModalVisible} transparent animationType="fade" onRequestClose={() => setPwdModalVisible(false)}>
+      {/* PASSWORD MODAL */}
+      <Modal visible={pwdModalVisible} transparent animationType="slide" onRequestClose={closePasswordModal}>
         <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.modalOverlay}>
-            <View style={styles.modalContent}>
-                <Text style={styles.modalTitle}>Change Password</Text>
-                
-                <Text style={styles.inputLabel}>Current Password</Text>
-                <TextInput style={styles.modalInput} secureTextEntry value={passwords.current} onChangeText={(t) => setPasswords({...passwords, current: t})} />
-                
-                <Text style={styles.inputLabel}>New Password</Text>
-                <TextInput style={styles.modalInput} secureTextEntry value={passwords.new} onChangeText={(t) => setPasswords({...passwords, new: t})} />
-
-                <View style={styles.modalActions}>
-                    <TouchableOpacity style={styles.modalCancel} onPress={() => setPwdModalVisible(false)}>
-                        <Text style={{color: THEME.subtext}}>Cancel</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.modalSave} onPress={handleChangePassword}>
-                        <Text style={{color: '#fff', fontWeight:'600'}}>Change</Text>
-                    </TouchableOpacity>
-                </View>
+          <View style={styles.sheet}>
+            <View style={styles.sheetHandle} />
+            <View style={styles.sheetHeader}>
+              <Text style={styles.sheetTitle}>Change password</Text>
+              <TouchableOpacity onPress={() => setShowPasswords(v => !v)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                {showPasswords ? <EyeOff size={20} color={THEME.subtext} /> : <Eye size={20} color={THEME.subtext} />}
+              </TouchableOpacity>
             </View>
+
+            <Field
+              label="Current password"
+              value={passwords.current}
+              onChangeText={(t: string) => setPasswords(p => ({ ...p, current: t }))}
+              secureTextEntry={!showPasswords}
+            />
+            <Field
+              label="New password"
+              value={passwords.new}
+              onChangeText={(t: string) => setPasswords(p => ({ ...p, new: t }))}
+              secureTextEntry={!showPasswords}
+              error={pwdTooShort ? 'At least 6 characters' : undefined}
+            />
+            <Field
+              label="Confirm new password"
+              value={passwords.confirm}
+              onChangeText={(t: string) => setPasswords(p => ({ ...p, confirm: t }))}
+              secureTextEntry={!showPasswords}
+              error={pwdMismatch ? 'Passwords do not match' : undefined}
+            />
+
+            <View style={styles.sheetActions}>
+              <TouchableOpacity style={styles.sheetCancel} onPress={closePasswordModal}>
+                <Text style={styles.sheetCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.sheetSave, !canChangePwd && styles.saveBtnDisabled]}
+                onPress={handleChangePassword}
+                disabled={!canChangePwd}
+              >
+                {changingPwd ? <ActivityIndicator color="#fff" /> : (
+                  <Text style={[styles.saveText, !canChangePwd && styles.saveTextDisabled]}>Change</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
         </KeyboardAvoidingView>
       </Modal>
 
@@ -305,87 +472,276 @@ export default function ProfileScreen() {
 
 // --- HELPER COMPONENTS ---
 
-const EditableRow = ({ label, value, isEditing, onChange }: any) => (
-  <View style={styles.detailRow}>
-    <Text style={styles.detailLabel}>{label}</Text>
-    <Text style={styles.detailSeparator}>:</Text>
-    {isEditing ? (
-        <TextInput 
-            style={styles.editInput} 
-            value={value} 
-            onChangeText={onChange} 
-            placeholder={label}
-        />
+const Avatar = ({ uri, size, ring }: { uri?: string | null; size: number; ring?: boolean }) => (
+  <View style={[ring && styles.avatarRing, { borderRadius: size }]}>
+    {uri ? (
+      <Image source={{ uri }} style={[styles.avatar, { width: size, height: size, borderRadius: size / 2 }]} />
     ) : (
-        <Text style={styles.detailValue} numberOfLines={1}>{value || "N/A"}</Text>
+      <View style={[styles.avatar, styles.avatarEmpty, { width: size, height: size, borderRadius: size / 2 }]}>
+        <User size={size * 0.42} color={THEME.muted} />
+      </View>
     )}
   </View>
 );
 
-const DetailRow = ({ label, value }: any) => (
-  <View style={styles.detailRow}>
-    <Text style={styles.detailLabel}>{label}</Text>
-    <Text style={styles.detailSeparator}>:</Text>
-    <Text style={[styles.detailValue, {color: THEME.subtext}]} numberOfLines={1}>{value || "N/A"}</Text>
+const InfoRow = ({ icon: Icon, label, value, locked, last }: any) => (
+  <View style={[styles.infoRow, !last && styles.rowDivider]}>
+    <View style={styles.rowIcon}>
+      <Icon size={18} color={THEME.primaryDark} />
+    </View>
+    <View style={{ flex: 1 }}>
+      <Text style={styles.infoLabel}>{label}</Text>
+      <Text style={[styles.infoValue, !value && styles.infoValueEmpty]} numberOfLines={1}>
+        {value || 'Not added'}
+      </Text>
+    </View>
+    {locked && <Lock size={14} color={THEME.muted} />}
   </View>
 );
 
-const MenuOption = ({ icon: Icon, label, color, onPress }: any) => (
-  <TouchableOpacity style={styles.menuOption} onPress={onPress}>
-    <View style={styles.menuLeft}>
-      <Icon size={20} color={color} />
-      <Text style={styles.menuText}>{label}</Text>
+const ActionRow = ({ icon: Icon, label, onPress, danger, last }: any) => (
+  <TouchableOpacity style={[styles.infoRow, !last && styles.rowDivider]} onPress={onPress}>
+    <View style={[styles.rowIcon, danger && { backgroundColor: '#fef2f2' }]}>
+      <Icon size={18} color={danger ? THEME.danger : THEME.primaryDark} />
     </View>
-    <ChevronRight size={20} color={THEME.subtext} />
+    <Text style={[styles.actionLabel, danger && { color: THEME.danger }]}>{label}</Text>
+    {!danger && <ChevronRight size={20} color={THEME.muted} />}
   </TouchableOpacity>
+);
+
+const Field = ({ label, error, ...inputProps }: any) => (
+  <View style={styles.field}>
+    <Text style={styles.fieldLabel}>{label}</Text>
+    <TextInput
+      style={[styles.fieldInput, !!error && styles.fieldInputError]}
+      placeholderTextColor={THEME.muted}
+      {...inputProps}
+    />
+    {!!error && <Text style={styles.fieldError}>{error}</Text>}
+  </View>
+);
+
+const LockedField = ({ label, value }: { label: string; value?: string }) => (
+  <View style={styles.field}>
+    <Text style={styles.fieldLabel}>{label}</Text>
+    <View style={styles.lockedInput}>
+      <Text style={styles.lockedValue} numberOfLines={1}>{value || '—'}</Text>
+      <Lock size={14} color={THEME.muted} />
+    </View>
+  </View>
 );
 
 // --- STYLES ---
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff' },
-  content: { padding: 24, paddingBottom: 100 },
+  container: { flex: 1, backgroundColor: THEME.surface },
+  content: { paddingBottom: 110 },
 
-  // Header
-  header: { alignItems: 'center', marginBottom: 30 },
-  avatarContainer: { position: 'relative', marginBottom: 16 },
-  avatar: { width: 100, height: 100, borderRadius: 50, backgroundColor: '#f1f5f9', borderWidth: 1, borderColor: '#e2e8f0' },
-  editBadge: { position: 'absolute', bottom: 0, right: 0, backgroundColor: THEME.primary, padding: 8, borderRadius: 20, borderWidth: 3, borderColor: '#fff' },
-  greeting: { fontSize: 20, fontWeight: '700', color: THEME.text, marginBottom: 4 },
-  specialization: { fontSize: 14, color: THEME.subtext },
+  // Hero
+  hero: {
+    alignItems: 'center',
+    backgroundColor: THEME.light,
+    paddingTop: 28,
+    paddingBottom: 28,
+    paddingHorizontal: 24,
+    borderBottomLeftRadius: 28,
+    borderBottomRightRadius: 28,
+  },
+  heroEdit: {
+    position: 'absolute',
+    top: 16,
+    right: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#fff',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
+  },
+  heroEditText: { fontSize: 14, fontWeight: '600', color: THEME.primaryDark },
+  avatarRing: { padding: 4, backgroundColor: '#fff' },
+  avatar: { backgroundColor: '#f1f5f9' },
+  avatarEmpty: { alignItems: 'center', justifyContent: 'center' },
+  name: { fontSize: 22, fontWeight: '700', color: THEME.text, marginTop: 14, textAlign: 'center' },
+  deptPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#fff',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    marginTop: 10,
+  },
+  deptPillText: { fontSize: 13, fontWeight: '600', color: THEME.primaryDark },
+  hospital: { fontSize: 12, color: THEME.subtext, marginTop: 8 },
 
-  // Details
-  detailsContainer: { marginBottom: 24 },
-  detailRow: { flexDirection: 'row', marginBottom: 12, alignItems: 'center', height: 40 },
-  detailLabel: { flex: 4, fontSize: 14, color: THEME.subtext },
-  detailSeparator: { flex: 1, fontSize: 14, color: THEME.subtext, textAlign: 'center' },
-  detailValue: { flex: 6, fontSize: 14, color: THEME.text, fontWeight: '500' },
-  editInput: { flex: 6, borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 4, fontSize: 14, color: THEME.text, backgroundColor: '#f8fafc' },
+  // Groups
+  groupTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: THEME.subtext,
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+    marginHorizontal: 24,
+    marginTop: 24,
+    marginBottom: 8,
+  },
+  card: {
+    backgroundColor: '#fff',
+    marginHorizontal: 16,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: THEME.border,
+    paddingHorizontal: 16,
+  },
+  infoRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 14, gap: 14 },
+  rowDivider: { borderBottomWidth: 1, borderBottomColor: '#f1f5f9' },
+  rowIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: THEME.light,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  infoLabel: { fontSize: 12, color: THEME.subtext },
+  infoValue: { fontSize: 15, fontWeight: '600', color: THEME.text, marginTop: 2 },
+  infoValueEmpty: { color: THEME.muted, fontWeight: '500' },
+  actionLabel: { flex: 1, fontSize: 15, fontWeight: '600', color: THEME.text },
 
-  // Menu
-  menuContainer: { gap: 12, marginBottom: 30 },
-  menuOption: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 16, backgroundColor: '#f8fafc', borderRadius: 12, borderWidth: 1, borderColor: '#e2e8f0' },
-  menuLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  menuText: { fontSize: 15, fontWeight: '500', color: THEME.text },
+  // Edit mode
+  topBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    backgroundColor: '#fff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#f1f5f9',
+  },
+  topBarSide: { width: 40 },
+  topBarTitle: { fontSize: 17, fontWeight: '700', color: THEME.text },
+  editContent: { padding: 20, paddingBottom: 40 },
+  editAvatarWrap: { alignSelf: 'center', marginTop: 8 },
+  cameraBadge: {
+    position: 'absolute',
+    bottom: 2,
+    right: 2,
+    backgroundColor: THEME.primary,
+    padding: 8,
+    borderRadius: 20,
+    borderWidth: 3,
+    borderColor: THEME.surface,
+  },
+  changePhotoText: {
+    alignSelf: 'center',
+    fontSize: 14,
+    fontWeight: '600',
+    color: THEME.primaryDark,
+    marginTop: 10,
+    marginBottom: 24,
+  },
+  field: { marginBottom: 16 },
+  fieldLabel: { fontSize: 13, fontWeight: '600', color: '#334155', marginBottom: 6 },
+  fieldInput: {
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: THEME.border,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 13,
+    fontSize: 16,
+    color: THEME.text,
+  },
+  fieldInputError: { borderColor: THEME.danger },
+  fieldError: { fontSize: 12, color: THEME.danger, marginTop: 4 },
+  lockedInput: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#f1f5f9',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 13,
+  },
+  lockedValue: { flex: 1, fontSize: 16, color: THEME.subtext },
+  selectInput: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: THEME.border,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 13,
+  },
+  selectValue: { flex: 1, fontSize: 16, color: THEME.text },
+  optionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+  },
+  optionRowSelected: { backgroundColor: THEME.light },
+  optionText: { fontSize: 16, color: THEME.text },
+  optionTextSelected: { fontWeight: '700', color: THEME.primaryDark },
+  lockedNote: { fontSize: 12, color: THEME.muted, textAlign: 'center', marginTop: 4 },
 
-  // Footer Buttons
-  footerActions: { flexDirection: 'row', gap: 12 },
-  editProfileBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: THEME.primary, padding: 14, borderRadius: 10 },
-  logoutBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: THEME.danger, padding: 14, borderRadius: 10 },
-  
-  saveBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: THEME.primary, padding: 14, borderRadius: 10 },
-  cancelBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#f1f5f9', padding: 14, borderRadius: 10 },
-  
-  btnText: { color: '#fff', fontWeight: '600', fontSize: 16 },
-  saveText: { color: '#fff', fontWeight: '600', fontSize: 16 },
-  cancelText: { color: THEME.subtext, fontWeight: '600', fontSize: 16 },
+  saveBar: {
+    padding: 16,
+    backgroundColor: '#fff',
+    borderTopWidth: 1,
+    borderTopColor: '#f1f5f9',
+  },
+  saveBtn: {
+    backgroundColor: THEME.primary,
+    paddingVertical: 16,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  saveBtnDisabled: { backgroundColor: THEME.border },
+  saveText: { color: '#fff', fontWeight: '700', fontSize: 16 },
+  saveTextDisabled: { color: THEME.muted },
 
-  // Modal
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: 20 },
-  modalContent: { backgroundColor: '#fff', borderRadius: 16, padding: 24, elevation: 5 },
-  modalTitle: { fontSize: 18, fontWeight: '700', marginBottom: 20, textAlign: 'center' },
-  inputLabel: { fontSize: 14, fontWeight: '600', marginBottom: 8, color: '#334155' },
-  modalInput: { borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 8, padding: 12, marginBottom: 16, fontSize: 16 },
-  modalActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 12, marginTop: 10 },
-  modalCancel: { padding: 12 },
-  modalSave: { backgroundColor: THEME.primary, paddingHorizontal: 20, paddingVertical: 12, borderRadius: 8 },
+  // Password sheet
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(15,23,42,0.45)', justifyContent: 'flex-end' },
+  sheet: {
+    backgroundColor: THEME.surface,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 20,
+    paddingBottom: 32,
+  },
+  sheetHandle: {
+    alignSelf: 'center',
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#cbd5e1',
+    marginBottom: 16,
+  },
+  sheetHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 },
+  sheetTitle: { fontSize: 18, fontWeight: '700', color: THEME.text },
+  sheetActions: { flexDirection: 'row', gap: 12, marginTop: 8 },
+  sheetCancel: {
+    flex: 1,
+    paddingVertical: 16,
+    borderRadius: 14,
+    alignItems: 'center',
+    backgroundColor: '#f1f5f9',
+  },
+  sheetCancelText: { fontSize: 16, fontWeight: '600', color: THEME.subtext },
+  sheetSave: {
+    flex: 1,
+    paddingVertical: 16,
+    borderRadius: 14,
+    alignItems: 'center',
+    backgroundColor: THEME.primary,
+  },
 });

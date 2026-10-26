@@ -998,6 +998,64 @@ router.put("/all-doctors/:id/approve", protect, authorize(["system_admin"]), asy
   }
 });
 
+// Edit a doctor's details (system admin)
+router.put("/all-doctors/:id", protect, authorize(["system_admin"]), async (req, res) => {
+  try {
+    const doctor = await Doctor.findById(req.params.id);
+    if (!doctor) return res.status(404).json({ msg: "Doctor not found" });
+
+    const fields = ["fullName", "nameWithInitials", "specialization", "nic", "phone", "email", "slmcReg"];
+    const updates = {};
+    for (const field of fields) {
+      if (req.body[field] !== undefined) updates[field] = String(req.body[field]).trim();
+    }
+
+    const required = { fullName: "Full name", nameWithInitials: "Name with initials", specialization: "Department", email: "Email", slmcReg: "SLMC number" };
+    for (const [field, label] of Object.entries(required)) {
+      if (updates[field] !== undefined && !updates[field]) {
+        return res.status(400).json({ msg: `${label} is required.` });
+      }
+    }
+
+    // Same uniqueness rules as account creation, ignoring this doctor
+    if (updates.email && updates.email !== doctor.email) {
+      const taken = await Promise.all([
+        Doctor.findOne({ email: updates.email, _id: { $ne: doctor._id } }),
+        Patient.findOne({ email: updates.email }),
+        Admin.findOne({ email: updates.email })
+      ]);
+      if (taken.some(Boolean)) return res.status(400).json({ msg: "A user with this email already exists." });
+    }
+    if (updates.slmcReg && updates.slmcReg !== doctor.slmcReg) {
+      if (await Doctor.findOne({ slmcReg: updates.slmcReg, _id: { $ne: doctor._id } })) {
+        return res.status(400).json({ msg: "A doctor with this SLMC registration number already exists." });
+      }
+    }
+    if (updates.nic && updates.nic !== doctor.nic) {
+      if (await Doctor.findOne({ nic: updates.nic, _id: { $ne: doctor._id } })) {
+        return res.status(400).json({ msg: "A doctor with this NIC number already exists." });
+      }
+    }
+
+    Object.assign(doctor, updates);
+    if (updates.fullName) doctor.name = updates.fullName;
+    await doctor.save();
+
+    await Notification.create({
+      userId: doctor._id,
+      type: "system",
+      message: "Your profile details were updated by the hospital administration."
+    }).catch(err => console.error("Failed to notify doctor of profile update", err));
+
+    const docResponse = doctor.toObject();
+    delete docResponse.password;
+    res.json({ msg: "Doctor details updated.", doctor: docResponse });
+  } catch (err) {
+    console.error("Update Doctor Error:", err);
+    res.status(500).json({ msg: "Server Error" });
+  }
+});
+
 const syncTodaySchedulesToDoctors = async () => {
   try {
     const now = new Date();

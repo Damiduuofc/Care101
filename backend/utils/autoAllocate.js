@@ -2,7 +2,7 @@ import ScheduleRequest from '../models/ScheduleRequest.js';
 import Admin from '../models/Admin.js';
 
 // Keep in sync with ROOM_DEPARTMENTS in the admin frontend
-const ROOM_DEPARTMENTS = {
+export const ROOM_DEPARTMENTS = {
   "Room 1": "Cardiology",
   "Room 2": "Cardiology",
   "Room 3": "Cardiology",
@@ -40,16 +40,19 @@ export const getDoctorDept = (specialization) => {
  * nothing is available.
  */
 export const findAutoAllocation = async (request, specialization) => {
-  const startOfDay = new Date(request.date);
+  const startOfDay = new Date(request.startTime);
   startOfDay.setHours(0, 0, 0, 0);
-  const endOfDay = new Date(request.date);
+  const endOfDay = new Date(request.startTime);
   endOfDay.setHours(23, 59, 59, 999);
 
+  // Match sessions by their actual times, not the stored "date" field, so every
+  // overlapping session is seen regardless of how its date was saved
   const sameDaySessions = await ScheduleRequest.find({
     _id: { $ne: request._id },
     status: 'approved',
     sessionEnded: { $ne: true },
-    date: { $gte: startOfDay, $lte: endOfDay }
+    startTime: { $lt: endOfDay },
+    endTime: { $gt: startOfDay }
   }).select('allocatedRoom allocatedNurse startTime endTime');
 
   const overlapping = sameDaySessions.filter(s =>
