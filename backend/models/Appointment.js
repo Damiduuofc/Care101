@@ -13,6 +13,14 @@ const AppointmentSchema = new mongoose.Schema({
 
 
   queueNumber: { type: Number },
+  // "YYYY-MM-DD" in the hospital time zone; set with the queue token
+  dayKey: { type: String },
+
+  // The approved doctor session this booking belongs to
+  scheduleId: { type: mongoose.Schema.Types.ObjectId, ref: "ScheduleRequest" },
+
+  // Unpaid bookings keep their place until this time, then they are released
+  holdExpiresAt: { type: Date },
 
   status: {
     type: String,
@@ -24,16 +32,26 @@ const AppointmentSchema = new mongoose.Schema({
 
   paymentStatus: {
     type: String,
-    enum: ["pending", "paid", "failed"],
+    enum: ["pending", "paid", "failed", "refunded"],
     default: "pending"
   },
 
   arrived: { type: Boolean, default: false },
+
+  cancelledAt: { type: Date },
+  cancelReason: { type: String },
 
   createdAt: { type: Date, default: Date.now }
 });
 
 AppointmentSchema.index({ patientId: 1, date: -1 });
 AppointmentSchema.index({ doctorId: 1, date: 1, status: 1 });
+AppointmentSchema.index({ scheduleId: 1, status: 1 });
+AppointmentSchema.index({ paymentStatus: 1, status: 1, holdExpiresAt: 1 });
+// A queue token is never handed out twice for the same doctor and day
+AppointmentSchema.index(
+  { doctorId: 1, dayKey: 1, queueNumber: 1 },
+  { unique: true, partialFilterExpression: { dayKey: { $exists: true }, queueNumber: { $gt: 0 } } }
+);
 
 export default mongoose.model("Appointment", AppointmentSchema);

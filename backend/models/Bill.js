@@ -12,7 +12,8 @@ const BillSchema = new mongoose.Schema({
   
   amount: { type: Number, required: true },
   date: { type: Date, default: Date.now },
-  status: { type: String, enum: ['Pending', 'Paid'], default: 'Pending' },
+  // Refund Due = paid in cash for a cancelled booking, to be refunded at the counter
+  status: { type: String, enum: ['Pending', 'Paid', 'Cancelled', 'Refunded', 'Refund Due'], default: 'Pending' },
   
   // Optional: Link to original appointment if needed
   appointmentId: { type: String },

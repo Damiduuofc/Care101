@@ -652,6 +652,9 @@ export default function NurseQueueDashboard() {
                 if (appointmentId && action === "complete") {
                     setAppointments(prev => prev.map(a => a._id === appointmentId ? { ...a, status: "completed" } : a));
                 }
+            } else {
+                const errData = await res.json().catch(() => ({}));
+                alert(errData.msg || "Could not update the session. Please try again.");
             }
         } catch (err) {
             console.error("Failed to update doctor", err);
@@ -798,7 +801,7 @@ export default function NurseQueueDashboard() {
                                     {doc.sessionStarted ? (
                                         <Button
                                             onClick={() => {
-                                                if (window.confirm("Are you sure you want to end this session? Once ended, you will not be able to restart it today.")) {
+                                                if (window.confirm("End this session? It cannot be restarted. The doctor's later sessions today can still be started.")) {
                                                     handleUpdateDoctor(doc, { sessionStarted: false, currentQueueNumber: 0 }, "end");
                                                 }
                                             }}
@@ -818,7 +821,7 @@ export default function NurseQueueDashboard() {
                                                 {saving[doc._id] ? <Loader2 className="animate-spin h-5 w-5 mx-auto" /> : <><Play className="mr-2 h-4 w-4 sm:h-5 sm:w-5 fill-white" /> Start Session</>}
                                             </Button>
                                             {doc.sessionEndedToday ? (
-                                                <p className="text-[11px] text-rose-600 font-bold italic">Session has already been completed today and cannot be restarted.</p>
+                                                <p className="text-[11px] text-rose-600 font-bold italic">All of this doctor's sessions today have been completed.</p>
                                             ) : !doc.isArrived ? (
                                                 <div className="flex flex-wrap items-center justify-center md:justify-start gap-1.5">
                                                     <p className="text-[11px] text-amber-600 font-bold italic">Doctor must be checked in to start session.</p>

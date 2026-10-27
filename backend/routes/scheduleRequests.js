@@ -4,6 +4,9 @@ import Doctor from '../models/Doctor.js';
 import Notification from '../models/Notification.js';
 import { auth } from '../middleware/auth.js';
 import { findAutoAllocation, ROOM_DEPARTMENTS, getDoctorDept } from '../utils/autoAllocate.js';
+import { emitAppointmentUpdated, emitNotification } from '../utils/realtime.js';
+import { describeSession, cancelAppointment } from '../utils/bookingService.js';
+import { dayRange } from '../utils/queueToken.js';
 
 const router = express.Router();
 
@@ -295,29 +298,18 @@ router.put('/:id/status', auth, async (req, res) => {
       if (wasApproved) {
         try {
           const Appointment = (await import('../models/Appointment.js')).default;
-          const startOfDay = new Date(request.date);
-          startOfDay.setHours(0, 0, 0, 0);
-          const endOfDay = new Date(request.date);
-          endOfDay.setHours(23, 59, 59, 999);
-
+          // Only this session's bookings (older ones without a session are matched by day)
           const affectedAppointments = await Appointment.find({
-            doctorId: request.doctorId,
-            date: { $gte: startOfDay, $lte: endOfDay },
-            status: { $ne: 'cancelled' }
+            status: { $nin: ['cancelled', 'completed'] },
+            $or: [
+              { scheduleId: request._id },
+              { scheduleId: { $exists: false }, doctorId: request.doctorId, date: dayRange(request.date) }
+            ]
           });
 
+          // Cancels each booking, refunds what was paid and notifies the patient
           for (const appt of affectedAppointments) {
-            appt.status = 'cancelled';
-            await appt.save();
-            await Notification.create({
-              userId: appt.patientId,
-              type: 'cancellation',
-              message: `Your appointment #${appt.queueNumber || ''} with Dr. ${request.doctorName} on ${new Date(appt.date).toLocaleDateString()} has been cancelled because the doctor's schedule was cancelled.`,
-              data: { appointmentId: appt._id }
-            });
-            if (req.io) {
-              req.io.emit("appointmentUpdated", appt);
-            }
+            await cancelAppointment(appt, { byStaff: true, reason: "the doctor's session was cancelled", io: req.io });
           }
         } catch (apptErr) {
           console.error("Failed to cancel associated appointments on schedule cancellation:", apptErr);
@@ -390,9 +382,12 @@ router.get('/doctor/:doctorId/approved', auth, async (req, res) => {
     const approvedSchedules = await ScheduleRequest.find({
       doctorId: req.params.doctorId,
       status: 'approved',
-      date: { $gte: today }
-    }).sort({ date: 1 });
-    res.json(approvedSchedules);
+      date: { $gte: today },
+      endTime: { $gt: new Date() },
+      sessionEnded: { $ne: true }
+    }).sort({ startTime: 1 });
+    // Each session carries its places left, next token, estimated time and fees
+    res.json(await Promise.all(approvedSchedules.map(describeSession)));
   } catch (err) {
     res.status(500).json({ msg: 'Server error' });
   }
@@ -629,31 +624,19 @@ router.delete('/:id', auth, async (req, res) => {
     if (wasApproved) {
       try {
         const Appointment = (await import('../models/Appointment.js')).default;
-        const startOfDay = new Date(request.date);
-        startOfDay.setHours(0, 0, 0, 0);
-        const endOfDay = new Date(request.date);
-        endOfDay.setHours(23, 59, 59, 999);
-
+        // Only this session's bookings (older ones without a session are matched by day)
         const affectedAppointments = await Appointment.find({
-          doctorId: request.doctorId,
-          date: { $gte: startOfDay, $lte: endOfDay },
-          status: { $ne: 'cancelled' }
+          status: { $nin: ['cancelled', 'completed'] },
+          $or: [
+            { scheduleId: request._id },
+            { scheduleId: { $exists: false }, doctorId: request.doctorId, date: dayRange(request.date) }
+          ]
         });
 
         cancelledAppointmentsCount = affectedAppointments.length;
+        // Cancels each booking, refunds what was paid and notifies the patient
         for (const appt of affectedAppointments) {
-          appt.status = 'cancelled';
-          await appt.save();
-          await Notification.create({
-            userId: appt.patientId,
-            type: 'cancellation',
-            title: 'Appointment Cancelled',
-            message: `Your appointment with Dr. ${request.doctorName} on ${new Date(appt.date).toLocaleDateString()} has been cancelled because the doctor schedule was deleted.`,
-            data: { appointmentId: appt._id }
-          });
-          if (req.io) {
-            req.io.emit("appointmentUpdated", appt);
-          }
+          await cancelAppointment(appt, { byStaff: true, reason: "the doctor's session was removed", io: req.io });
         }
       } catch (apptErr) {
         console.error("Failed to cancel associated appointments on delete:", apptErr);

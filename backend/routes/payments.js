@@ -42,6 +42,9 @@ router.post("/create-intent", auth, async (req, res) => {
       if (bill.status === "Paid") {
         return res.json({ alreadyPaid: true, billId: bill._id });
       }
+      if (bill.status !== "Pending") {
+        return res.status(400).json({ msg: `This bill is ${bill.status.toLowerCase()} and cannot be paid.` });
+      }
       if (!bill.amount || bill.amount <= 0) {
         return res.status(400).json({ msg: "This bill has no amount yet. Please wait until the price is set." });
       }
@@ -100,22 +103,23 @@ router.put("/pay-bill/:billId", auth, async (req, res) => {
       return res.json({ msg: "Bill already paid", bill });
     }
 
-    if (paymentIntentId || bill.paymentIntentId) {
-      const result = await verifyIntentForBill(bill, paymentIntentId);
-      if (!result.ok) {
-        return res.status(result.pending ? 202 : 400).json({ msg: result.reason, pending: Boolean(result.pending) });
-      }
-      const { bill: paidBill, appointment } = await markBillPaid(bill._id, result.intent.id, req.io);
-      return res.json({ msg: "Bill marked as Paid", bill: paidBill, queueNumber: appointment?.queueNumber || null });
+    // A bill is only ever marked paid after Stripe confirms the payment
+    if (!paymentIntentId && !bill.paymentIntentId) {
+      return res.status(400).json({ msg: "No payment found for this bill. Please update the app and pay again." });
     }
 
-    // Older app builds pay with an amount-only intent and send no intent id
-    console.warn(`pay-bill without a PaymentIntent for bill ${bill._id} (legacy client)`);
-    const { bill: paidBill, appointment } = await markBillPaid(bill._id, null, req.io);
+    const result = await verifyIntentForBill(bill, paymentIntentId);
+    if (!result.ok) {
+      return res.status(result.pending ? 202 : 400).json({ msg: result.reason, pending: Boolean(result.pending) });
+    }
+    const { bill: paidBill, appointment } = await markBillPaid(bill._id, result.intent.id, req.io);
+    if (paidBill?.status !== "Paid") {
+      return res.status(409).json({ msg: "This booking was cancelled before the payment was recorded. Please contact the hospital for a refund." });
+    }
     res.json({ msg: "Bill marked as Paid", bill: paidBill, queueNumber: appointment?.queueNumber || null });
   } catch (err) {
     console.error("Update Bill Error:", err.message);
-    res.status(500).send("Server Error");
+    res.status(500).json({ msg: "Could not confirm the payment. Please try again." });
   }
 });
 

@@ -1,4 +1,5 @@
 import "dotenv/config";
+import "./config/timezone.js";
 import express from "express";
 import mongoose from "mongoose";
 import cors from "cors";
@@ -32,6 +33,8 @@ import Doctor from "./models/Doctor.js";
 import ScheduleRequest from "./models/ScheduleRequest.js";
 import LabTest from "./models/LabTest.js";
 import labTests from "./config/labTests.js";
+import { joinDefaultRooms } from "./utils/realtime.js";
+import { releaseExpiredHolds } from "./utils/bookingService.js";
 
 const app = express();
 app.set("trust proxy", true);
@@ -120,6 +123,7 @@ app.use((req, res, next) => {
 });
 
 io.on("connection", (socket) => {
+  joinDefaultRooms(socket);
   console.log(`🔌 Authenticated client connected: ${socket.id} (User: ${socket.user?.id || socket.user?.name || "unknown"}, Role: ${socket.user?.role || "patient"})`);
   
   socket.on("joinDoctorRoom", (doctorId) => {
@@ -219,6 +223,11 @@ const startServer = async () => {
     httpServer.listen(PORT, "0.0.0.0", () => {
       console.log(`🚀 Server running on port ${PORT}`);
     });
+
+    // Release unpaid bookings whose payment window has run out (runs every minute)
+    setInterval(() => {
+      releaseExpiredHolds(io).catch(err => console.error("Unpaid hold release failed:", err.message));
+    }, 60 * 1000);
 
     // Automatic Room + Nurse Release Job (runs every 30 seconds)
     setInterval(async () => {

@@ -24,7 +24,9 @@ import {
     Clock as ClockIcon,
     Stethoscope,
     Activity,
-    User
+    User,
+    AlertTriangle,
+    CalendarClock
 } from 'lucide-react-native';
 import { useAuth } from '@/context/auth';
 import { useStripe } from '@stripe/stripe-react-native';
@@ -32,8 +34,17 @@ import { payBill, waitForModalDismiss } from '@/services/billPayment';
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL;
 
-const HOSPITAL_FEE = 1500;
-const DOCTOR_FEE = 2000;
+const formatTime = (value: string | Date) =>
+    new Date(value).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+const formatDay = (value: string | Date) =>
+    new Date(value).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
+
+// Reads { msg } from an error response, whatever the server sent
+const readError = async (response: Response, fallback: string) => {
+    const data = await response.json().catch(() => ({}));
+    return data.msg || data.message || fallback;
+};
 
 export default function BookAppointmentScreen() {
     const router = useRouter();
@@ -47,6 +58,8 @@ export default function BookAppointmentScreen() {
     const [selectedDepartment, setSelectedDepartment] = useState<string | null>(null);
     const [selectedDoctor, setSelectedDoctor] = useState<any>(null);
     const [selectedDate, setSelectedDate] = useState<Date | null>(null);
+    const [selectedSession, setSelectedSession] = useState<any>(null);
+    const [checkedAvailability, setCheckedAvailability] = useState<any>(null);
     const [visitType, setVisitType] = useState('Consultation');
     const [reason, setReason] = useState('');
 
@@ -58,8 +71,9 @@ export default function BookAppointmentScreen() {
     const [doctorSchedules, setDoctorSchedules] = useState<any[]>([]);
     const [loadingSchedules, setLoadingSchedules] = useState(false);
 
-    // FIX 1: totalFee is HOSPITAL_FEE only until a doctor is selected, then adds DOCTOR_FEE
-    const totalFee = selectedDoctor ? HOSPITAL_FEE + DOCTOR_FEE : HOSPITAL_FEE;
+    // Fees come from the server (per doctor); the server also charges this amount itself
+    const fees = selectedSession?.availability?.fees || selectedDoctor?.fees || null;
+    const totalFee: number | null = fees?.total ?? null;
 
     // Fetch approved schedules for the selected doctor
     useEffect(() => {
@@ -90,7 +104,8 @@ export default function BookAppointmentScreen() {
         };
 
         fetchSchedules();
-        setSelectedDate(null); // Reset date selection when doctor changes
+        setSelectedDate(null); // Reset date and session selection when doctor changes
+        setSelectedSession(null);
     }, [selectedDoctor, token]);
 
     // DERIVED: Available dates from approved schedules (deduplicated by day)
@@ -112,13 +127,35 @@ export default function BookAppointmentScreen() {
         return uniqueDates.sort((a, b) => a.getTime() - b.getTime());
     }, [doctorSchedules, selectedDoctor]);
 
-    // NEW: Get the schedule object for the selected date
-    const selectedSchedule = useMemo(() => {
-        if (!selectedDate || !doctorSchedules.length) return null;
-        return doctorSchedules.find(sch => 
-            new Date(sch.date).toDateString() === selectedDate.toDateString()
-        );
+    // All sessions on the selected day (a doctor can have more than one)
+    const sessionsForDay = useMemo(() => {
+        if (!selectedDate) return [];
+        return doctorSchedules
+            .filter(sch => new Date(sch.date).toDateString() === selectedDate.toDateString())
+            .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
     }, [selectedDate, doctorSchedules]);
+
+    const isDayFull = useCallback((date: Date) => {
+        const sessions = doctorSchedules.filter(sch => new Date(sch.date).toDateString() === date.toDateString());
+        return sessions.length > 0 && sessions.every(sch => sch.availability?.isFull);
+    }, [doctorSchedules]);
+
+    const selectDate = (date: Date) => {
+        setSelectedDate(date);
+        const open = doctorSchedules
+            .filter(sch => new Date(sch.date).toDateString() === date.toDateString() && !sch.availability?.isFull)
+            .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
+        // Pick the session automatically when there is only one open
+        setSelectedSession(open.length === 1 ? open[0] : null);
+    };
+
+    const missingDetail = !selectedDoctor
+        ? 'Choose a doctor'
+        : !selectedSession
+            ? 'Choose a date and session'
+            : !reason.trim()
+                ? 'Enter a reason for your visit'
+                : null;
 
     useEffect(() => {
         if (!token) return;
@@ -173,13 +210,7 @@ export default function BookAppointmentScreen() {
     }, [doctors, selectedDepartment, searchQuery]);
 
     const handleConfirmPress = async () => {
-        if (!selectedDoctor || !selectedDate || !reason.trim()) {
-            Alert.alert(
-                'Missing Details',
-                'Please select a doctor, a date, and enter a reason for your visit.'
-            );
-            return;
-        }
+        if (missingDetail) return;
         setSubmitting(true);
         try {
             const response = await fetch(`${API_URL}/appointments/check-booking`, {
@@ -190,16 +221,16 @@ export default function BookAppointmentScreen() {
                 },
                 body: JSON.stringify({
                     doctorId: selectedDoctor._id,
-                    date: selectedDate.toISOString()
+                    scheduleId: selectedSession._id
                 })
             });
 
-            const data = await response.json();
-
             if (response.ok) {
+                const data = await response.json().catch(() => ({}));
+                setCheckedAvailability(data.availability || null);
                 setShowPaymentModal(true);
             } else {
-                Alert.alert('Booking Conflict', data.msg || 'Double booking or slot unavailable');
+                Alert.alert('Cannot Book This Session', await readError(response, 'This session is not available.'));
             }
         } catch (error: any) {
             console.error('Error checking booking status:', error);
@@ -220,22 +251,17 @@ export default function BookAppointmentScreen() {
             },
             body: JSON.stringify({
                 doctorId: selectedDoctor._id,
-                doctorName: selectedDoctor.name,
-                department: selectedDoctor.specialization,
-                date: selectedDate?.toISOString(),
+                scheduleId: selectedSession._id,
                 visitType,
-                reason,
-                amount: totalFee,
-                paymentStatus: 'pending'
+                reason: reason.trim()
             })
         });
 
-        const data = await response.json().catch(() => ({}));
         if (!response.ok) {
-            throw new Error(data.msg || 'Booking failed');
+            throw new Error(await readError(response, 'Booking failed. Please try again.'));
         }
-        return data;
-    }, [token, selectedDoctor, selectedDate, visitType, reason, totalFee]);
+        return response.json();
+    }, [token, selectedDoctor, selectedSession, visitType, reason]);
 
     const goToDashboard = [{ text: 'OK', onPress: () => router.replace('/patient-dashboard') }];
 
@@ -243,11 +269,17 @@ export default function BookAppointmentScreen() {
         setShowPaymentModal(false);
         setSubmitting(true);
         try {
-            await createBooking();
+            const booking = await createBooking();
+            const payBy = booking.holdExpiresAt ? formatTime(booking.holdExpiresAt) : null;
             Alert.alert(
-                'Booking Received',
-                'Your token has been issued. You will join the queue once the payment is completed.',
-                goToDashboard
+                `Token #${booking.queueNumber} reserved`,
+                `Your place with ${booking.doctorName} on ${formatDay(booking.date)} is held` +
+                (payBy ? ` until ${payBy}` : '') +
+                `. Pay LKR ${Number(booking.amount).toLocaleString()} in Billing or at the hospital counter before then to keep it.`,
+                [
+                    { text: 'Pay Now', onPress: () => router.replace('/patient-dashboard/billing') },
+                    { text: 'OK', onPress: () => router.replace('/patient-dashboard/my-appointments' as any) }
+                ]
             );
         } catch (error: any) {
             Alert.alert('Booking Error', error.message);
@@ -265,7 +297,7 @@ export default function BookAppointmentScreen() {
             if (!booking.billId) {
                 Alert.alert(
                     'Booking Received',
-                    'Your booking is saved. Please complete the payment from Billing to get your queue token.',
+                    'Your booking is saved. Please complete the payment from Billing to keep your place.',
                     [{ text: 'OK', onPress: () => router.replace('/patient-dashboard/billing') }]
                 );
                 return;
@@ -287,7 +319,9 @@ export default function BookAppointmentScreen() {
             } else {
                 Alert.alert(
                     result.status === 'canceled' ? 'Payment Not Completed' : 'Payment Failed',
-                    `${result.status === 'failed' ? result.message + '\n\n' : ''}Your booking is saved as unpaid. Pay from Billing to get your queue token.`,
+                    `${result.status === 'failed' ? result.message + '\n\n' : ''}Token #${booking.queueNumber} is reserved` +
+                    (booking.holdExpiresAt ? ` until ${formatTime(booking.holdExpiresAt)}` : '') +
+                    '. Pay from Billing before then to keep your place.',
                     [{ text: 'OK', onPress: () => router.replace('/patient-dashboard/billing') }]
                 );
             }
@@ -307,7 +341,13 @@ export default function BookAppointmentScreen() {
                         <ChevronLeft size={24} color="#1e293b" />
                     </TouchableOpacity>
                     <Text style={styles.headerTitle}>New Appointment</Text>
-                    <View style={{ width: 24 }} />
+                    <TouchableOpacity
+                        onPress={() => router.push('/patient-dashboard/my-appointments' as any)}
+                        style={styles.myBookingsButton}
+                    >
+                        <CalendarClock size={16} color="#0891b2" />
+                        <Text style={styles.myBookingsText}>My bookings</Text>
+                    </TouchableOpacity>
                 </View>
             </SafeAreaView>
 
@@ -488,7 +528,7 @@ export default function BookAppointmentScreen() {
                     </View>
                 ) : availableDates.length === 0 ? (
                     <View style={styles.placeholderBoxSmall}>
-                         <Text style={styles.placeholderTextSmall}>No approved schedules found for this doctor.</Text>
+                         <Text style={styles.placeholderTextSmall}>This doctor has no upcoming sessions open for booking.</Text>
                     </View>
                 ) : (
                     <>
@@ -501,45 +541,68 @@ export default function BookAppointmentScreen() {
                             {availableDates.map((date, index) => {
                                 const isSelected =
                                     selectedDate?.toDateString() === date.toDateString();
+                                const full = isDayFull(date);
                                 return (
                                     <TouchableOpacity
                                         key={index}
                                         style={[
                                             styles.dateCard,
-                                            isSelected && styles.selectedDateCard
+                                            isSelected && styles.selectedDateCard,
+                                            full && !isSelected && styles.fullDateCard
                                         ]}
-                                        onPress={() => setSelectedDate(date)}
+                                        onPress={() => selectDate(date)}
                                     >
-                                        <Text
-                                            style={[
-                                                styles.dateDay,
-                                                isSelected && styles.selectedDateText
-                                            ]}
-                                        >
-                                            {date.toLocaleString('default', { weekday: 'short' })}
+                                        <Text style={[styles.dateMonth, isSelected && styles.selectedDateText]}>
+                                            {date.toLocaleString('default', { month: 'short' }).toUpperCase()}
                                         </Text>
-                                        <Text
-                                            style={[
-                                                styles.dateNum,
-                                                isSelected && styles.selectedDateText
-                                            ]}
-                                        >
+                                        <Text style={[styles.dateNum, isSelected && styles.selectedDateText]}>
                                             {date.getDate()}
+                                        </Text>
+                                        <Text style={[styles.dateDay, isSelected && styles.selectedDateText]}>
+                                            {full ? 'Full' : date.toLocaleString('default', { weekday: 'short' })}
                                         </Text>
                                     </TouchableOpacity>
                                 );
                             })}
                         </ScrollView>
 
-                        {/* NEW: SHOW SESSION START TO END TIME */}
-                        {selectedDate && selectedSchedule && (
-                            <View style={styles.timeInfoBox}>
-                                <ClockIcon size={18} color="#06b6d4" />
-                                <Text style={styles.timeInfoText}>
-                                    Session Time: {new Date(selectedSchedule.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - {new Date(selectedSchedule.endTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                </Text>
-                            </View>
-                        )}
+                        {/* SESSIONS ON THE SELECTED DAY, WITH PLACES LEFT */}
+                        {selectedDate && sessionsForDay.map(session => {
+                            const availability = session.availability || {};
+                            const isSelected = selectedSession?._id === session._id;
+                            const full = Boolean(availability.isFull);
+                            return (
+                                <TouchableOpacity
+                                    key={session._id}
+                                    disabled={full}
+                                    onPress={() => setSelectedSession(session)}
+                                    style={[
+                                        styles.sessionCard,
+                                        isSelected && styles.selectedSessionCard,
+                                        full && styles.fullSessionCard
+                                    ]}
+                                >
+                                    <ClockIcon size={18} color={isSelected ? '#fff' : full ? '#94a3b8' : '#06b6d4'} />
+                                    <View style={{ flex: 1, marginLeft: 10 }}>
+                                        <Text style={[styles.sessionTime, isSelected && styles.selectedDateText, full && { color: '#94a3b8' }]}>
+                                            {formatTime(session.startTime)} – {formatTime(session.endTime)}
+                                        </Text>
+                                        <Text style={[styles.sessionMeta, isSelected && { color: '#cffafe' }]}>
+                                            {full
+                                                ? 'Session full'
+                                                : `Your token ≈ #${availability.nextToken ?? '-'} • Est. ${availability.estimatedTime ? formatTime(availability.estimatedTime) : formatTime(session.startTime)}`}
+                                        </Text>
+                                    </View>
+                                    <Text style={[styles.sessionPlaces, isSelected && styles.selectedDateText, full && { color: '#ef4444' }]}>
+                                        {full
+                                            ? 'FULL'
+                                            : availability.remaining == null
+                                                ? 'Open'
+                                                : `${availability.remaining} left`}
+                                    </Text>
+                                </TouchableOpacity>
+                            );
+                        })}
                     </>
                 )}
 
@@ -558,7 +621,7 @@ export default function BookAppointmentScreen() {
 
                     <Text style={styles.inputLabel}>Visit Type</Text>
                     <View style={styles.typeRow}>
-                        {['Consultation', 'Follow-up', 'Emergency'].map(type => (
+                        {['Consultation', 'Follow-up'].map(type => (
                             <TouchableOpacity
                                 key={type}
                                 style={[
@@ -580,33 +643,41 @@ export default function BookAppointmentScreen() {
                     </View>
                 </View>
 
-                <View style={{ height: 100 }} />
+                <View style={styles.emergencyNotice}>
+                    <AlertTriangle size={18} color="#b91c1c" />
+                    <Text style={styles.emergencyText}>
+                        For a medical emergency, do not book here. Go to the nearest Accident & Emergency unit or call 1990 for an ambulance.
+                    </Text>
+                </View>
+
+                <View style={{ height: 120 }} />
             </ScrollView>
 
             {/* BOTTOM ACTION BAR */}
             <View style={styles.bottomBar}>
-                <View>
-                    <Text style={styles.totalLabel}>
-                        {selectedDoctor ? 'Total Fee' : 'Hospital Admission'}
+                <View style={{ flex: 1 }}>
+                    <Text style={styles.totalLabel}>Total Fee</Text>
+                    <Text style={styles.totalAmount}>
+                        {totalFee != null ? `LKR ${totalFee.toLocaleString()}` : '—'}
                     </Text>
-                    <Text style={styles.totalAmount}>LKR {totalFee}</Text>
+                    {missingDetail && <Text style={styles.missingHint}>{missingDetail}</Text>}
                 </View>
                 <TouchableOpacity
                     style={[
                         styles.bookButton,
-                        (submitting || !selectedDoctor || !selectedDate) && {
+                        (submitting || !!missingDetail) && {
                             opacity: 0.7,
                             backgroundColor: '#94a3b8'
                         }
                     ]}
                     onPress={handleConfirmPress}
-                    disabled={submitting || !selectedDoctor || !selectedDate}
+                    disabled={submitting || !!missingDetail}
                 >
                     {submitting ? (
                         <ActivityIndicator color="#fff" />
                     ) : (
                         <>
-                            <Text style={styles.bookButtonText}>Confirm Booking</Text>
+                            <Text style={styles.bookButtonText}>Review Booking</Text>
                             <ChevronRight size={18} color="#fff" />
                         </>
                     )}
@@ -622,10 +693,34 @@ export default function BookAppointmentScreen() {
             >
                 <View style={styles.modalOverlay}>
                     <View style={styles.modalContent}>
-                        <Text style={styles.modalTitle}>Choose Payment Method</Text>
-                        <Text style={styles.modalSubtitle}>
-                            Total to pay: LKR {totalFee}
-                        </Text>
+                        <Text style={styles.modalTitle}>Review Your Booking</Text>
+
+                        {selectedDoctor && selectedSession && (
+                            <View style={styles.summaryBox}>
+                                <SummaryRow label="Doctor" value={selectedDoctor.name} />
+                                <SummaryRow label="Department" value={selectedDoctor.specialization || 'General'} />
+                                <SummaryRow label="Date" value={formatDay(selectedSession.startTime)} />
+                                <SummaryRow
+                                    label="Session"
+                                    value={`${formatTime(selectedSession.startTime)} – ${formatTime(selectedSession.endTime)}`}
+                                />
+                                <SummaryRow
+                                    label="Expected token"
+                                    value={`#${(checkedAvailability || selectedSession.availability)?.nextToken ?? '-'}`}
+                                />
+                                <SummaryRow label="Visit" value={visitType} />
+                                <View style={styles.summaryDivider} />
+                                {fees && (
+                                    <>
+                                        <SummaryRow label="Doctor fee" value={`LKR ${fees.doctorFee.toLocaleString()}`} />
+                                        <SummaryRow label="Hospital fee" value={`LKR ${fees.hospitalFee.toLocaleString()}`} />
+                                    </>
+                                )}
+                                <SummaryRow label="Total" value={totalFee != null ? `LKR ${totalFee.toLocaleString()}` : '—'} bold />
+                            </View>
+                        )}
+
+                        <Text style={styles.modalSubtitle}>How would you like to pay?</Text>
 
                         <TouchableOpacity
                             style={[styles.paymentOption, { backgroundColor: '#06b6d4' }]}
@@ -653,7 +748,7 @@ export default function BookAppointmentScreen() {
                                 <Text
                                     style={[styles.paymentOptionDesc, { color: '#64748b' }]}
                                 >
-                                    Pay cash at the hospital counter
+                                    Your place is held for a limited time; pay in the app or at the counter
                                 </Text>
                             </View>
                             <ChevronRight color="#475569" size={20} />
@@ -663,7 +758,7 @@ export default function BookAppointmentScreen() {
                             style={styles.cancelButton}
                             onPress={() => setShowPaymentModal(false)}
                         >
-                            <Text style={styles.cancelButtonText}>Cancel</Text>
+                            <Text style={styles.cancelButtonText}>Back</Text>
                         </TouchableOpacity>
                     </View>
                 </View>
@@ -671,6 +766,13 @@ export default function BookAppointmentScreen() {
         </View>
     );
 }
+
+const SummaryRow = ({ label, value, bold = false }: { label: string; value: string; bold?: boolean }) => (
+    <View style={styles.summaryRow}>
+        <Text style={[styles.summaryLabel, bold && styles.summaryBold]}>{label}</Text>
+        <Text style={[styles.summaryValue, bold && styles.summaryBold]} numberOfLines={1}>{value}</Text>
+    </View>
+);
 
 const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: '#f8fafc' },
@@ -817,8 +919,8 @@ const styles = StyleSheet.create({
     // Date
     dateList: { flexDirection: 'row', marginBottom: 24 },
     dateCard: {
-        width: 60,
-        height: 70,
+        width: 64,
+        height: 82,
         backgroundColor: '#fff',
         borderRadius: 12,
         alignItems: 'center',
@@ -828,10 +930,12 @@ const styles = StyleSheet.create({
         marginRight: 10
     },
     selectedDateCard: { backgroundColor: '#06b6d4', borderColor: '#06b6d4' },
+    fullDateCard: { backgroundColor: '#f8fafc', opacity: 0.6 },
+    dateMonth: { fontSize: 11, fontWeight: '700', color: '#06b6d4', marginBottom: 2 },
     dateDay: {
-        fontSize: 12,
+        fontSize: 11,
         color: '#64748b',
-        marginBottom: 4,
+        marginTop: 2,
         textTransform: 'uppercase'
     },
     dateNum: { fontSize: 18, fontWeight: '700', color: '#0f172a' },
@@ -932,7 +1036,21 @@ const styles = StyleSheet.create({
         color: '#0f172a',
         marginBottom: 8
     },
-    modalSubtitle: { fontSize: 14, color: '#64748b', marginBottom: 24 },
+    modalSubtitle: { fontSize: 14, color: '#64748b', marginBottom: 14, fontWeight: '600' },
+    summaryBox: {
+        backgroundColor: '#f8fafc',
+        borderRadius: 14,
+        borderWidth: 1,
+        borderColor: '#e2e8f0',
+        padding: 14,
+        marginVertical: 12,
+        gap: 6
+    },
+    summaryRow: { flexDirection: 'row', justifyContent: 'space-between', gap: 12 },
+    summaryLabel: { fontSize: 13, color: '#64748b' },
+    summaryValue: { fontSize: 13, color: '#0f172a', fontWeight: '600', flexShrink: 1, textAlign: 'right' },
+    summaryBold: { fontSize: 15, fontWeight: '800', color: '#0f172a' },
+    summaryDivider: { height: 1, backgroundColor: '#e2e8f0', marginVertical: 4 },
     paymentOption: {
         flexDirection: 'row',
         alignItems: 'center',
@@ -963,7 +1081,45 @@ const styles = StyleSheet.create({
         fontSize: 13,
         fontStyle: 'italic'
     },
-    // Session Info
+    // Sessions
+    sessionCard: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#fff',
+        padding: 12,
+        borderRadius: 12,
+        marginBottom: 10,
+        borderWidth: 1,
+        borderColor: '#e2e8f0'
+    },
+    selectedSessionCard: { backgroundColor: '#06b6d4', borderColor: '#06b6d4' },
+    fullSessionCard: { backgroundColor: '#f8fafc', opacity: 0.7 },
+    sessionTime: { fontSize: 15, fontWeight: '700', color: '#0f172a' },
+    sessionMeta: { fontSize: 12, color: '#64748b', marginTop: 2 },
+    sessionPlaces: { fontSize: 12, fontWeight: '800', color: '#0891b2' },
+    emergencyNotice: {
+        flexDirection: 'row',
+        gap: 10,
+        alignItems: 'flex-start',
+        backgroundColor: '#fef2f2',
+        borderColor: '#fecaca',
+        borderWidth: 1,
+        borderRadius: 12,
+        padding: 12,
+        marginTop: 16
+    },
+    emergencyText: { flex: 1, fontSize: 13, color: '#991b1b', lineHeight: 18 },
+    missingHint: { fontSize: 11, color: '#f59e0b', fontWeight: '600', marginTop: 2 },
+    myBookingsButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
+        backgroundColor: '#ecfeff',
+        paddingHorizontal: 10,
+        paddingVertical: 6,
+        borderRadius: 12
+    },
+    myBookingsText: { fontSize: 12, fontWeight: '700', color: '#0891b2' },
     timeInfoBox: {
         flexDirection: 'row',
         alignItems: 'center',

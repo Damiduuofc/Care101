@@ -7,9 +7,20 @@ import ScheduleRequest from "../models/ScheduleRequest.js";
 import ConsultationHistory from "../models/ConsultationHistory.js";
 import Notification from "../models/Notification.js";
 import { calculatePrediction, updateDoctorAverageDuration } from "../services/predictionService.js";
-import { countPaidAhead, firstPaidToken } from "../utils/queueToken.js";
+import { countPaidAhead, firstPaidToken, dayRange } from "../utils/queueToken.js";
+import { emitAppointmentUpdated, emitNotification } from "../utils/realtime.js";
 
 const router = express.Router();
+
+// Today's approved sessions for a doctor that have not been ended yet, earliest first.
+// Sessions run one after another, so the first one is the session in progress (or next to start).
+const openSessionsToday = (doctorId) =>
+  ScheduleRequest.find({
+    doctorId,
+    status: "approved",
+    sessionEnded: { $ne: true },
+    date: dayRange(new Date())
+  }).sort({ startTime: 1 });
 
 // ==========================================
 // 1. UPDATE QUEUE (POST /api/queue/update)
@@ -23,6 +34,7 @@ router.post("/update", protect, authorize(["doctor", "nurse", "receptionist", "s
 
     const prevServing = doctor.currentQueueNumber || 0;
     let releasedNurse = "";
+    let endedSessionId = null;
 
     // Ensure doctor's allocated nurse and room are preserved from today's schedule if currently empty and session not ended
     if ((!doctor.allocatedNurse || !doctor.allocatedRoom) && !doctor.sessionEndedToday) {
@@ -52,40 +64,41 @@ router.post("/update", protect, authorize(["doctor", "nurse", "receptionist", "s
       if (!doctor.isArrived) {
         return res.status(400).json({ msg: "Cannot start session until the doctor has been marked as arrived." });
       }
-      if (doctor.sessionEndedToday) {
-        return res.status(400).json({ msg: "Doctor session has already been completed today and cannot be restarted." });
+      // Allowed while the doctor still has a session today that hasn't been ended
+      const [session] = await openSessionsToday(doctor._id);
+      if (!session) {
+        return res.status(400).json({ msg: "All of this doctor's sessions today have been completed." });
       }
+      doctor.sessionEndedToday = false;
       doctor.sessionStarted = true;
-      // Start on the first paid token; unpaid tokens are skipped
-      doctor.currentQueueNumber = await firstPaidToken(doctor._id);
+      if (session.allocatedRoom) doctor.allocatedRoom = session.allocatedRoom;
+      if (session.allocatedNurse) doctor.allocatedNurse = session.allocatedNurse;
+      // Start on this session's first paid token; unpaid tokens are skipped
+      doctor.currentQueueNumber = await firstPaidToken(doctor._id, session._id);
       if (!doctor.lastArrivalDate) {
         doctor.lastArrivalDate = new Date();
       }
     } else if (action === "end") {
+      // End only the session in progress; the doctor's later sessions today stay open
+      const [session, ...laterSessions] = await openSessionsToday(doctor._id);
+      const nextSession = laterSessions[0] || null;
+
       doctor.sessionStarted = false;
       doctor.currentQueueNumber = 0;
-      doctor.sessionEndedToday = true;
+      // Only a day with no session left counts as ended (that flag blocks starting again)
+      doctor.sessionEndedToday = !nextSession;
       releasedNurse = doctor.allocatedNurse;
-      doctor.allocatedNurse = ""; // Nurse is released immediately!
+      // Nurse is released immediately; the room/nurse of the next session (if any) take over
+      doctor.allocatedNurse = nextSession?.allocatedNurse || "";
+      if (nextSession) doctor.allocatedRoom = nextSession.allocatedRoom || doctor.allocatedRoom;
+      endedSessionId = session?._id || null;
 
-      // Mark today's approved schedule as sessionEnded: true and free the nurse allocation
-      const startOfDay = new Date();
-      startOfDay.setHours(0, 0, 0, 0);
-      const endOfDay = new Date();
-      endOfDay.setHours(23, 59, 59, 999);
-
-      const todaySchedules = await ScheduleRequest.find({
-        doctorId: doctor._id,
-        status: "approved",
-        date: { $gte: startOfDay, $lte: endOfDay }
-      });
-
-      for (const sched of todaySchedules) {
-        sched.sessionEnded = true;
-        sched.allocatedNurse = ""; // Release nurse so other doctor sessions can allocate this nurse
-        await sched.save();
+      if (session) {
+        session.sessionEnded = true;
+        session.allocatedNurse = ""; // Release nurse so other doctor sessions can allocate this nurse
+        await session.save();
         if (req.io) {
-          req.io.emit("scheduleUpdated", sched);
+          req.io.emit("scheduleUpdated", session);
         }
       }
     } else if (currentServingNumber !== undefined) {
@@ -109,7 +122,7 @@ router.post("/update", protect, authorize(["doctor", "nurse", "receptionist", "s
         await appt.save();
 
         if (req.io) {
-          req.io.emit("appointmentUpdated", appt);
+          emitAppointmentUpdated(req.io, appt);
         }
 
         const startTime = appt.consultationStartTime || appt.checkInTime || appt.date;
@@ -148,6 +161,8 @@ router.post("/update", protect, authorize(["doctor", "nurse", "receptionist", "s
         isArrived: doctor.isArrived,
         sessionStarted: doctor.sessionStarted,
         sessionEndedToday: doctor.sessionEndedToday,
+        // Set when a session was just ended, so apps can move patients on to their next booking
+        endedSessionId,
         allocatedRoom: doctor.allocatedRoom,
         allocatedNurse: doctor.allocatedNurse,
         lastUpdated: new Date()
@@ -190,7 +205,7 @@ router.post("/update", protect, authorize(["doctor", "nurse", "receptionist", "s
               message: `Dr. ${doctor.name} has started the session in ${doctor.allocatedRoom || "Room TBA"}. Your Token: #${patientToken} (Ongoing: #${doctor.currentQueueNumber}).`,
               metadata: { doctorId: doctor._id, appointmentId: appt._id, currentQueue: doctor.currentQueueNumber }
             });
-            req.io.emit("newNotification", notif);
+            emitNotification(req.io, notif);
           } else if (doctor.currentQueueNumber > prevServing) {
             if (diff === 3) {
               const notif = await Notification.create({
@@ -200,7 +215,7 @@ router.post("/update", protect, authorize(["doctor", "nurse", "receptionist", "s
                 message: `Only 3 patients ahead of you (Token #${patientToken}) for Dr. ${doctor.name}. Please get ready.`,
                 metadata: { doctorId: doctor._id, appointmentId: appt._id, currentQueue: doctor.currentQueueNumber }
               });
-              req.io.emit("newNotification", notif);
+              emitNotification(req.io, notif);
             } else if (diff === 1) {
               const notif = await Notification.create({
                 userId: appt.patientId,
@@ -209,7 +224,7 @@ router.post("/update", protect, authorize(["doctor", "nurse", "receptionist", "s
                 message: `Token #${doctor.currentQueueNumber} is ongoing. Please proceed to ${doctor.allocatedRoom || "the consultation room"} for Dr. ${doctor.name}.`,
                 metadata: { doctorId: doctor._id, appointmentId: appt._id, currentQueue: doctor.currentQueueNumber }
               });
-              req.io.emit("newNotification", notif);
+              emitNotification(req.io, notif);
             } else if (diff === 0) {
               const notif = await Notification.create({
                 userId: appt.patientId,
@@ -218,7 +233,7 @@ router.post("/update", protect, authorize(["doctor", "nurse", "receptionist", "s
                 message: `Token #${patientToken} is now being called by Dr. ${doctor.name} in ${doctor.allocatedRoom || "the consultation room"}.`,
                 metadata: { doctorId: doctor._id, appointmentId: appt._id, currentQueue: doctor.currentQueueNumber }
               });
-              req.io.emit("newNotification", notif);
+              emitNotification(req.io, notif);
             }
           }
         } catch (notifErr) {

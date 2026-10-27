@@ -7,6 +7,7 @@ import Appointment from "../models/Appointment.js";
 import SurgeryRecord from "../models/SurgeryRecord.js"; 
 import { createNotification } from "../utils/notificationHelper.js";
 import { auth } from "../middleware/auth.js";
+import { emitAppointmentUpdated, emitNotification } from "../utils/realtime.js";
 
 const router = express.Router();
 
@@ -266,7 +267,7 @@ router.put("/delay-status", auth, async (req, res) => {
             'Clinic Status Update'
           );
           if (req.io && notif) {
-            req.io.emit("newNotification", notif);
+            emitNotification(req.io, notif);
           }
           return notif;
         });
@@ -341,7 +342,7 @@ router.put("/arrival-status", auth, async (req, res) => {
             'Doctor Arrived'
           );
           if (req.io && notif) {
-            req.io.emit("newNotification", notif);
+            emitNotification(req.io, notif);
           }
           return notif;
         });

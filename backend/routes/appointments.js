@@ -1,5 +1,5 @@
 import express from "express";
-import { assignQueueToken, countPaidAhead } from "../utils/queueToken.js";
+import { countPaidAhead, dayRange } from "../utils/queueToken.js";
 import { reconcilePendingBills } from "../utils/paymentService.js";
 import Appointment from "../models/Appointment.js";
 import Bill from "../models/Bill.js";
@@ -9,7 +9,18 @@ import Doctor from "../models/Doctor.js";
 import ScheduleRequest from "../models/ScheduleRequest.js";
 import { protect as auth, protect, authorize } from "../middleware/authRole.js";
 import Patient from "../models/Patient.js";
-import { sendBookingConfirmation } from "../utils/emailService.js";
+import { UNPAID_HOLD_MINUTES } from "../config/fees.js";
+import {
+  findBookableSession,
+  getSessionAvailability,
+  createBooking,
+  cancelAppointment,
+  rescheduleAppointment,
+  describeAppointmentForPatient,
+  isAppointmentFinished,
+  findNextAppointment,
+  sendBookingError
+} from "../utils/bookingService.js";
 
 const router = express.Router();
 
@@ -18,321 +29,103 @@ const router = express.Router();
 // ==========================================
 router.post("/check-booking", protect, async (req, res) => {
   try {
-    const { doctorId, date } = req.body;
-
-    if (!doctorId || !date) {
-      return res.status(400).json({ msg: "Doctor and Date are required" });
+    const { doctorId, scheduleId, date } = req.body;
+    if (!doctorId || (!scheduleId && !date)) {
+      return res.status(400).json({ msg: "Doctor and session are required" });
     }
 
-    const bookingDate = new Date(date);
-    const startOfDay = new Date(bookingDate);
-    startOfDay.setHours(0, 0, 0, 0);
-    const endOfDay = new Date(bookingDate);
-    endOfDay.setHours(23, 59, 59, 999);
-
-    // 1. Check if doctor has an approved schedule
-    const approvedSchedule = await ScheduleRequest.findOne({
-      doctorId,
-      status: "approved",
-      date: { $gte: startOfDay, $lte: endOfDay }
-    });
-
-    if (!approvedSchedule) {
-      return res.status(400).json({ msg: "This doctor is not available on the selected date (No approved schedule)." });
-    }
-
-    // 2. Check double booking
-    const existingBooking = await Appointment.findOne({
+    const schedule = await findBookableSession({ doctorId, scheduleId, date });
+    const existing = await Appointment.findOne({
       patientId: req.user.id,
-      doctorId,
-      date: { $gte: startOfDay, $lte: endOfDay },
-      status: { $ne: "cancelled" }
+      status: { $ne: "cancelled" },
+      $or: [{ scheduleId: schedule._id }, { scheduleId: { $exists: false }, doctorId, date: dayRange(schedule.date) }]
     });
-
-    if (existingBooking) {
-      return res.status(400).json({ msg: "You already have an appointment with this doctor on the selected date." });
+    if (existing && (existing.paymentStatus === "paid" || !existing.holdExpiresAt || existing.holdExpiresAt > new Date())) {
+      return res.status(400).json({ msg: "You already have a booking in this session." });
     }
 
-    // 3. Check queue limit
-    const currentAppointmentCount = await Appointment.countDocuments({
-      doctorId,
-      date: { $gte: startOfDay, $lte: endOfDay },
-      status: { $ne: "cancelled" }
+    const availability = await getSessionAvailability(schedule);
+    if (availability.isFull) {
+      return res.status(400).json({ msg: "Sorry, this session is full. Please choose another session." });
+    }
+
+    return res.status(200).json({
+      msg: "Booking is available.",
+      session: { _id: schedule._id, startTime: schedule.startTime, endTime: schedule.endTime },
+      availability,
+      holdMinutes: UNPAID_HOLD_MINUTES
     });
-
-    if (!approvedSchedule.isUnlimited && approvedSchedule.queueLimit) {
-      if (currentAppointmentCount >= approvedSchedule.queueLimit) {
-        return res.status(400).json({ msg: "Sorry, this session is full. Maximum patient count reached." });
-      }
-    }
-
-    return res.status(200).json({ msg: "Booking is available." });
-  } catch (error) {
-    console.error("Check booking error:", error);
-    return res.status(500).json({ msg: "Server error checking booking" });
-  }
-});
-
-// ==========================================
-// 2. BOOK APPOINTMENT (With Notifications & Split Payment Logic)
-// ==========================================
-router.post("/book", protect, authorize(["patient", "receptionist", "system_admin"]), async (req, res) => {
-  try {
-    const {
-      doctorId,
-      doctorName,
-      department,
-      date,
-      visitType,
-      reason,
-      amount,
-      paymentStatus, // Get payment status from frontend
-      hospitalName   // Optional: Hospital name for finance tracking
-    } = req.body;
-
-    if (!doctorId || !date) {
-      return res.status(400).json({ msg: "Doctor and Date are required" });
-    }
-
-    // --- 1. CHECK IF DOCTOR HAS AN APPROVED SCHEDULE ---
-    const bookingDate = new Date(date);
-    const startOfDay = new Date(bookingDate);
-    startOfDay.setHours(0, 0, 0, 0);
-    const endOfDay = new Date(bookingDate);
-    endOfDay.setHours(23, 59, 59, 999);
-
-    const approvedSchedule = await ScheduleRequest.findOne({
-      doctorId,
-      status: "approved",
-      date: { $gte: startOfDay, $lte: endOfDay }
-    });
-
-    if (!approvedSchedule) {
-      return res.status(400).json({ msg: "This doctor is not available on the selected date (No approved schedule)." });
-    }
-
-    // --- 1A. CHECK DOUBLE BOOKING ---
-    const existingBooking = await Appointment.findOne({
-      patientId: req.user.id,
-      doctorId,
-      date: { $gte: startOfDay, $lte: endOfDay },
-      status: { $ne: "cancelled" }
-    });
-
-    if (existingBooking) {
-      return res.status(400).json({ msg: "You already have an appointment with this doctor on the selected date." });
-    }
-
-    // --- 2. CHECK QUEUE LIMIT ---
-    const currentAppointmentCount = await Appointment.countDocuments({
-      doctorId,
-      date: { $gte: startOfDay, $lte: endOfDay },
-      status: { $ne: "cancelled" }
-    });
-
-    if (!approvedSchedule.isUnlimited && approvedSchedule.queueLimit) {
-      if (currentAppointmentCount >= approvedSchedule.queueLimit) {
-        return res.status(400).json({ msg: "Sorry, this session is full. Maximum patient count reached." });
-      }
-    }
-
-    // Set total amount (2000 Doctor + 1500 Hospital = 3500)
-    const totalAmount = amount || 3500; 
-
-    // 1. Create Appointment (queue token is issued only once payment is done)
-    const newAppointment = new Appointment({
-      patientId: req.user.id,
-      doctorId,
-      doctorName,
-      department,
-      date,
-      visitType,
-      reason,
-      amount: totalAmount,
-      status: paymentStatus === 'paid' ? 'confirmed' : 'pending',
-      paymentStatus: paymentStatus || 'pending'
-    });
-
-    // --- 3. GENERATE QUEUE NUMBER (unpaid bookings stay out of the live queue until paid) ---
-    const queueNumber = await assignQueueToken(newAppointment);
-
-    const savedAppointment = await newAppointment.save();
-
-    // 2. Automatically Create Bill
-    let createdBill = null;
-    try {
-      const newBill = new Bill({
-        patientId: req.user.id,
-        appointmentId: savedAppointment._id,
-        title: `Consultation - ${doctorName}`,
-        type: "Appointment",
-        amount: totalAmount,
-        status: paymentStatus === 'paid' ? "Paid" : "Pending",
-        date: new Date()
-      });
-      createdBill = await newBill.save();
-    } catch (billError) {
-      console.error("Bill Creation Failed:", billError);
-    }
-
-    // 3. ✅ ADD TO CHANNELING INCOME (Split: 2000 Doctor, 1500 Hospital)
-    if (paymentStatus === 'paid') {
-      try {
-        const hospital = hospitalName || "Suwasevana";
-        
-        // Define the exact split
-        const hospitalIncome = 1500;
-        const doctorIncome = totalAmount > hospitalIncome ? (totalAmount - hospitalIncome) : 0; // Ensures it safely handles weird amounts
-
-        // 3A. Update DOCTOR'S Finance Record
-        let doctorFinance = await HospitalFinance.findOne({
-          doctorId: doctorId,
-          name: hospital
-        });
-
-        if (!doctorFinance) {
-          doctorFinance = new HospitalFinance({
-            doctorId: doctorId,
-            name: hospital,
-            records: []
-          });
-        }
-
-        doctorFinance.records.unshift({
-          type: 'channeling',
-          date: new Date(date),
-          patients: 1,
-          income: doctorIncome // Assigns the 2000
-        });
-
-        await doctorFinance.save();
-
-        // 3B. Update HOSPITAL'S Finance Record (doctorId is null)
-        let systemFinance = await HospitalFinance.findOne({
-          doctorId: null, 
-          name: hospital
-        });
-
-        if (!systemFinance) {
-          systemFinance = new HospitalFinance({
-            doctorId: null,
-            name: hospital,
-            records: []
-          });
-        }
-
-        systemFinance.records.unshift({
-          type: 'channeling',
-          date: new Date(date),
-          patients: 1,
-          income: hospitalIncome // Assigns the 1500
-        });
-
-        await systemFinance.save();
-
-        console.log(`✅ Channeling split successful: ${doctorIncome} to Doctor, ${hospitalIncome} to Hospital`);
-
-      } catch (financeError) {
-        console.error("Finance Update Failed:", financeError);
-      }
-    }
-
-    // 4. ✅ CREATE NOTIFICATIONS
-    try {
-      const bookingNotif = await Notification.create({
-        userId: req.user.id,
-        type: 'appointment',
-        title: paymentStatus === 'paid' ? 'Booking Confirmed' : 'Booking Received',
-        message: paymentStatus === 'paid'
-          ? `Booking Confirmed! Queue #${queueNumber} for Dr. ${doctorName}.`
-          : `Booking received for Dr. ${doctorName}. Your token is #${queueNumber}. Please pay the fee to join the queue.`
-      });
-      if (req.io && bookingNotif) {
-        req.io.emit("newNotification", bookingNotif);
-      }
-
-      if (paymentStatus === 'paid') {
-        const paymentNotif = await Notification.create({
-          userId: req.user.id,
-          type: 'payment',
-          title: 'Payment Confirmed',
-          message: `Payment of LKR ${totalAmount} received successfully.`
-        });
-        if (req.io && paymentNotif) {
-          req.io.emit("newNotification", paymentNotif);
-        }
-      }
-
-    } catch (notifError) {
-      console.error("Notification Error:", notifError);
-    }
-    // 5. ✅ SEND EMAIL CONFIRMATION (Run asynchronously in the background)
-    (async () => {
-      try {
-        const patient = await Patient.findById(req.user.id);
-        if (patient) {
-          const doctorInfo = await Doctor.findById(doctorId);
-          let doctorRoom = doctorInfo ? doctorInfo.allocatedRoom : "TBA";
-          if (savedAppointment && savedAppointment.date && doctorInfo) {
-            try {
-              const startOfDay = new Date(savedAppointment.date);
-              startOfDay.setHours(0, 0, 0, 0);
-              const endOfDay = new Date(savedAppointment.date);
-              endOfDay.setHours(23, 59, 59, 999);
-              
-              const schedule = await ScheduleRequest.findOne({
-                doctorId: doctorInfo._id,
-                status: 'approved',
-                date: { $gte: startOfDay, $lte: endOfDay }
-              });
-              if (schedule && schedule.allocatedRoom) {
-                doctorRoom = schedule.allocatedRoom;
-              }
-            } catch (err) {
-              console.error("Failed to fetch room from schedule in appointments route:", err.message);
-            }
-          }
-          
-          let pdfBuffer = null;
-          if (paymentStatus === 'paid' && createdBill) {
-            try {
-              const { generateReceiptPdf } = await import("../utils/pdfService.js");
-              pdfBuffer = await generateReceiptPdf(createdBill, savedAppointment, doctorInfo, patient);
-            } catch (pdfErr) {
-              console.error("Failed to generate PDF receipt:", pdfErr);
-            }
-          }
-          
-          await sendBookingConfirmation(patient.email, savedAppointment, doctorRoom, pdfBuffer);
-        }
-      } catch (emailErr) {
-        console.error("Failed to send booking confirmation email:", emailErr);
-      }
-    })();
-
-    if (req.io) {
-      req.io.emit("appointmentUpdated", savedAppointment);
-    }
-
-    // billId lets the app pay this booking's bill right after booking
-    res.json({ ...savedAppointment.toObject(), billId: createdBill?._id || null });
-
   } catch (err) {
-    console.error("Booking Error:", err.message);
-    res.status(500).send(`Booking Failed: ${err.message}`);
+    return sendBookingError(res, err, "Could not check this session. Please try again.");
   }
 });
 
 // ==========================================
-// 2. GET MY APPOINTMENTS
+// 2. BOOK APPOINTMENT (patient)
+// The fee and payment status are decided by the server: a booking is always created unpaid
+// and becomes paid only after Stripe confirms the payment (see /payments).
+// Staff book walk-ins through /admin/appointments/walkin.
+// ==========================================
+router.post("/book", protect, authorize(["patient"]), async (req, res) => {
+  try {
+    const { doctorId, scheduleId, date, visitType, reason } = req.body;
+    if (!doctorId || (!scheduleId && !date)) {
+      return res.status(400).json({ msg: "Doctor and session are required" });
+    }
+
+    const schedule = await findBookableSession({ doctorId, scheduleId, date });
+    const { appointment, bill, fees } = await createBooking({
+      patientId: req.user.id,
+      schedule,
+      visitType,
+      reason,
+      io: req.io
+    });
+
+    res.status(201).json({ ...appointment.toObject(), billId: bill._id, fees });
+  } catch (err) {
+    return sendBookingError(res, err, "Booking failed. Please try again.");
+  }
+});
+
+// ==========================================
+// 2A. GET MY APPOINTMENTS (with session, bill and whether it can still be changed)
 // ==========================================
 router.get("/my-appointments", auth, async (req, res) => {
   try {
-    const appointments = await Appointment.find({ patientId: req.user.id }).sort({ date: -1 });
-    res.json(appointments);
+    try {
+      await reconcilePendingBills(req.user.id, req.io);
+    } catch (reconcileErr) {
+      console.error("Payment reconciliation error:", reconcileErr.message);
+    }
+
+    const appointments = await Appointment.find({ patientId: req.user.id }).sort({ date: -1 }).limit(100);
+    const described = await Promise.all(appointments.map(describeAppointmentForPatient));
+    res.json(described);
   } catch (err) {
     console.error("Fetch Error:", err.message);
-    res.status(500).send("Server Error");
+    res.status(500).json({ msg: "Could not load your bookings." });
+  }
+});
+
+// ==========================================
+// 2B. RESCHEDULE TO ANOTHER SESSION OF THE SAME DOCTOR
+// ==========================================
+router.put("/reschedule/:id", auth, async (req, res) => {
+  try {
+    const { scheduleId } = req.body || {};
+    if (!scheduleId) return res.status(400).json({ msg: "Choose a session to move to." });
+
+    const appointment = await Appointment.findById(req.params.id);
+    if (!appointment) return res.status(404).json({ msg: "Booking not found" });
+    if (String(appointment.patientId) !== String(req.user.id)) {
+      return res.status(403).json({ msg: "Not authorized" });
+    }
+
+    const updated = await rescheduleAppointment(appointment, scheduleId, { io: req.io });
+    res.json(await describeAppointmentForPatient(updated));
+  } catch (err) {
+    return sendBookingError(res, err, "Could not reschedule. Please try again.");
   }
 });
 
@@ -351,11 +144,8 @@ router.get("/upcoming", auth, async (req, res) => {
       console.error("Payment reconciliation error:", reconcileErr.message);
     }
 
-    const upcoming = await Appointment.findOne({
-      patientId: req.user.id,
-      date: { $gte: today },
-      status: { $ne: 'cancelled' }
-    }).sort({ date: 1 }).populate("doctorId");
+    // Next booking that is still ahead: completed ones and ended sessions are skipped
+    const upcoming = await findNextAppointment(req.user.id);
 
     if (!upcoming) {
       return res.status(200).json({ appointment: null });
@@ -428,8 +218,13 @@ router.get("/widget-status", auth, async (req, res) => {
       date: { $gte: startOfToday, $lte: endOfToday },
       status: { $nin: ["cancelled", "Cancelled"] }
     }).sort({ date: 1, queueNumber: 1 }).populate("doctorId");
-    const todayAppt =
-      todayAppts.find((a) => String(a.status).toLowerCase() !== "completed") || todayAppts[0] || null;
+    // Prefer a booking that is still ahead; if all of today's are finished, show the
+    // "completed" state with the patient's next booking.
+    let activeToday = null;
+    for (const appt of todayAppts) {
+      if (!(await isAppointmentFinished(appt))) { activeToday = appt; break; }
+    }
+    const todayAppt = activeToday || todayAppts[0] || null;
 
     if (todayAppt) {
       const doc = todayAppt.doctorId;
@@ -468,7 +263,7 @@ router.get("/widget-status", auth, async (req, res) => {
       const ongoingToken = (doc && doc.currentQueueNumber) ? doc.currentQueueNumber : 0;
       const isArrived = !!(doc && doc.isArrived);
       const isSessionStarted = !!(doc && doc.sessionStarted);
-      const isSessionEnded = !!(doc && doc.sessionEndedToday) || String(todayAppt.status).toLowerCase() === "completed";
+      const isSessionEnded = !activeToday;
       const channelingStatus = (doc && doc.channelingStatus) ? doc.channelingStatus : "On Time";
       const isDelayed = channelingStatus.toLowerCase() !== "on time" && !isArrived;
       const delayMessage = isArrived
@@ -643,30 +438,20 @@ router.get("/queue-status/:id", auth, async (req, res) => {
 router.put("/cancel/:id", auth, async (req, res) => {
   try {
     const appointment = await Appointment.findById(req.params.id);
+    if (!appointment) return res.status(404).json({ msg: "Booking not found" });
 
-    if (!appointment) return res.status(404).json({ msg: "Not Found" });
-
-    if (appointment.patientId.toString() !== req.user.id) {
-      return res.status(401).json({ msg: "Not Authorized" });
+    if (String(appointment.patientId) !== String(req.user.id)) {
+      return res.status(403).json({ msg: "Not authorized" });
     }
 
-    appointment.status = "cancelled";
-    await appointment.save();
-
-    try {
-      await Notification.create({
-        userId: req.user.id,
-        type: 'cancellation',
-        message: `Appointment with ${appointment.doctorName} on ${new Date(appointment.date).toLocaleDateString()} has been cancelled.`,
-        metadata: { appointmentId: appointment._id }
-      });
-    } catch (notifError) {
-      console.error("Notification Error:", notifError);
-    }
-
-    res.json({ msg: "Cancelled Successfully" });
+    const { bill } = await cancelAppointment(appointment, { io: req.io });
+    res.json({
+      msg: "Cancelled successfully",
+      billStatus: bill?.status || null,
+      appointment: await describeAppointmentForPatient(appointment)
+    });
   } catch (err) {
-    res.status(500).send("Server Error");
+    return sendBookingError(res, err, "Could not cancel. Please try again.");
   }
 });
 

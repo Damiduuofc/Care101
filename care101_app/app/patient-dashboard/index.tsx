@@ -112,6 +112,14 @@ export default function PatientDashboardScreen() {
         socket.on("doctorStatusUpdated", (updatedDoc: any) => {
             if (user) WidgetService.syncWithServer(token, user._id || user.id);
             const currentAppt = upcomingAppointmentRef.current;
+            // The doctor's session ended: this booking is over, so load the next one
+            if (currentAppt && updatedDoc?.sessionEndedToday) {
+                const apptDocId = currentAppt.doctorId?._id || currentAppt.doctorId;
+                if (String(apptDocId) === String(updatedDoc._id)) {
+                    fetchDashboardData();
+                    return;
+                }
+            }
             if (currentAppt && updatedDoc) {
                 const apptDocId = currentAppt.doctorId?._id || currentAppt.doctorId;
                 if (!apptDocId || String(apptDocId) === String(updatedDoc._id)) {
@@ -151,6 +159,14 @@ export default function PatientDashboardScreen() {
         socket.on("queueUpdated", (payload: any) => {
             if (user) WidgetService.syncWithServer(token, user._id || user.id);
             const currentAppt = upcomingAppointmentRef.current;
+            // A session just ended (or the doctor's whole day did): move on to the next booking
+            if (currentAppt && (payload?.endedSessionId || payload?.sessionEndedToday)) {
+                const apptDocId = currentAppt.doctorId?._id || currentAppt.doctorId;
+                if (String(apptDocId) === String(payload.doctorId)) {
+                    fetchDashboardData();
+                    return;
+                }
+            }
             if (currentAppt && payload) {
                 const apptDocId = currentAppt.doctorId?._id || currentAppt.doctorId;
                 if (!apptDocId || !payload.doctorId || String(apptDocId) === String(payload.doctorId)) {
@@ -587,6 +603,7 @@ export default function PatientDashboardScreen() {
      const bannerImage = require('../../assets/images/paitentwallpaper.jpg');
     const quickActions = [
         { id: 1, title: 'Book Appointment', subtitle: 'Schedule a visit', icon: Calendar, link: '/patient-dashboard/appointments', color: '#06b6d4', bg: '#cffafe' },
+        { id: 3, title: 'My Bookings', subtitle: 'Pay, reschedule or cancel', icon: Clock, link: '/patient-dashboard/my-appointments', color: '#0891b2', bg: '#ecfeff' },
         { id: 2, title: 'Medical Records', subtitle: 'View history', icon: FileText, link: '/patient-dashboard/records', color: '#8b5cf6', bg: '#f5f3ff' },
         { id: 4, title: 'Payment', subtitle: 'Manage billing', icon: CreditCard, link: '/patient-dashboard/billing', color: '#ec4899', bg: '#fdf2f8' },
         { id: 5, title: 'Update Profile', subtitle: 'Manage info', icon: User, link: '/patient-dashboard/profile', color: '#f59e0b', bg: '#fffbeb' },

@@ -12,6 +12,7 @@ import { getAdminToken } from "@/lib/adminSession";
 import { loadStripe } from "@stripe/stripe-js";
 import { Elements, CardElement, useStripe, useElements } from "@stripe/react-stripe-js";
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { toast } from "@/hooks/use-toast";
 
 const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY || "");
 
@@ -40,6 +41,10 @@ const [generatedPatientId, setGeneratedPatientId] = useState("Loading...");
   const [paymentAppointment, setPaymentAppointment] = useState<any>(null);
   const [isPaymentMethodModalOpen, setIsPaymentMethodModalOpen] = useState(false);
   const [isStripeModalOpen, setIsStripeModalOpen] = useState(false);
+  // Card payment closed without paying: ask what to do instead of leaving it silently unpaid
+  const [unpaidFollowUp, setUnpaidFollowUp] = useState<any>(null);
+  // Booking form problems, shown next to the fields instead of one alert at a time
+  const [bookingErrors, setBookingErrors] = useState<Record<string, string>>({});
 
   // Sorting State
   const [sortField, setSortField] = useState<"patient" | "date" | "doctor" | "arrived">("date");
@@ -174,7 +179,7 @@ const [generatedPatientId, setGeneratedPatientId] = useState("Loading...");
     // Patient Details
     patientId: "", fullName: "", nic: "", dob: "", phone: "", email: "",
     // Appointment Details
-    department: "", doctorId: "", doctorName: "", date: "", visitType: "Consultation", reason: "", paymentStatus: "paid"
+    department: "", doctorId: "", doctorName: "", date: "", scheduleId: "", visitType: "Consultation", reason: "", paymentStatus: "paid"
   });
 
   const [doctorSearchQuery, setDoctorSearchQuery] = useState("");
@@ -199,8 +204,10 @@ const [generatedPatientId, setGeneratedPatientId] = useState("Loading...");
       doctorId: doc._id,
       doctorName: doc.name,
       department: doc.specialization || "General Practitioner",
-      date: ""
+      date: "",
+      scheduleId: ""
     }));
+    setBookingErrors(prev => ({ ...prev, doctor: "", session: "" }));
     setDoctorSearchQuery(doc.name);
     setIsDoctorDropdownOpen(false);
   };
@@ -337,28 +344,37 @@ const fetchNextPatientId = async () => {
     setIsDoctorDropdownOpen(false);
     setFormData({
       patientId: "", fullName: "", nic: "", dob: "", phone: "", email: "",
-      department: "", doctorId: "", doctorName: "", date: "", visitType: "Consultation", reason: "", paymentStatus: "paid"
+      department: "", doctorId: "", doctorName: "", date: "", scheduleId: "", visitType: "Consultation", reason: "", paymentStatus: "paid"
     });
+    setBookingErrors({});
     setIsBookingModalOpen(true);
+  };
+
+  const selectedDoctorFees = doctors.find(d => d._id === formData.doctorId)?.fees || null;
+
+  // Every problem with the form at once, keyed by field
+  const validateBooking = () => {
+    const errors: Record<string, string> = {};
+    if (!formData.doctorId) errors.doctor = "Select a doctor.";
+    if (!formData.scheduleId) errors.session = "Select a session.";
+    if (showRegistrationForm) {
+      if (!formData.fullName.trim()) errors.fullName = "Enter the patient's full name.";
+      if (!formData.phone.trim()) errors.phone = "Enter the patient's phone number.";
+    } else if (!selectedPatient) {
+      errors.patient = "Search for and select a patient, or register a new one.";
+    }
+    return errors;
   };
 
   // Submit New Walk-in Appointment
   const handleBookAppointment = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    if (!formData.doctorId) {
-      alert("Please select a doctor first.");
-      return;
-    }
-    if (!formData.date) {
-      alert("Please select an appointment date.");
-      return;
-    }
-    if (showRegistrationForm && (!formData.fullName || !formData.phone)) {
-      alert("Please complete the required patient registration details.");
-      return;
-    }
-    if (!showRegistrationForm && !selectedPatient) {
-      alert("Please search and select a patient first.");
+    const errors = validateBooking();
+    setBookingErrors(errors);
+    if (Object.keys(errors).length > 0) {
+      // Send the receptionist back to the first step with a problem
+      if (errors.doctor || errors.session) setBookingStep(1);
+      else if (errors.patient || errors.fullName || errors.phone) setBookingStep(2);
       return;
     }
     setIsSubmitting(true);
@@ -385,10 +401,11 @@ const fetchNextPatientId = async () => {
             doctorName: formData.doctorName,
             department: formData.department,
             date: formData.date,
+            scheduleId: formData.scheduleId,
             visitType: formData.visitType,
             reason: formData.reason,
-            paymentStatus: bookingPaymentMethod === "cash" ? "paid" : "pending",
-            amount: 3500 // Base (1500) + Doctor (2000)
+            // The server sets the fee; "cash" is recorded as collected, "card" is charged next
+            paymentMethod: bookingPaymentMethod
           }
         }),
       });
@@ -399,7 +416,7 @@ const fetchNextPatientId = async () => {
         fetchAppointments(); // Refresh list
         setFormData({
           patientId: "", fullName: "", nic: "", dob: "", phone: "", email: "",
-          department: "", doctorId: "", doctorName: "", date: "", visitType: "Consultation", reason: "", paymentStatus: "paid"
+          department: "", doctorId: "", doctorName: "", date: "", scheduleId: "", visitType: "Consultation", reason: "", paymentStatus: "paid"
         });
         setDoctorSearchQuery("");
         setBookingStep(1);
@@ -407,11 +424,17 @@ const fetchNextPatientId = async () => {
         setSelectedPatient(null);
         setShowRegistrationForm(false);
         setIsPatientFound(false);
+        setBookingErrors({});
         if (bookingPaymentMethod === "card") {
           setPaymentAppointment(newAppt);
           setIsStripeModalOpen(true);
         } else {
-          alert("Appointment booked successfully!");
+          toast({
+            title: `Booked: token #${newAppt.queueNumber ?? "-"}`,
+            description: bookingPaymentMethod === "cash"
+              ? `Cash LKR ${Number(newAppt.amount).toLocaleString()} recorded.`
+              : `Unpaid. Place held until ${newAppt.holdExpiresAt ? new Date(newAppt.holdExpiresAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "the session"}.`
+          });
         }
       } else {
         const contentType = res.headers.get("content-type");
@@ -425,11 +448,11 @@ const fetchNextPatientId = async () => {
             console.error("Non-JSON Error Response:", errText);
         }
         
-        alert(`Booking failed: ${errorMessage}`);
+        setBookingErrors({ submit: errorMessage });
       }
     } catch (err) {
       console.error("Booking error", err);
-      alert("An error occurred while booking. Check your console and network tab.");
+      setBookingErrors({ submit: "Could not reach the server. Check the connection and try again." });
     } finally {
       setIsSubmitting(false);
     }
@@ -460,7 +483,7 @@ const fetchNextPatientId = async () => {
     if (field === "status" && String(value).toLowerCase() === "confirmed") {
       const targetAppt = appointments.find(a => a._id === id);
       if (targetAppt && targetAppt.paymentStatus?.toLowerCase() !== "paid") {
-        alert("Cannot confirm appointment until payment is completed (PAID). Please collect payment first ($).");
+        toast({ variant: "destructive", title: "Payment required", description: "Collect the payment before confirming this appointment." });
         return;
       }
     }
@@ -478,19 +501,17 @@ const fetchNextPatientId = async () => {
       });
 
       if (res.ok) {
+        if (field === "paymentStatus" && value === "paid") {
+          toast({ title: "Cash payment recorded" });
+        }
         fetchAppointments();
       } else {
-        // Safely parse the error here too
-        const contentType = res.headers.get("content-type");
-        if (contentType && contentType.includes("application/json")) {
-            const err = await res.json();
-            alert(`Error: ${err.msg}`);
-        } else {
-            alert(`Error: ${res.status} ${res.statusText}`);
-        }
+        const err = await res.json().catch(() => ({}));
+        toast({ variant: "destructive", title: "Update failed", description: err.msg || `${res.status} ${res.statusText}` });
       }
     } catch (err) {
       console.error("Update failed", err);
+      toast({ variant: "destructive", title: "Update failed", description: "Could not reach the server." });
     }
   };
 
@@ -724,7 +745,7 @@ const fetchNextPatientId = async () => {
                                     setPaymentAppointment(appt);
                                     setIsPaymentMethodModalOpen(true);
                                   } else {
-                                    alert("This appointment is already marked as paid.");
+                                    toast({ title: "Already paid", description: "This appointment is already marked as paid." });
                                   }
                                 }}
                                 title={appt.paymentStatus?.toLowerCase() === 'paid' ? "Already Paid" : "Collect Payment ($)"}
@@ -895,7 +916,8 @@ const fetchNextPatientId = async () => {
                       </div>
 
                       <div className="space-y-3">
-                        <label className="text-sm font-semibold text-slate-700 block">Available Date & Time Slots *</label>
+                        <label className="text-sm font-semibold text-slate-700 block">Available Sessions *</label>
+                        {bookingErrors.session && <p className="text-xs font-semibold text-rose-500">{bookingErrors.session}</p>}
                         {formData.doctorId ? (
                           schedules.length === 0 ? (
                             <div className="p-4 text-center text-sm text-slate-400 border border-dashed border-slate-200 rounded-xl">
@@ -904,27 +926,41 @@ const fetchNextPatientId = async () => {
                           ) : (
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-40 overflow-y-auto pr-1">
                               {schedules.map((sch: any) => {
-                                const isSelected = formData.date === sch.date;
+                                const isSelected = formData.scheduleId === sch._id;
                                 const schDate = new Date(sch.date);
                                 const schTime = new Date(sch.startTime);
+                                const schEnd = new Date(sch.endTime);
+                                const availability = sch.availability || {};
+                                const full = Boolean(availability.isFull);
                                 return (
-                                  <div
+                                  <button
+                                    type="button"
                                     key={sch._id}
-                                    onClick={() => setFormData({...formData, date: sch.date})}
-                                    className={`p-3 border rounded-xl cursor-pointer transition-all flex flex-col ${
-                                      isSelected
-                                        ? 'border-cyan-500 bg-cyan-50/50 text-cyan-950 shadow-xs'
-                                        : 'border-slate-100 bg-slate-50/50 hover:bg-slate-50 hover:border-slate-300'
+                                    disabled={full}
+                                    onClick={() => {
+                                      setFormData({ ...formData, date: sch.startTime || sch.date, scheduleId: sch._id });
+                                      setBookingErrors(prev => ({ ...prev, session: "" }));
+                                    }}
+                                    className={`p-3 border rounded-xl text-left transition-all flex flex-col ${
+                                      full
+                                        ? 'border-slate-100 bg-slate-50 opacity-50 cursor-not-allowed'
+                                        : isSelected
+                                          ? 'border-cyan-500 bg-cyan-50/50 text-cyan-950 shadow-xs cursor-pointer'
+                                          : 'border-slate-100 bg-slate-50/50 hover:bg-slate-50 hover:border-slate-300 cursor-pointer'
                                     }`}
                                   >
-                                    <div className="font-semibold text-xs sm:text-sm text-slate-800">
-                                      {schDate.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
+                                    <div className="font-semibold text-xs sm:text-sm text-slate-800 flex justify-between gap-2">
+                                      <span>{schDate.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}</span>
+                                      <span className={`text-[10px] font-bold ${full ? 'text-rose-500' : 'text-cyan-700'}`}>
+                                        {full ? 'FULL' : availability.remaining == null ? 'Open' : `${availability.remaining} left`}
+                                      </span>
                                     </div>
                                     <div className="text-[10px] sm:text-xs text-slate-500 flex items-center gap-1 mt-0.5">
                                       <Clock className="w-3 h-3 text-cyan-600" />
-                                      {schTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                      {schTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} – {schEnd.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                      {!full && availability.nextToken ? ` • next #${availability.nextToken}` : ''}
                                     </div>
-                                  </div>
+                                  </button>
                                 );
                               })}
                             </div>
@@ -939,7 +975,7 @@ const fetchNextPatientId = async () => {
                       <div className="space-y-2">
                         <label className="text-sm font-semibold text-slate-700">Visit Type</label>
                         <div className="flex gap-2">
-                          {["Consultation", "Follow-up", "Emergency"].map(type => {
+                          {["Consultation", "Follow-up"].map(type => {
                             const isSelected = formData.visitType === type;
                             return (
                               <button
@@ -1328,7 +1364,9 @@ const fetchNextPatientId = async () => {
                             </div>
                             <div className="text-right">
                               <span className="text-slate-400 block text-[10px] font-bold uppercase">Consultation Fee</span>
-                              <span className="font-black text-[#06b6d4] text-base md:text-lg">LKR 3,500</span>
+                              <span className="font-black text-[#06b6d4] text-base md:text-lg">
+                                {selectedDoctorFees ? `LKR ${selectedDoctorFees.total.toLocaleString()}` : "Set by server"}
+                              </span>
                             </div>
                           </div>
                         </div>
@@ -1339,6 +1377,15 @@ const fetchNextPatientId = async () => {
 
                 </form>
               </div>
+
+              {/* FORM PROBLEMS (all at once, instead of one alert at a time) */}
+              {Object.values(bookingErrors).some(Boolean) && (
+                <div className="mx-5 mb-3 p-3 rounded-xl border border-rose-100 bg-rose-50 text-xs font-semibold text-rose-600 space-y-1">
+                  {Object.entries(bookingErrors).filter(([, msg]) => msg).map(([key, msg]) => (
+                    <p key={key}>• {msg}</p>
+                  ))}
+                </div>
+              )}
 
               {/* FOOTER ACTIONS */}
               <div className="p-5 border-t border-slate-100 bg-slate-50 flex justify-between items-center">
@@ -1363,7 +1410,7 @@ const fetchNextPatientId = async () => {
                       type="button"
                       disabled={
                         bookingStep === 1 
-                          ? (!formData.department || !formData.doctorId || !formData.date)
+                          ? (!formData.department || !formData.doctorId || !formData.scheduleId)
                           : (!selectedPatient && !(showRegistrationForm && formData.fullName && formData.phone))
                       }
                       onClick={() => setBookingStep(prev => prev + 1)}
@@ -1403,7 +1450,7 @@ const fetchNextPatientId = async () => {
                   <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Appointment Info</p>
                   <p className="text-base font-bold text-slate-800">Consultation - {paymentAppointment.doctorName}</p>
                   <p className="text-sm text-slate-600">Patient: <span className="font-semibold">{paymentAppointment.patientId?.fullName || "Walk-in Patient"}</span></p>
-                  <p className="text-lg font-black text-[#06b6d4] mt-2">LKR {(paymentAppointment.amount || 3500).toLocaleString()}</p>
+                  <p className="text-lg font-black text-[#06b6d4] mt-2">LKR {Number(paymentAppointment.amount || 0).toLocaleString()}</p>
                 </div>
                 
                 <div className="grid grid-cols-2 gap-3 pt-2">
@@ -1438,7 +1485,15 @@ const fetchNextPatientId = async () => {
         </Dialog>
 
         {/* STRIPE CARD PAYMENT DIALOG */}
-        <Dialog open={isStripeModalOpen} onOpenChange={(open) => { if (!open) { setIsStripeModalOpen(false); setPaymentAppointment(null); } }}>
+        <Dialog open={isStripeModalOpen} onOpenChange={(open) => {
+          if (!open) {
+            // Closed without paying: offer to retry, take cash, or leave it unpaid
+            setUnpaidFollowUp(paymentAppointment);
+            setIsStripeModalOpen(false);
+            setPaymentAppointment(null);
+            fetchAppointments();
+          }
+        }}>
           <DialogContent className="sm:max-w-[480px] rounded-3xl p-6 bg-white border border-slate-100 shadow-2xl">
             <DialogTitle className="text-xl font-bold text-slate-900">Card Payment Confirmation</DialogTitle>
             <DialogDescription className="text-sm text-slate-500 mt-1">
@@ -1450,21 +1505,24 @@ const fetchNextPatientId = async () => {
                   <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Bill Details</p>
                   <p className="text-base font-bold text-slate-800">Consultation - {paymentAppointment.doctorName}</p>
                   <p className="text-sm text-slate-600">Patient: <span className="font-semibold">{paymentAppointment.patientId?.fullName || "Walk-in Patient"}</span></p>
-                  <p className="text-lg font-black text-[#06b6d4] mt-2">LKR {(paymentAppointment.amount || 3500).toLocaleString()}</p>
+                  <p className="text-lg font-black text-[#06b6d4] mt-2">LKR {Number(paymentAppointment.amount || 0).toLocaleString()}</p>
                 </div>
                 
                 <Elements stripe={stripePromise}>
                   <StripeCardForm 
-                    amount={paymentAppointment.amount || 3500} 
+                    amount={Number(paymentAppointment.amount || 0)} 
                     appointmentId={paymentAppointment._id}
-                    onSuccess={() => {
+                    onSuccess={(queueNumber) => {
                       setIsStripeModalOpen(false);
                       setPaymentAppointment(null);
+                      toast({ title: "Card payment successful", description: queueNumber ? `Queue token #${queueNumber}.` : undefined });
                       fetchAppointments();
                     }}
                     onCancel={() => {
+                      setUnpaidFollowUp(paymentAppointment);
                       setIsStripeModalOpen(false);
                       setPaymentAppointment(null);
+                      fetchAppointments();
                     }}
                   />
                 </Elements>
@@ -1473,6 +1531,47 @@ const fetchNextPatientId = async () => {
           </DialogContent>
         </Dialog>
 
+
+        {/* CARD PAYMENT NOT COMPLETED: DECIDE WHAT HAPPENS TO THE BOOKING */}
+        <Dialog open={!!unpaidFollowUp} onOpenChange={(open) => { if (!open) setUnpaidFollowUp(null); }}>
+          <DialogContent className="sm:max-w-[420px] rounded-2xl p-6 bg-white border border-slate-100 shadow-2xl">
+            <DialogTitle className="text-xl font-bold text-slate-900">Payment not completed</DialogTitle>
+            <DialogDescription className="text-sm text-slate-500 mt-1">
+              The booking for {unpaidFollowUp?.patientId?.fullName || "this patient"} with {unpaidFollowUp?.doctorName} is saved but unpaid
+              {unpaidFollowUp?.holdExpiresAt
+                ? `. The place is held until ${new Date(unpaidFollowUp.holdExpiresAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}, then released.`
+                : "."}
+            </DialogDescription>
+            <div className="grid gap-2 mt-4">
+              <Button
+                type="button"
+                className="bg-[#06b6d4] hover:bg-[#0891b2] text-white rounded-xl h-11"
+                onClick={() => {
+                  setPaymentAppointment(unpaidFollowUp);
+                  setUnpaidFollowUp(null);
+                  setIsStripeModalOpen(true);
+                }}
+              >
+                <CreditCard className="w-4 h-4 mr-2" /> Try card again
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                className="rounded-xl h-11 border-emerald-200 text-emerald-700 hover:bg-emerald-50"
+                onClick={async () => {
+                  const appt = unpaidFollowUp;
+                  setUnpaidFollowUp(null);
+                  if (appt) await updateStatus(appt._id, "paymentStatus", "paid");
+                }}
+              >
+                <DollarSign className="w-4 h-4 mr-2" /> Take cash instead (LKR {Number(unpaidFollowUp?.amount || 0).toLocaleString()})
+              </Button>
+              <Button type="button" variant="ghost" className="rounded-xl h-11 text-slate-500" onClick={() => setUnpaidFollowUp(null)}>
+                Leave unpaid for now
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
 
         {/* EYE DETAILS MODAL DIALOG */}
         <Dialog open={isDetailsModalOpen} onOpenChange={setIsDetailsModalOpen}>
@@ -1620,9 +1719,40 @@ const fetchNextPatientId = async () => {
 interface StripeCardFormProps {
   amount: number;
   appointmentId: string;
-  onSuccess: () => void;
+  onSuccess: (queueNumber?: number | null) => void;
   onCancel: () => void;
 }
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL;
+
+const adminHeaders = () => ({
+  "Content-Type": "application/json",
+  "x-auth-token": getAdminToken() || "",
+  "ngrok-skip-browser-warning": "true"
+});
+
+// Asks the server to check the payment with Stripe and record it. Retries through brief network drops
+// so a card that was charged is not left unrecorded.
+const confirmCardWithServer = async (appointmentId: string, paymentIntentId: string) => {
+  let lastMessage = "Could not reach the server.";
+  for (let attempt = 0; attempt < 4; attempt++) {
+    if (attempt > 0) await new Promise(resolve => setTimeout(resolve, 1500 * attempt));
+    try {
+      const res = await fetch(`${API_URL}/admin/appointments/${appointmentId}/card-confirm`, {
+        method: "POST",
+        headers: adminHeaders(),
+        body: JSON.stringify({ paymentIntentId })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && res.status !== 202) return { ok: true as const, queueNumber: data.queueNumber ?? null };
+      lastMessage = data.msg || `Server responded with ${res.status}`;
+      if (res.status !== 202 && res.status < 500) break;
+    } catch (err: any) {
+      lastMessage = err?.message || lastMessage;
+    }
+  }
+  return { ok: false as const, message: lastMessage };
+};
 
 function StripeCardForm({ amount, appointmentId, onSuccess, onCancel }: StripeCardFormProps) {
   const stripe = useStripe();
@@ -1641,33 +1771,27 @@ function StripeCardForm({ amount, appointmentId, onSuccess, onCancel }: StripeCa
     setError(null);
 
     try {
-      const adminToken = getAdminToken();
-      const intentRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/payments/create-intent`, {
+      // The intent is tied to this booking's bill; the amount comes from the server
+      const intentRes = await fetch(`${API_URL}/admin/appointments/${appointmentId}/card-intent`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-auth-token": adminToken || "",
-          "ngrok-skip-browser-warning": "true"
-        },
-        body: JSON.stringify({ amount: amount * 100 })
+        headers: adminHeaders()
       });
-
-      const intentData = await intentRes.json();
+      const intentData = await intentRes.json().catch(() => ({}));
       if (!intentRes.ok) {
-        throw new Error(intentData.msg || "Failed to initiate payment");
+        throw new Error(intentData.msg || "Failed to start the card payment");
       }
-
-      const clientSecret = intentData.clientSecret;
+      if (intentData.alreadyPaid) {
+        onSuccess(null);
+        return;
+      }
 
       const cardElement = elements.getElement(CardElement);
       if (!cardElement) {
         throw new Error("Card input not found");
       }
 
-      const paymentResult = await stripe.confirmCardPayment(clientSecret, {
-        payment_method: {
-          card: cardElement
-        }
+      const paymentResult = await stripe.confirmCardPayment(intentData.clientSecret, {
+        payment_method: { card: cardElement }
       });
 
       if (paymentResult.error) {
@@ -1675,23 +1799,11 @@ function StripeCardForm({ amount, appointmentId, onSuccess, onCancel }: StripeCa
       }
 
       if (paymentResult.paymentIntent?.status === "succeeded") {
-        const payRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/admin/appointments/${appointmentId}`, {
-          method: "PUT",
-          headers: {
-            "Content-Type": "application/json",
-            "x-auth-token": adminToken || "",
-            "ngrok-skip-browser-warning": "true"
-          },
-          body: JSON.stringify({ paymentStatus: "paid" })
-        });
-
-        const payData = await payRes.json();
-        if (!payRes.ok) {
-          throw new Error(payData.msg || "Payment recorded but failed to update appointment record.");
+        const confirmed = await confirmCardWithServer(appointmentId, paymentResult.paymentIntent.id);
+        if (!confirmed.ok) {
+          throw new Error(`The card was charged but the booking could not be updated yet (${confirmed.message}). Do not charge again — it will be recorded automatically.`);
         }
-
-        alert("Payment Successful!");
-        onSuccess();
+        onSuccess(confirmed.queueNumber);
       }
     } catch (err: any) {
       console.error("Card Payment Error:", err);

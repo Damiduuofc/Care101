@@ -13,6 +13,15 @@ import Notification from "../models/Notification.js";
 import ScheduleRequest from "../models/ScheduleRequest.js";
 import { protect, authorize } from "../middleware/authRole.js";
 import { assignQueueToken, countPaidAhead } from "../utils/queueToken.js";
+import { emitAppointmentUpdated, emitNotification } from "../utils/realtime.js";
+import { getOrCreateBillIntent, verifyIntentForBill, markBillPaid } from "../utils/paymentService.js";
+import {
+  findBookableSession,
+  createBooking,
+  recordCashPayment,
+  cancelAppointment,
+  sendBookingError
+} from "../utils/bookingService.js";
 import { sendBookingConfirmation, sendDoctorWelcomeEmail, sendDoctorApprovalEmail, sendAdminPasswordReset } from "../utils/emailService.js";
 import crypto from "crypto"; 
 const router = express.Router();
@@ -191,8 +200,8 @@ router.post("/appointments/walkin", protect, async (req, res) => {
       return res.status(400).json({ msg: "Patient Name and Phone number are required." });
     }
 
-    if (!doctorId || !date) {
-      return res.status(400).json({ msg: "Doctor and Date are required." });
+    if (!doctorId || (!date && !appointmentDetails.scheduleId)) {
+      return res.status(400).json({ msg: "Doctor and session are required." });
     }
 
     // --- 1. FIND OR CREATE PATIENT ---
@@ -272,220 +281,34 @@ router.post("/appointments/walkin", protect, async (req, res) => {
       }
     }
 
-    // --- 2. CHECK IF DOCTOR HAS AN APPROVED SCHEDULE ---
-    const bookingDate = new Date(date);
-    const startOfDay = new Date(bookingDate);
-    startOfDay.setHours(0, 0, 0, 0);
-    const endOfDay = new Date(bookingDate);
-    endOfDay.setHours(23, 59, 59, 999);
-
-    const approvedSchedule = await ScheduleRequest.findOne({
-      doctorId,
-      status: "approved",
-      date: { $gte: startOfDay, $lte: endOfDay }
-    });
-
-    if (!approvedSchedule) {
-      return res.status(400).json({ msg: "This doctor is not available on the selected date (No approved schedule)." });
-    }
-
-    // --- 2A. CHECK DOUBLE BOOKING ---
-    const existingBooking = await Appointment.findOne({
+    // --- 2. BOOK THROUGH THE SHARED SERVICE (session, double booking, limit, atomic token, bill) ---
+    const schedule = await findBookableSession({ doctorId, scheduleId: appointmentDetails.scheduleId, date });
+    const { appointment, bill, fees } = await createBooking({
       patientId: patient._id,
-      doctorId,
-      date: { $gte: startOfDay, $lte: endOfDay },
-      status: { $ne: "cancelled" }
-    });
-
-    if (existingBooking) {
-      return res.status(400).json({ msg: "This patient already has an active appointment with this doctor on the selected date." });
-    }
-
-    // --- 3. CHECK QUEUE LIMIT ---
-    const currentAppointmentCount = await Appointment.countDocuments({
-      doctorId,
-      date: { $gte: startOfDay, $lte: endOfDay },
-      status: { $ne: "cancelled" }
-    });
-
-    if (!approvedSchedule.isUnlimited && approvedSchedule.queueLimit) {
-      if (currentAppointmentCount >= approvedSchedule.queueLimit) {
-        return res.status(400).json({ msg: "Sorry, this session is full. Maximum patient count reached." });
-      }
-    }
-
-    // Set total amount (2000 Doctor + 1500 Hospital = 3500)
-    const totalAmount = amount || 3500; 
-
-    // --- 5. CREATE APPOINTMENT ---
-    const newAppointment = new Appointment({
-      patientId: patient._id,
-      doctorId,
-      doctorName,
-      department,
-      date,
-      visitType: visitType || 'Consultation',
+      schedule,
+      visitType,
       reason,
-      amount: totalAmount,
-      status: paymentStatus === 'paid' ? 'confirmed' : 'pending',
-      paymentStatus: paymentStatus || 'pending'
+      io: req.io
     });
 
-    // --- 4. GENERATE QUEUE NUMBER (unpaid bookings stay out of the live queue until paid) ---
-    const queueNumber = await assignQueueToken(newAppointment);
-
-    const savedAppointment = await newAppointment.save();
-
-    // --- 6. AUTOMATICALLY CREATE BILL ---
-    let createdBill = null;
-    try {
-      const newBill = new Bill({
-        patientId: patient._id,
-        appointmentId: savedAppointment._id,
-        title: `Consultation - ${doctorName}`,
-        type: "Appointment",
-        amount: totalAmount,
-        status: paymentStatus === 'paid' ? "Paid" : "Pending",
-        date: new Date()
-      });
-      createdBill = await newBill.save();
-    } catch (billError) {
-      console.error("Bill Creation Failed:", billError);
+    // --- 3. CASH IS COLLECTED AT THE COUNTER; CARD IS PAID NEXT THROUGH STRIPE ---
+    const paymentMethod = appointmentDetails.paymentMethod || (paymentStatus === "paid" ? "cash" : "card");
+    let savedAppointment = appointment;
+    if (paymentMethod === "cash") {
+      const result = await recordCashPayment(appointment, req.io);
+      savedAppointment = result.appointment || await Appointment.findById(appointment._id);
     }
 
-    // --- 7. ADD TO CHANNELING INCOME (Split: 2000 Doctor, 1500 Hospital) ---
-    if (paymentStatus === 'paid') {
-      try {
-        const hospitalName = "Suwasevana";
-        
-        // Define the exact split
-        const hospitalIncome = 1500;
-        const doctorIncome = totalAmount > hospitalIncome ? (totalAmount - hospitalIncome) : 0;
-
-        // Update DOCTOR'S Finance Record
-        let doctorFinance = await HospitalFinance.findOne({
-          doctorId: doctorId,
-          name: hospitalName
-        });
-
-        if (!doctorFinance) {
-          doctorFinance = new HospitalFinance({
-            doctorId: doctorId,
-            name: hospitalName,
-            records: []
-          });
-        }
-
-        doctorFinance.records.unshift({
-          type: 'channeling',
-          date: new Date(date),
-          patients: 1,
-          income: doctorIncome
-        });
-
-        await doctorFinance.save();
-
-        // Update HOSPITAL'S Finance Record (doctorId is null)
-        let systemFinance = await HospitalFinance.findOne({
-          doctorId: null, 
-          name: hospitalName
-        });
-
-        if (!systemFinance) {
-          systemFinance = new HospitalFinance({
-            doctorId: null,
-            name: hospitalName,
-            records: []
-          });
-        }
-
-        systemFinance.records.unshift({
-          type: 'channeling',
-          date: new Date(date),
-          patients: 1,
-          income: hospitalIncome
-        });
-
-        await systemFinance.save();
-
-      } catch (financeError) {
-        console.error("Finance Update Failed:", financeError);
-      }
-    }
-
-    // --- 8. CREATE NOTIFICATIONS ---
-    try {
-      await Notification.create({
-        userId: patient._id,
-        type: 'appointment',
-        message: paymentStatus === 'paid'
-          ? `Booking Confirmed! Queue #${queueNumber} for Dr. ${doctorName}.`
-          : `Booking received for Dr. ${doctorName}. Your token is #${queueNumber}. Please pay the fee to join the queue.`
-      });
-
-      if (paymentStatus === 'paid') {
-        await Notification.create({
-          userId: patient._id,
-          type: 'payment',
-          message: `Payment of LKR ${totalAmount} received successfully.`
-        });
-      }
-    } catch (notifError) {
-      console.error("Notification Error:", notifError);
-    }
-
-    // --- 9. SEND EMAIL CONFIRMATION --- (Run asynchronously in the background)
-    (async () => {
-      try {
-        const doctorInfo = await Doctor.findById(doctorId);
-        let doctorRoom = doctorInfo ? doctorInfo.allocatedRoom : "TBA";
-        if (savedAppointment && savedAppointment.date && doctorInfo) {
-          try {
-            const startOfDay = new Date(savedAppointment.date);
-            startOfDay.setHours(0, 0, 0, 0);
-            const endOfDay = new Date(savedAppointment.date);
-            endOfDay.setHours(23, 59, 59, 999);
-            
-            const schedule = await ScheduleRequest.findOne({
-              doctorId: doctorInfo._id,
-              status: 'approved',
-              date: { $gte: startOfDay, $lte: endOfDay }
-            });
-            if (schedule && schedule.allocatedRoom) {
-              doctorRoom = schedule.allocatedRoom;
-            }
-          } catch (err) {
-            console.error("Failed to fetch room from schedule in admin routes:", err.message);
-          }
-        }
-        
-        let pdfBuffer = null;
-        if (paymentStatus === 'paid' && createdBill) {
-          try {
-            const { generateReceiptPdf } = await import("../utils/pdfService.js");
-            pdfBuffer = await generateReceiptPdf(createdBill, savedAppointment, doctorInfo, patient);
-          } catch (pdfErr) {
-            console.error("Failed to generate PDF receipt:", pdfErr);
-          }
-        }
-        
-        await sendBookingConfirmation(patient.email, savedAppointment, doctorRoom, pdfBuffer);
-      } catch (emailErr) {
-        console.error("Failed to send booking confirmation email:", emailErr);
-      }
-    })();
-
-    res.status(201).json(savedAppointment);
+    res.status(201).json({ ...savedAppointment.toObject(), billId: bill._id, fees });
 
   } catch (err) {
-    console.error("Walkin Booking Error:", err.message);
-    res.status(500).json({ msg: `Booking Failed: ${err.message}` });
+    return sendBookingError(res, err, "Walk-in booking failed. Please try again.");
   }
 });
 
 router.put("/appointments/:id", protect, async (req, res) => {
   try {
-    const { status, paymentStatus, arrived } = req.body;
+    const { status, paymentStatus, arrived, cancelReason } = req.body;
     let appointment = await Appointment.findById(req.params.id);
 
     if (!appointment) return res.status(404).json({ msg: "Not found" });
@@ -494,82 +317,138 @@ router.put("/appointments/:id", protect, async (req, res) => {
       return res.status(400).json({ msg: "Cannot edit a Cancelled appointment" });
     }
 
+    // Cancelling settles the bill (closes it, refunds a card, or marks a cash refund due)
+    if (status && status.toLowerCase() === "cancelled") {
+      await cancelAppointment(appointment, { byStaff: true, reason: cancelReason || "Cancelled by the hospital", io: req.io });
+      return res.json(appointment);
+    }
+
+    // Marking paid here means cash was collected at the counter. Card payments go through
+    // /appointments/:id/card-intent and /card-confirm so Stripe confirms them.
+    if (paymentStatus && paymentStatus.toLowerCase() === "paid" && appointment.paymentStatus !== "paid") {
+      const result = await recordCashPayment(appointment, req.io);
+      appointment = result.appointment || await Appointment.findById(appointment._id);
+    } else if (paymentStatus && paymentStatus.toLowerCase() !== "paid" && appointment.paymentStatus === "paid") {
+      return res.status(400).json({ msg: "A paid booking cannot be set back to unpaid. Cancel it to refund the patient." });
+    }
+
     if (status) {
-      if (status.toLowerCase() === "confirmed" && appointment.paymentStatus?.toLowerCase() !== "paid" && paymentStatus?.toLowerCase() !== "paid") {
+      if (status.toLowerCase() === "confirmed" && appointment.paymentStatus?.toLowerCase() !== "paid") {
         return res.status(400).json({ msg: "Cannot set appointment status to Confirmed until payment is Paid." });
       }
       appointment.status = status;
     }
 
     if (arrived !== undefined) {
-      const willBePaid = appointment.paymentStatus?.toLowerCase() === "paid" || paymentStatus?.toLowerCase() === "paid";
-      if (arrived && !willBePaid) {
+      if (arrived && appointment.paymentStatus?.toLowerCase() !== "paid") {
         return res.status(400).json({ msg: "Cannot mark arrival until the patient has paid the fee." });
       }
       appointment.arrived = arrived;
     }
 
-    if (paymentStatus) {
-      const isBecomingPaid = paymentStatus.toLowerCase() === "paid" && appointment.paymentStatus !== "paid";
-      appointment.paymentStatus = paymentStatus;
-
-      if (isBecomingPaid) {
-        appointment.status = "confirmed";
-        await assignQueueToken(appointment);
-        const updatedBill = await Bill.findOneAndUpdate({ appointmentId: appointment._id }, { status: "Paid" }, { new: true });
-
-        // Generate and email PDF Receipt (Run asynchronously in the background)
-        (async () => {
-          try {
-            const patient = await Patient.findById(appointment.patientId);
-            if (patient) {
-              const doctorInfo = await Doctor.findById(appointment.doctorId);
-              const { generateReceiptPdf } = await import("../utils/pdfService.js");
-              const { sendPaymentReceipt } = await import("../utils/emailService.js");
-              let pdfBuffer = null;
-              try {
-                pdfBuffer = await generateReceiptPdf(updatedBill || {}, appointment, doctorInfo, patient);
-              } catch (pdfErr) {
-                console.error("Failed to generate PDF receipt on admin update:", pdfErr);
-              }
-              await sendPaymentReceipt(patient.email, updatedBill || { _id: appointment._id, amount: appointment.amount || 3500, title: `Consultation - ${appointment.doctorName}` }, pdfBuffer);
-            }
-          } catch (pdfEmailErr) {
-            console.error("Failed to generate/send PDF receipt on admin update:", pdfEmailErr);
-          }
-        })();
-
-        try {
-          const hospitalName = "Suwasevana";
-          let hospitalFinance = await HospitalFinance.findOne({ doctorId: appointment.doctorId, name: hospitalName });
-
-          if (!hospitalFinance) {
-            hospitalFinance = new HospitalFinance({ doctorId: appointment.doctorId, name: hospitalName, records: [] });
-          }
-
-          hospitalFinance.records.unshift({
-            type: 'channeling',
-            date: new Date(),
-            patients: 1,
-            income: appointment.amount || 2000
-          });
-
-          await hospitalFinance.save();
-        } catch (finErr) {
-          console.error("Finance Update Error:", finErr);
-        }
-      }
-    }
-
     await appointment.save();
-
-    if (req.io) {
-      req.io.emit("appointmentUpdated", appointment);
-    }
+    emitAppointmentUpdated(req.io, appointment);
 
     res.json(appointment);
   } catch (err) {
-    res.status(500).send("Server Error");
+    return sendBookingError(res, err, "Could not update the appointment.");
+  }
+});
+
+// Card payment taken at the counter: the intent is tied to the booking's bill and the server
+// checks with Stripe before marking anything paid.
+const findAppointmentBill = async (appointmentId) => {
+  const appointment = await Appointment.findById(appointmentId);
+  if (!appointment) return { error: [404, "Appointment not found"] };
+  if (appointment.status === "cancelled") return { error: [400, "This booking was cancelled and can no longer be paid."] };
+  let bill = await Bill.findOne({ appointmentId: String(appointment._id) });
+  if (!bill) {
+    bill = await Bill.create({
+      patientId: appointment.patientId,
+      appointmentId: appointment._id,
+      title: `Consultation - ${appointment.doctorName}`,
+      type: "Appointment",
+      amount: appointment.amount,
+      status: "Pending"
+    });
+  }
+  return { appointment, bill };
+};
+
+const startCardPayment = async (bill, req, res) => {
+  if (bill.status === "Paid") return res.json({ alreadyPaid: true, billId: bill._id });
+  if (bill.status !== "Pending") {
+    return res.status(400).json({ msg: `This bill is ${bill.status.toLowerCase()} and cannot be paid.` });
+  }
+  if (!bill.amount || bill.amount <= 0) {
+    return res.status(400).json({ msg: "This bill has no amount yet." });
+  }
+  const intent = await getOrCreateBillIntent(bill);
+  if (intent.status === "succeeded") {
+    await markBillPaid(bill._id, intent.id, req.io);
+    return res.json({ alreadyPaid: true, billId: bill._id });
+  }
+  if (intent.status === "processing") {
+    return res.status(409).json({ msg: "A payment for this bill is still processing. Please check again shortly." });
+  }
+  return res.json({ clientSecret: intent.client_secret, paymentIntentId: intent.id, billId: bill._id, amount: bill.amount });
+};
+
+const confirmCardPayment = async (bill, req, res) => {
+  if (bill.status === "Paid") return res.json({ msg: "Already paid", bill });
+  const result = await verifyIntentForBill(bill, req.body?.paymentIntentId);
+  if (!result.ok) {
+    return res.status(result.pending ? 202 : 400).json({ msg: result.reason, pending: Boolean(result.pending) });
+  }
+  const paidBill = await settleStaffBillPayment(bill, req.io, result.intent.id);
+  if (paidBill?.status !== "Paid") {
+    return res.status(409).json({ msg: "This booking was cancelled before the payment was recorded; the card has been refunded." });
+  }
+  const appointment = bill.appointmentId ? await Appointment.findById(bill.appointmentId) : null;
+  return res.json({ msg: "Payment confirmed", bill: paidBill, appointment, queueNumber: appointment?.queueNumber || null });
+};
+
+router.post("/appointments/:id/card-intent", protect, authorize(["system_admin", "receptionist"]), async (req, res) => {
+  try {
+    const { bill, error } = await findAppointmentBill(req.params.id);
+    if (error) return res.status(error[0]).json({ msg: error[1] });
+    return startCardPayment(bill, req, res);
+  } catch (err) {
+    console.error("Admin card intent error:", err.message);
+    res.status(500).json({ msg: "Could not start the card payment." });
+  }
+});
+
+router.post("/appointments/:id/card-confirm", protect, authorize(["system_admin", "receptionist"]), async (req, res) => {
+  try {
+    const { bill, error } = await findAppointmentBill(req.params.id);
+    if (error) return res.status(error[0]).json({ msg: error[1] });
+    return confirmCardPayment(bill, req, res);
+  } catch (err) {
+    console.error("Admin card confirm error:", err.message);
+    res.status(500).json({ msg: "Could not confirm the card payment." });
+  }
+});
+
+router.post("/bills/:billId/card-intent", protect, authorize(["system_admin", "receptionist"]), async (req, res) => {
+  try {
+    const bill = await Bill.findById(req.params.billId);
+    if (!bill) return res.status(404).json({ msg: "Bill not found" });
+    return startCardPayment(bill, req, res);
+  } catch (err) {
+    console.error("Admin bill card intent error:", err.message);
+    res.status(500).json({ msg: "Could not start the card payment." });
+  }
+});
+
+router.post("/bills/:billId/card-confirm", protect, authorize(["system_admin", "receptionist"]), async (req, res) => {
+  try {
+    const bill = await Bill.findById(req.params.billId);
+    if (!bill) return res.status(404).json({ msg: "Bill not found" });
+    return confirmCardPayment(bill, req, res);
+  } catch (err) {
+    console.error("Admin bill card confirm error:", err.message);
+    res.status(500).json({ msg: "Could not confirm the card payment." });
   }
 });
 
@@ -735,112 +614,117 @@ router.post("/bills/create", protect, authorize(["system_admin", "receptionist"]
   }
 });
 
+// Records a bill paid by staff (cash, or a card payment the server already verified with Stripe).
+// Appointment bills go through markBillPaid so the token, income split, notification and
+// confirmation email are handled the same way as patient payments.
+const settleStaffBillPayment = async (bill, io, paymentIntentId = null) => {
+  if (bill.appointmentId) {
+    const { bill: paidBill } = await markBillPaid(bill._id, paymentIntentId, io);
+    return paidBill;
+  }
+
+  bill.status = "Paid";
+  if (paymentIntentId) bill.paymentIntentId = paymentIntentId;
+  bill.paidAt = new Date();
+  await bill.save();
+
+  // 1. Calculate the financial split based on Type
+  try {
+    let hospitalIncome = bill.amount;
+    let doctorIncome = 0;
+
+    if (bill.type === "Surgery") {
+        hospitalIncome = bill.amount * 0.25;
+        doctorIncome = bill.amount * 0.75;
+    }
+
+    // 2. Update HOSPITAL Finance
+    const hospitalName = "Suwasevana";
+    let hospitalFinance = await HospitalFinance.findOne({ name: hospitalName, doctorId: null });
+    if (!hospitalFinance) {
+      hospitalFinance = new HospitalFinance({ name: hospitalName, records: [], doctorId: null });
+    }
+    hospitalFinance.records.unshift({
+      type: bill.type.toLowerCase() === 'appointment' ? 'channeling' : 'surgical',
+      date: new Date(),
+      patients: 1,
+      income: hospitalIncome
+    });
+    await hospitalFinance.save();
+
+    // 3. Update DOCTOR Finance (Only if it's Surgery & Doctor is selected)
+    if (bill.type === "Surgery" && bill.doctorId && doctorIncome > 0) {
+        let doctorFinance = await HospitalFinance.findOne({ doctorId: bill.doctorId });
+        if (!doctorFinance) {
+            doctorFinance = new HospitalFinance({ doctorId: bill.doctorId, name: "Doctor Revenue", records: [] });
+        }
+        doctorFinance.records.unshift({
+            type: 'surgical',
+            date: new Date(),
+            patients: 1,
+            income: doctorIncome
+        });
+        await doctorFinance.save();
+    }
+  } catch (finErr) {
+    console.error("Finance Error:", finErr);
+  }
+
+  // 4. Generate and email PDF Receipt (Run asynchronously in the background)
+  (async () => {
+    try {
+      const patient = await Patient.findById(bill.patientId);
+      if (patient) {
+        let doctor = null;
+        if (bill.doctorId) {
+          doctor = await Doctor.findById(bill.doctorId);
+        }
+        const { generateReceiptPdf } = await import("../utils/pdfService.js");
+        const { sendPaymentReceipt } = await import("../utils/emailService.js");
+        let pdfBuffer = null;
+        try {
+          pdfBuffer = await generateReceiptPdf(bill, null, doctor, patient);
+        } catch (pdfErr) {
+          console.error("Failed to generate PDF for manual bill:", pdfErr);
+        }
+        await sendPaymentReceipt(patient.email, bill, pdfBuffer);
+      }
+    } catch (pdfEmailErr) {
+      console.error("Failed to generate/send PDF receipt for manual bill:", pdfEmailErr);
+    }
+  })();
+
+  // 5. Create Notification
+  await Notification.create({
+    userId: bill.patientId,
+    type: "payment",
+    message: `Receipt Confirmed! LKR ${bill.amount} paid for ${bill.title}.`
+  });
+
+  return bill;
+};
+
 router.put("/bills/pay/:billId", protect, authorize(["system_admin", "receptionist"]), async (req, res) => {
   try {
     const bill = await Bill.findById(req.params.billId);
     if (!bill) {
       return res.status(404).json({ msg: "Bill not found" });
     }
-    
+
     if (bill.status === "Paid") {
       return res.status(400).json({ msg: "Bill is already paid" });
     }
-
-    bill.status = "Paid";
-    await bill.save();
-
-    // If it's an appointment bill, mark the appointment paid and issue its queue token
-    if (bill.appointmentId) {
-      const appointment = await Appointment.findById(bill.appointmentId);
-      if (appointment && appointment.paymentStatus !== "paid" && appointment.status !== "cancelled") {
-        appointment.paymentStatus = "paid";
-        appointment.status = "confirmed";
-        await assignQueueToken(appointment);
-        await appointment.save();
-        if (req.io) {
-          req.io.emit("appointmentUpdated", appointment);
-        }
-      }
+    if (bill.status !== "Pending") {
+      return res.status(400).json({ msg: `This bill is ${bill.status.toLowerCase()} and cannot be paid.` });
     }
 
-    // 1. Calculate the financial split based on Type
-    try {
-      let hospitalIncome = bill.amount;
-      let doctorIncome = 0;
-
-      if (bill.type === "Surgery") {
-          hospitalIncome = bill.amount * 0.25;
-          doctorIncome = bill.amount * 0.75;
-      }
-
-      // 2. Update HOSPITAL Finance
-      const hospitalName = "Suwasevana";
-      let hospitalFinance = await HospitalFinance.findOne({ name: hospitalName, doctorId: null });
-      if (!hospitalFinance) {
-        hospitalFinance = new HospitalFinance({ name: hospitalName, records: [], doctorId: null });
-      }
-      hospitalFinance.records.unshift({
-        type: bill.type.toLowerCase() === 'appointment' ? 'channeling' : 'surgical',
-        date: new Date(),
-        patients: 1,
-        income: hospitalIncome
-      });
-      await hospitalFinance.save();
-
-      // 3. Update DOCTOR Finance (Only if it's Surgery & Doctor is selected)
-      if (bill.type === "Surgery" && bill.doctorId && doctorIncome > 0) {
-          let doctorFinance = await HospitalFinance.findOne({ doctorId: bill.doctorId });
-          if (!doctorFinance) {
-              doctorFinance = new HospitalFinance({ doctorId: bill.doctorId, name: "Doctor Revenue", records: [] });
-          }
-          doctorFinance.records.unshift({
-              type: 'surgical',
-              date: new Date(),
-              patients: 1,
-              income: doctorIncome
-          });
-          await doctorFinance.save();
-      }
-    } catch (finErr) {
-      console.error("Finance Error:", finErr);
-    }
-
-    // 4. Generate and email PDF Receipt (Run asynchronously in the background)
-    (async () => {
-      try {
-        const patient = await Patient.findById(bill.patientId);
-        if (patient) {
-          let doctor = null;
-          if (bill.doctorId) {
-            doctor = await Doctor.findById(bill.doctorId);
-          }
-          const { generateReceiptPdf } = await import("../utils/pdfService.js");
-          const { sendPaymentReceipt } = await import("../utils/emailService.js");
-          let pdfBuffer = null;
-          try {
-            pdfBuffer = await generateReceiptPdf(bill, null, doctor, patient);
-          } catch (pdfErr) {
-            console.error("Failed to generate PDF for manual bill:", pdfErr);
-          }
-          await sendPaymentReceipt(patient.email, bill, pdfBuffer);
-        }
-      } catch (pdfEmailErr) {
-        console.error("Failed to generate/send PDF receipt for manual bill:", pdfEmailErr);
-      }
-    })();
-
-    // 5. Create Notification
-    await Notification.create({
-      userId: bill.patientId,
-      type: "payment",
-      message: `Receipt Confirmed! LKR ${bill.amount} paid for ${bill.title}.`
-    });
+    await settleStaffBillPayment(bill, req.io);
 
     const populatedBill = await Bill.findById(bill._id).populate("patientId", "fullName nicNumber patientId");
     res.json({ msg: "Bill marked as paid successfully", bill: populatedBill });
   } catch (err) {
     console.error("Pay Bill Error:", err);
-    res.status(500).send("Server Error");
+    res.status(500).json({ msg: "Could not record the payment." });
   }
 });
 
@@ -1225,7 +1109,7 @@ router.put("/doctors/:id/status", protect, authorize(["system_admin", "reception
               metadata: { doctorId: doctor._id, appointmentId: app._id }
             });
             if (req.io && createdNotif) {
-              req.io.emit("newNotification", createdNotif);
+              emitNotification(req.io, createdNotif);
             }
             return createdNotif;
           });
@@ -1282,7 +1166,7 @@ router.put("/doctors/:id/status", protect, authorize(["system_admin", "reception
             metadata: { doctorId: doctor._id, appointmentId: appt._id, status: channelingStatus }
           });
           if (req.io && notif) {
-            req.io.emit("newNotification", notif);
+            emitNotification(req.io, notif);
           }
         }));
       } catch (err) {
@@ -1320,7 +1204,7 @@ router.put("/doctors/:id/status", protect, authorize(["system_admin", "reception
                 message: `Only 3 patients ahead of you (Token #${patientToken}) for Dr. ${doctor.name}. Please prepare.`,
                 metadata: { doctorId: doctor._id, appointmentId: appt._id, currentQueue: currentQueueNumber }
               });
-              if (req.io && notif) req.io.emit("newNotification", notif);
+              emitNotification(req.io, notif);
             })());
           } else if (diff === 1) {
             notifyPromises.push((async () => {
@@ -1331,7 +1215,7 @@ router.put("/doctors/:id/status", protect, authorize(["system_admin", "reception
                 message: `Token #${currentQueueNumber} is ongoing. Please proceed to ${doctor.allocatedRoom || 'the consultation room'} for Dr. ${doctor.name}.`,
                 metadata: { doctorId: doctor._id, appointmentId: appt._id, currentQueue: currentQueueNumber }
               });
-              if (req.io && notif) req.io.emit("newNotification", notif);
+              emitNotification(req.io, notif);
             })());
           } else if (diff === 0) {
             notifyPromises.push((async () => {
@@ -1342,7 +1226,7 @@ router.put("/doctors/:id/status", protect, authorize(["system_admin", "reception
                 message: `Token #${patientToken} is now being called by Dr. ${doctor.name} in ${doctor.allocatedRoom || 'the room'}.`,
                 metadata: { doctorId: doctor._id, appointmentId: appt._id, currentQueue: currentQueueNumber }
               });
-              if (req.io && notif) req.io.emit("newNotification", notif);
+              emitNotification(req.io, notif);
             })());
           }
         }

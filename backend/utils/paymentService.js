@@ -6,8 +6,11 @@ import HospitalFinance from "../models/Finance.js";
 import Patient from "../models/Patient.js";
 import Doctor from "../models/Doctor.js";
 import { generateReceiptPdf } from "./pdfService.js";
-import { sendPaymentReceipt } from "./emailService.js";
+import ScheduleRequest from "../models/ScheduleRequest.js";
+import { sendPaymentReceipt, sendBookingConfirmation } from "./emailService.js";
 import { assignQueueToken } from "./queueToken.js";
+import { emitAppointmentUpdated, emitNotification } from "./realtime.js";
+import { HOSPITAL_CHANNELING_FEE } from "../config/fees.js";
 
 export const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
@@ -15,7 +18,6 @@ export const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 export const toStripeAmount = (amount) => Math.round(Number(amount) * 100);
 
 const HOSPITAL_NAME = "Suwasevana";
-const HOSPITAL_CHANNELING_SHARE = 1500;
 
 // Intents that can still be paid with the same client secret
 const REUSABLE_INTENT_STATUSES = ["requires_payment_method", "requires_confirmation", "requires_action"];
@@ -75,9 +77,10 @@ export const verifyIntentForBill = async (bill, paymentIntentId) => {
   return { ok: true, intent };
 };
 
-const recordChannelingIncome = async (appointment, totalAmount) => {
-  const hospitalIncome = HOSPITAL_CHANNELING_SHARE;
-  const doctorIncome = totalAmount > hospitalIncome ? totalAmount - hospitalIncome : 0;
+// sign = -1 records a refund (reverses the split recorded when the booking was paid)
+const recordChannelingIncome = async (appointment, totalAmount, sign = 1) => {
+  const hospitalIncome = sign * Math.min(HOSPITAL_CHANNELING_FEE, totalAmount);
+  const doctorIncome = sign * (totalAmount > HOSPITAL_CHANNELING_FEE ? totalAmount - HOSPITAL_CHANNELING_FEE : 0);
   const date = new Date(appointment.date);
 
   let doctorFinance = await HospitalFinance.findOne({ doctorId: appointment.doctorId, name: HOSPITAL_NAME });
@@ -95,23 +98,43 @@ const recordChannelingIncome = async (appointment, totalAmount) => {
   await systemFinance.save();
 };
 
+export const reverseChannelingIncome = (appointment, totalAmount) =>
+  recordChannelingIncome(appointment, totalAmount, -1);
+
 // Marks a bill paid exactly once (safe to call again from retries or reconciliation):
 // updates the linked appointment, issues its queue token, records income, notifies and emails a receipt.
 export const markBillPaid = async (billId, paymentIntentId, io) => {
+  // Only an open bill can become paid (a cancelled booking's bill stays cancelled)
   const bill = await Bill.findOneAndUpdate(
-    { _id: billId, status: { $ne: "Paid" } },
+    { _id: billId, status: "Pending" },
     { status: "Paid", paidAt: new Date(), ...(paymentIntentId ? { paymentIntentId } : {}) },
     { new: true }
   );
 
-  // Already marked paid by an earlier call
-  if (!bill) return { bill: await Bill.findById(billId), alreadyPaid: true };
+  if (!bill) {
+    const existing = await Bill.findById(billId);
+    // The booking was cancelled (e.g. its unpaid hold ran out) just as the card was charged: refund it
+    if (existing?.status === "Cancelled" && paymentIntentId) {
+      try {
+        await stripe.refunds.create({ payment_intent: paymentIntentId });
+        existing.status = "Refunded";
+        existing.paymentIntentId = paymentIntentId;
+        await existing.save();
+        console.warn(`Refunded payment ${paymentIntentId} for cancelled bill ${existing._id}`);
+      } catch (refundErr) {
+        console.error(`Refund for cancelled bill ${existing._id} failed:`, refundErr.message);
+      }
+    }
+    // Otherwise it was already marked paid by an earlier call
+    return { bill: existing, alreadyPaid: existing?.status === "Paid" };
+  }
 
   let appointment = null;
   if (bill.appointmentId) {
     appointment = await Appointment.findById(bill.appointmentId);
     if (appointment && appointment.paymentStatus !== "paid") {
       appointment.paymentStatus = "paid";
+      appointment.holdExpiresAt = undefined;
       if (appointment.status !== "cancelled") {
         appointment.status = "confirmed";
         await assignQueueToken(appointment);
@@ -124,7 +147,7 @@ export const markBillPaid = async (billId, paymentIntentId, io) => {
         console.error("Finance Update Failed:", finErr);
       }
 
-      if (io) io.emit("appointmentUpdated", appointment);
+      emitAppointmentUpdated(io, appointment);
     }
   }
 
@@ -137,7 +160,7 @@ export const markBillPaid = async (billId, paymentIntentId, io) => {
         ? `Payment Successful! LKR ${bill.amount} paid for ${bill.title}. Your queue token is #${appointment.queueNumber}.`
         : `Payment Successful! LKR ${bill.amount} paid for ${bill.title}.`
     });
-    if (io && notif) io.emit("newNotification", notif);
+    emitNotification(io, notif);
   } catch (notifErr) {
     console.error("Payment notification error:", notifErr);
   }
@@ -154,7 +177,14 @@ export const markBillPaid = async (billId, paymentIntentId, io) => {
       } catch (pdfErr) {
         console.error("Failed to generate PDF receipt:", pdfErr);
       }
-      await sendPaymentReceipt(patient.email, bill, pdfBuffer);
+      if (appointment) {
+        // Booking confirmation (with token, room and the receipt attached) is only sent once paid
+        const schedule = appointment.scheduleId ? await ScheduleRequest.findById(appointment.scheduleId) : null;
+        const room = schedule?.allocatedRoom || doctor?.allocatedRoom || "TBA";
+        await sendBookingConfirmation(patient.email, appointment, room, pdfBuffer);
+      } else {
+        await sendPaymentReceipt(patient.email, bill, pdfBuffer);
+      }
     } catch (pdfEmailErr) {
       console.error("Failed to generate/send PDF receipt:", pdfEmailErr);
     }

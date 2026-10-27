@@ -133,6 +133,13 @@ export default function BillingScreen() {
                             <CheckCircle size={14} color="#059669" />
                             <Text style={styles.paidText}>PAID</Text>
                         </View>
+                    ) : item.status !== 'Pending' ? (
+                        // Cancelled / Refunded / Refund Due bills can't be paid
+                        <View style={[styles.paidBadge, { backgroundColor: '#f1f5f9' }]}>
+                            <Text style={[styles.paidText, { color: '#64748b' }]}>
+                                {item.status === 'Refund Due' ? 'REFUND AT COUNTER' : String(item.status).toUpperCase()}
+                            </Text>
+                        </View>
                     ) : isPricePending ? (
                         <View style={[styles.paidBadge, { backgroundColor: '#fff7ed' }]}>
                             <Clock size={14} color="#d97706" />

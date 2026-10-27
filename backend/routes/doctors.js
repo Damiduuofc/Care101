@@ -1,6 +1,7 @@
 import express from "express";
 import Doctor from "../models/Doctor.js";
 import { auth } from "../middleware/auth.js";
+import { getChannelingFees } from "../config/fees.js";
 
 const router = express.Router();
 
@@ -48,13 +49,14 @@ router.get("/public", async (req, res) => {
 // ==========================================
 router.get("/list", auth, async (req, res) => {
   try {
-    const doctors = await Doctor.find().select("name fullName nameWithInitials specialization qualifications profileImage _id");
+    const doctors = await Doctor.find().select("name fullName nameWithInitials specialization qualifications profileImage channelingFee _id");
     const formattedDoctors = doctors.map(doc => ({
       _id: doc._id,
       name: doc.fullName || doc.nameWithInitials || doc.name || "Unknown Doctor", 
       specialization: doc.specialization || "General",
       qualifications: doc.qualifications || "",
-      profileImage: doc.profileImage || "" 
+      profileImage: doc.profileImage || "",
+      fees: getChannelingFees(doc)
     }));
     res.json(formattedDoctors);
   } catch (err) {

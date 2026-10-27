@@ -33,6 +33,8 @@ const DoctorSchema = new mongoose.Schema({
   sessionEndedToday: { type: Boolean, default: false },
   currentQueueNumber: { type: Number, default: 0 },
   averageConsultationDuration: { type: Number, default: 10 },
+  // Doctor's channeling fee in LKR (hospital fee is added on top); falls back to DEFAULT_DOCTOR_FEE
+  channelingFee: { type: Number },
 
   createdAt: { type: Date, default: Date.now },
   resetPasswordOtp: { type: String },

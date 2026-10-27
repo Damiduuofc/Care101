@@ -76,19 +76,25 @@ function StripeCardForm({ amount, billId, onSuccess, onCancel }: CardFormProps) 
 
         try {
             const adminToken = getAdminToken();
-            const intentRes = await fetch(`${API_URL}/payments/create-intent`, {
+            const headers = {
+                "Content-Type": "application/json",
+                "x-auth-token": adminToken || "",
+                "ngrok-skip-browser-warning": "true"
+            };
+            // The intent is tied to this bill; the server takes the amount from the bill
+            const intentRes = await fetch(`${API_URL}/admin/bills/${billId}/card-intent`, {
                 method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                    "x-auth-token": adminToken || "",
-                    "ngrok-skip-browser-warning": "true"
-                },
-                body: JSON.stringify({ amount: amount * 100 })
+                headers
             });
 
-            const intentData = await intentRes.json();
+            const intentData = await intentRes.json().catch(() => ({}));
             if (!intentRes.ok) {
                 throw new Error(intentData.msg || "Failed to initiate payment");
+            }
+            if (intentData.alreadyPaid) {
+                toast({ title: "Already paid", description: "This bill was already paid." });
+                onSuccess({ _id: billId, status: "Paid" });
+                return;
             }
 
             const clientSecret = intentData.clientSecret;
@@ -109,18 +115,26 @@ function StripeCardForm({ amount, billId, onSuccess, onCancel }: CardFormProps) 
             }
 
             if (paymentResult.paymentIntent?.status === "succeeded") {
-                const payRes = await fetch(`${API_URL}/admin/bills/pay/${billId}`, {
-                    method: "PUT",
-                    headers: {
-                        "Content-Type": "application/json",
-                        "x-auth-token": adminToken || "",
-                        "ngrok-skip-browser-warning": "true"
+                // The server checks the payment with Stripe before marking the bill paid
+                let payRes: Response | null = null;
+                let payData: any = {};
+                for (let attempt = 0; attempt < 4; attempt++) {
+                    if (attempt > 0) await new Promise(resolve => setTimeout(resolve, 1500 * attempt));
+                    try {
+                        payRes = await fetch(`${API_URL}/admin/bills/${billId}/card-confirm`, {
+                            method: "POST",
+                            headers,
+                            body: JSON.stringify({ paymentIntentId: paymentResult.paymentIntent.id })
+                        });
+                        payData = await payRes.json().catch(() => ({}));
+                        if (payRes.ok && payRes.status !== 202) break;
+                        if (payRes.status !== 202 && payRes.status < 500) break;
+                    } catch {
+                        payRes = null;
                     }
-                });
-
-                const payData = await payRes.json();
-                if (!payRes.ok) {
-                    throw new Error(payData.msg || "Payment recorded but failed to update bill record. Please contact support.");
+                }
+                if (!payRes?.ok || payRes.status === 202) {
+                    throw new Error(payData.msg || "The card was charged but the bill could not be updated yet. Do not charge again; refresh in a minute.");
                 }
 
                 toast({ title: "Payment Successful", description: `LKR ${amount} charged successfully.` });
@@ -782,7 +796,7 @@ fetch(`${API_URL}/admin/doctors`, { headers })
                                             <TableCell className="font-bold text-slate-900">Rs. {inv.amount.toLocaleString()}</TableCell>
                                             <TableCell className="text-right">
                                                 <div className="flex justify-end gap-2">
-                                                    {inv.status !== "Paid" && (
+                                                    {inv.status === "Pending" && (
                                                         <>
                                                             <Button
                                                                 variant="outline"
