@@ -122,7 +122,20 @@ router.get("/today-appointments", auth, async (req, res) => {
       .sort({ queueNumber: 1 })
       .lean();
 
-    res.json(appointments.filter(a => a.patientId));
+    const doctor = await Doctor.findById(req.user.id)
+      .select("currentQueueNumber sessionStarted sessionEndedToday isArrived allocatedRoom")
+      .lean();
+
+    res.json({
+      appointments: appointments.filter(a => a.patientId),
+      session: {
+        currentQueueNumber: doctor?.currentQueueNumber || 0,
+        sessionStarted: Boolean(doctor?.sessionStarted),
+        sessionEndedToday: Boolean(doctor?.sessionEndedToday),
+        isArrived: Boolean(doctor?.isArrived),
+        allocatedRoom: doctor?.allocatedRoom || null
+      }
+    });
   } catch (err) {
     console.error("Today Appointments Error:", err.message);
     res.status(500).send("Server Error");

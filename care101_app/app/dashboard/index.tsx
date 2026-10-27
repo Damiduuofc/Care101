@@ -258,8 +258,8 @@ export default function DashboardScreen() {
     },
     {
       id: 4,
-      title: 'Appointments',
-      subtitle: 'View schedule and manage bookings',
+      title: 'My Sessions',
+      subtitle: 'Request channeling hours and track approvals',
       icon: Calendar,
       link: '/dashboard/appointment',
       color: '#f59e0b',

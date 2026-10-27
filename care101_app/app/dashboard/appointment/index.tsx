@@ -261,7 +261,7 @@ export default function AppointmentScreen() {
         <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
           <ArrowLeft size={24} color="#0f172a" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>New Session</Text>
+        <Text style={styles.headerTitle}>My Sessions</Text>
         <View style={{ width: 40 }} />
       </View>
 
