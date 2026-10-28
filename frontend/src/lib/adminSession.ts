@@ -85,7 +85,7 @@ export function getAdminLandingPath(user: AdminUser | null) {
     case "lab_assistant":
       return "/admin/lab-assistant-dashboard";
     case "nurse":
-      return "/admin/queue";
+      return "/admin/dashboard";
     default:
       return "/admin/dashboard";
   }
