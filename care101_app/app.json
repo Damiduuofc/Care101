@@ -2,7 +2,7 @@
   "expo": {
     "name": "carelink 101",
     "slug": "carelink_101",
-    "version": "2.1.0",
+    "version": "2.2.0",
     "orientation": "portrait",
     "icon": "./assets/icon3.png",
     "scheme": "carelink",
@@ -20,7 +20,7 @@
         "backgroundColor": "#FFFFFF",
         "foregroundImage": "./assets/icon3.png"
       },
-      "versionCode": 3,
+      "versionCode": 4,
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
       "permissions": [
