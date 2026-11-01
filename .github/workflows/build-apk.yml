@@ -29,6 +29,11 @@ on:
         required: false
         default: false
         type: boolean
+      release_tag:
+        description: 'Tag to use for the GitHub Release (for example, v2.2.1)'
+        required: false
+        default: ''
+        type: string
 
 concurrency:
   group: android-apk-${{ github.ref }}
@@ -234,8 +239,8 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: ${{ env.APK_PATH }}
-          name: Release ${{ github.ref_name || env.APK_NAME }}
-          tag_name: ${{ github.ref_name || format('build-{0}', github.run_number) }}
+          name: Release ${{ inputs.release_tag || github.ref_name || env.APK_NAME }}
+          tag_name: ${{ inputs.release_tag || github.ref_name || format('build-{0}', github.run_number) }}
           generate_release_notes: true
           draft: false
           prerelease: false
