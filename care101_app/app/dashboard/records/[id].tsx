@@ -5,7 +5,7 @@ import {
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { ArrowLeft, Trash2, Calendar, Plus, Camera, Info, X, FileText } from 'lucide-react-native';
+import { ArrowLeft, Trash2, Calendar, Plus, Camera, Info, X, FileText, Building2, CreditCard, FlaskConical, Stethoscope, ChevronRight } from 'lucide-react-native';
 import * as SecureStore from 'expo-secure-store';
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system/legacy';
@@ -13,6 +13,47 @@ import * as Sharing from 'expo-sharing';
 import LabTestPicker from '../../../components/LabTestPicker';
 
 const API_URL = `${process.env.EXPO_PUBLIC_API_URL}/surgery-records`;
+
+const getInitials = (name: string = '') =>
+  name.trim().split(/\s+/).slice(0, 2).map((p) => p[0]?.toUpperCase() ?? '').join('') || '?';
+
+// "SUWASEWANA HOSPITAL" -> "Suwasewana Hospital"
+const toTitleCase = (s: string) => s.toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
+
+const formatDate = (value?: string) => {
+  if (!value) return '';
+  const d = new Date(value);
+  return isNaN(d.getTime()) ? '' : d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+};
+
+const formatDateTime = (value?: string) => {
+  if (!value) return '';
+  const d = new Date(value);
+  return isNaN(d.getTime()) ? '' : `${formatDate(value)} · ${d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`;
+};
+
+function SectionHeader({ title, count }: { title: string; count?: number }) {
+  return (
+    <View style={styles.sectionHeaderRow}>
+      <Text style={styles.sectionHeader}>{title}</Text>
+      {count !== undefined && count > 0 && (
+        <View style={styles.countBadge}>
+          <Text style={styles.countBadgeText}>{count}</Text>
+        </View>
+      )}
+    </View>
+  );
+}
+
+function InfoRow({ icon: Icon, label, value, last }: { icon: any; label: string; value: string; last?: boolean }) {
+  return (
+    <View style={[styles.infoRow, last && { borderBottomWidth: 0 }]}>
+      <Icon size={16} color="#94a3b8" />
+      <Text style={styles.infoLabel}>{label}</Text>
+      <Text style={styles.infoValue} numberOfLines={1}>{value}</Text>
+    </View>
+  );
+}
 
 export default function RecordDetailsScreen() {
   const router = useRouter();
@@ -347,8 +388,14 @@ export default function RecordDetailsScreen() {
     ]);
   };
 
-  if (loading) return <ActivityIndicator style={{ marginTop: 50 }} size="large" color="#0f172a" />;
+  if (loading) return <ActivityIndicator style={{ marginTop: 50 }} size="large" color="#06b6d4" />;
   if (!record) return null;
+
+  const standaloneReports = labReports.filter(
+    (r) => !labRequests.some((req) => String(req.recordId) === String(r._id))
+  );
+  const labCount = labRequests.length + standaloneReports.length;
+  const entries = record.entries || [];
 
   return (
     <SafeAreaView edges={['top']} style={styles.container}>
@@ -356,197 +403,188 @@ export default function RecordDetailsScreen() {
 
       {/* Header */}
       <View style={styles.header}>
-        <View style={styles.headerLeft}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-            <ArrowLeft size={24} color="#0f172a" />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>{record.name}</Text>
+        <TouchableOpacity onPress={() => router.back()} style={styles.iconBtn} hitSlop={8}>
+          <ArrowLeft size={20} color="#0f172a" />
+        </TouchableOpacity>
+        <View style={{ flex: 1, marginHorizontal: 12 }}>
+          <Text style={styles.headerTitle}>Surgery Record</Text>
         </View>
-        <TouchableOpacity onPress={handleDelete} style={styles.deleteBtn}>
-          <Trash2 size={20} color="#ef4444" />
+        <TouchableOpacity onPress={handleDelete} style={[styles.iconBtn, styles.deleteBtn]} hitSlop={8}>
+          <Trash2 size={18} color="#ef4444" />
         </TouchableOpacity>
       </View>
 
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
 
-        {/* Card 1: Patient Details */}
+        {/* Patient summary */}
         <View style={styles.card}>
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-            <Text style={styles.cardTitle}>Patient Details</Text>
-            <TouchableOpacity 
-              style={styles.requestLabBtn} 
-              onPress={() => setShowLabModal(true)}
-            >
-              <Text style={styles.requestLabBtnText}>Request Lab</Text>
-            </TouchableOpacity>
-          </View>
-          <View style={styles.divider} />
-          <View style={styles.rowContainer}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.label}>Patient ID</Text>
-              <Text style={styles.value}>{record.patientId || "N/A"}</Text>
+          <View style={styles.patientRow}>
+            <View style={styles.avatar}>
+              <Text style={styles.avatarText}>{getInitials(record.name)}</Text>
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={styles.label}>Hospital</Text>
-              <Text style={styles.value}>{record.hospital || "N/A"}</Text>
-            </View>
-          </View>
-          <View style={[styles.rowContainer, { marginTop: 12 }]}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.label}>NIC</Text>
-              <Text style={styles.value}>{record.nic || "N/A"}</Text>
-            </View>
-            <View style={{ flex: 1 }} />
-          </View>
-        </View>
-
-        {/* Card 2: Clinical Records & Prescriptions (Nurse / Doctor OPD entries) */}
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Clinical Records & Prescriptions</Text>
-          <View style={styles.divider} />
-          {clinicalRecords.length > 0 ? (
-            clinicalRecords.map((cRec) => (
-              <View key={cRec._id} style={styles.labReportRow}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.labReportTitle}>{cRec.title} ({cRec.type})</Text>
-                  <Text style={styles.labReportDate}>
-                    {new Date(cRec.date || cRec.createdAt).toLocaleDateString()} • {cRec.doctorName || 'OPD'}
-                  </Text>
-                  {cRec.diagnosis ? (
-                    <Text style={[styles.labReportDesc, { fontStyle: 'normal', fontWeight: '600', color: '#334155', marginTop: 2 }]}>
-                      Diagnosis: {cRec.diagnosis}
-                    </Text>
-                  ) : null}
-                  {cRec.medications ? (
-                    <Text style={[styles.labReportDesc, { fontStyle: 'normal', color: '#475569', marginTop: 2 }]}>
-                      Rx: {cRec.medications}
-                    </Text>
-                  ) : null}
-                  {cRec.description ? (
-                    <Text style={styles.labReportDesc}>{cRec.description}</Text>
-                  ) : null}
-                </View>
-                <TouchableOpacity
-                  style={styles.viewReportBtn}
-                  onPress={() => handleViewRecord(cRec._id)}
-                >
-                  <Text style={styles.viewReportBtnText}>View</Text>
-                </TouchableOpacity>
-              </View>
-            ))
-          ) : (
-            <Text style={styles.noLabText}>No clinical records or prescriptions added yet.</Text>
-          )}
-        </View>
-
-        {/* Card 3: Lab Requests & Completed Lab Reports */}
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Lab Requests & Reports</Text>
-          <View style={styles.divider} />
-          {labRequests.length > 0 && labRequests.map((req) => (
-            <View key={req._id} style={styles.labReportRow}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.labReportTitle}>{req.title}</Text>
-                <Text style={styles.labReportDate}>
-                  {new Date(req.createdAt).toLocaleDateString()} • Status: {req.status?.toUpperCase()}
-                </Text>
-                {req.description ? (
-                  <Text style={styles.labReportDesc}>{req.description}</Text>
-                ) : null}
-              </View>
-              {req.status === 'completed' && req.recordId ? (
-                <TouchableOpacity
-                  style={styles.viewReportBtn}
-                  onPress={() => handleViewRecord(req.recordId)}
-                >
-                  <Text style={styles.viewReportBtnText}>View Report</Text>
-                </TouchableOpacity>
-              ) : (
-                <View style={{ backgroundColor: '#fef3c7', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6 }}>
-                  <Text style={{ fontSize: 11, fontWeight: '700', color: '#d97706' }}>PENDING</Text>
+              <Text style={styles.patientName} numberOfLines={1}>{record.name}</Text>
+              {!!record.patientId && (
+                <View style={styles.idChip}>
+                  <Text style={styles.idChipText}>{record.patientId}</Text>
                 </View>
               )}
             </View>
-          ))}
-          {labReports.length > 0 ? (
-            labReports
-              .filter((r) => !labRequests.some((req) => String(req.recordId) === String(r._id)))
-              .map((report) => (
-                <View key={report._id} style={styles.labReportRow}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.labReportTitle}>{report.title}</Text>
-                    <Text style={styles.labReportDate}>
-                      {new Date(report.date).toLocaleDateString()}
-                    </Text>
-                    {report.description && (
-                      <Text style={styles.labReportDesc}>{report.description}</Text>
-                    )}
-                  </View>
-                  <TouchableOpacity
-                    style={styles.viewReportBtn}
-                    onPress={() => handleViewRecord(report._id)}
-                  >
-                    <Text style={styles.viewReportBtnText}>View & Download</Text>
-                  </TouchableOpacity>
+          </View>
+
+          <View style={styles.infoList}>
+            <InfoRow icon={Building2} label="Hospital" value={record.hospital ? toTitleCase(record.hospital) : 'N/A'} />
+            <InfoRow icon={CreditCard} label="NIC" value={record.nic || 'N/A'} />
+            <InfoRow icon={Calendar} label="Created" value={formatDate(record.createdAt) || 'N/A'} last />
+          </View>
+
+          <View style={styles.actionRow}>
+            <TouchableOpacity style={[styles.actionBtn, styles.actionBtnSecondary]} onPress={() => setShowLabModal(true)}>
+              <FlaskConical size={16} color="#0891b2" />
+              <Text style={styles.actionBtnSecondaryText}>Request Lab</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.actionBtn, styles.actionBtnPrimary]} onPress={() => setModalVisible(true)}>
+              <Plus size={16} color="#fff" />
+              <Text style={styles.actionBtnPrimaryText}>Add Progress</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* Clinical Records & Prescriptions (Nurse / Doctor OPD entries) */}
+        <SectionHeader title="Clinical Records" count={clinicalRecords.length} />
+        <View style={styles.card}>
+          {clinicalRecords.length > 0 ? (
+            clinicalRecords.map((cRec, i) => (
+              <TouchableOpacity
+                key={cRec._id}
+                style={[styles.listRow, i === clinicalRecords.length - 1 && styles.listRowLast]}
+                activeOpacity={0.6}
+                onPress={() => handleViewRecord(cRec._id)}
+              >
+                <View style={styles.rowIcon}>
+                  <Stethoscope size={18} color="#0891b2" />
                 </View>
-              ))
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.rowTitle} numberOfLines={1}>{cRec.title}</Text>
+                  <Text style={styles.rowMeta} numberOfLines={1}>
+                    {formatDate(cRec.date || cRec.createdAt)} · {cRec.doctorName || 'OPD'}
+                  </Text>
+                  {cRec.diagnosis ? (
+                    <Text style={styles.rowDetail} numberOfLines={1}>
+                      <Text style={styles.rowDetailLabel}>Diagnosis </Text>{cRec.diagnosis}
+                    </Text>
+                  ) : null}
+                  {cRec.medications ? (
+                    <Text style={styles.rowDetail} numberOfLines={1}>
+                      <Text style={styles.rowDetailLabel}>Rx </Text>{cRec.medications}
+                    </Text>
+                  ) : null}
+                </View>
+                <ChevronRight size={18} color="#cbd5e1" />
+              </TouchableOpacity>
+            ))
           ) : (
-            labRequests.length === 0 && (
-              <Text style={styles.noLabText}>No lab requests or reports for this patient yet.</Text>
-            )
+            <Text style={styles.noLabText}>No clinical records or prescriptions yet.</Text>
           )}
         </View>
 
-        {/* Card 4: Main Surgery Card */}
+        {/* Lab Requests & Completed Lab Reports */}
+        <SectionHeader title="Lab Requests & Reports" count={labCount} />
+        <View style={styles.card}>
+          {labRequests.map((req, i) => {
+            const done = req.status === 'completed' && req.recordId;
+            return (
+              <TouchableOpacity
+                key={req._id}
+                style={[styles.listRow, i === labCount - 1 && styles.listRowLast]}
+                activeOpacity={done ? 0.6 : 1}
+                disabled={!done}
+                onPress={() => handleViewRecord(req.recordId)}
+              >
+                <View style={styles.rowIcon}>
+                  <FlaskConical size={18} color="#0891b2" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.rowTitle} numberOfLines={1}>{req.title}</Text>
+                  <Text style={styles.rowMeta}>{formatDate(req.createdAt)}</Text>
+                  {req.description ? <Text style={styles.rowDetail} numberOfLines={2}>{req.description}</Text> : null}
+                </View>
+                <View style={[styles.statusPill, done ? styles.statusDone : styles.statusPending]}>
+                  <Text style={[styles.statusText, { color: done ? '#059669' : '#d97706' }]}>
+                    {done ? 'Report ready' : 'Pending'}
+                  </Text>
+                </View>
+              </TouchableOpacity>
+            );
+          })}
+          {standaloneReports.map((report, i) => (
+            <TouchableOpacity
+              key={report._id}
+              style={[styles.listRow, labRequests.length + i === labCount - 1 && styles.listRowLast]}
+              activeOpacity={0.6}
+              onPress={() => handleViewRecord(report._id)}
+            >
+              <View style={styles.rowIcon}>
+                <FileText size={18} color="#0891b2" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.rowTitle} numberOfLines={1}>{report.title}</Text>
+                <Text style={styles.rowMeta}>{formatDate(report.date)}</Text>
+                {report.description ? <Text style={styles.rowDetail} numberOfLines={2}>{report.description}</Text> : null}
+              </View>
+              <ChevronRight size={18} color="#cbd5e1" />
+            </TouchableOpacity>
+          ))}
+          {labCount === 0 && (
+            <Text style={styles.noLabText}>No lab requests or reports yet.</Text>
+          )}
+        </View>
+
+        {/* Main Surgery Card */}
         {record.surgeryCardImage ? (
-          <View style={styles.card}>
-            <Text style={styles.cardTitle}>Surgery Card (Original)</Text>
-            <View style={styles.divider} />
+          <>
+            <SectionHeader title="Surgery Card" />
             <TouchableOpacity
               activeOpacity={0.9}
               onPress={() => setImageExpanded(!imageExpanded)}
               style={[styles.imageContainer, imageExpanded && styles.imageContainerExpanded]}
             >
               <Image source={{ uri: record.surgeryCardImage }} style={styles.cardImage} resizeMode="cover" />
+              <View style={styles.imageHint}>
+                <Text style={styles.imageHintText}>{imageExpanded ? 'Tap to collapse' : 'Tap to expand'}</Text>
+              </View>
             </TouchableOpacity>
-          </View>
+          </>
         ) : null}
 
-        {/* SECTION: PROGRESS ENTRIES (Timeline) */}
-        <View style={styles.timelineHeader}>
-          <Text style={styles.sectionHeader}>Recovery Progress</Text>
-        </View>
-
-        {record.entries && record.entries.length > 0 ? (
-          record.entries.map((entry: any, index: number) => (
-            <View key={index} style={styles.entryCard}>
-              <View style={styles.entryHeader}>
-                <Calendar size={14} color="#64748b" />
-                <Text style={styles.entryDate}>{new Date(entry.date).toLocaleString()}</Text>
+        {/* Recovery progress timeline */}
+        <SectionHeader title="Recovery Progress" count={entries.length} />
+        {entries.length > 0 ? (
+          entries.map((entry: any, index: number) => (
+            <View key={index} style={styles.timelineItem}>
+              <View style={styles.timelineRail}>
+                <View style={styles.timelineDot} />
+                {index < entries.length - 1 && <View style={styles.timelineLine} />}
               </View>
-
-              {entry.images && entry.images.length > 0 && (
-                <Image source={{ uri: entry.images[0] }} style={styles.entryImage} />
-              )}
-
-              {entry.notes ? (
-                <Text style={styles.entryNotes}>{entry.notes}</Text>
-              ) : null}
+              <View style={styles.entryCard}>
+                <Text style={styles.entryDate}>{formatDateTime(entry.date)}</Text>
+                {entry.images && entry.images.length > 0 && (
+                  <Image source={{ uri: entry.images[0] }} style={styles.entryImage} />
+                )}
+                {entry.notes ? <Text style={styles.entryNotes}>{entry.notes}</Text> : null}
+              </View>
             </View>
           ))
         ) : (
-          <View style={styles.emptyState}>
+          <View style={[styles.card, styles.emptyState]}>
             <Text style={styles.emptyText}>No progress updates yet.</Text>
+            <TouchableOpacity onPress={() => setModalVisible(true)}>
+              <Text style={styles.emptyLink}>Add the first update</Text>
+            </TouchableOpacity>
           </View>
         )}
 
       </ScrollView>
-
-      {/* FAB Button */}
-      <TouchableOpacity style={styles.fab} onPress={() => setModalVisible(true)}>
-        <Plus size={32} color="#fff" />
-      </TouchableOpacity>
-
 
       {/* --- ADD ENTRY MODAL --- */}
       <Modal animationType="slide" transparent={true} visible={modalVisible} onRequestClose={() => setModalVisible(false)}>
@@ -759,38 +797,69 @@ export default function RecordDetailsScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f8fafc' },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#e2e8f0' },
-  headerLeft: { flexDirection: 'row', alignItems: 'center' },
-  backBtn: { marginRight: 16 },
-  headerTitle: { fontSize: 18, fontWeight: '700', color: '#0f172a' },
-  deleteBtn: { padding: 8, backgroundColor: '#fee2e2', borderRadius: 8 },
-  content: { padding: 20, paddingBottom: 100 },
+  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#f1f5f9' },
+  iconBtn: { width: 38, height: 38, borderRadius: 19, backgroundColor: '#f1f5f9', alignItems: 'center', justifyContent: 'center' },
+  deleteBtn: { backgroundColor: '#fef2f2' },
+  headerTitle: { fontSize: 17, fontWeight: '700', color: '#0f172a' },
+  content: { padding: 16, paddingBottom: 48 },
 
   // Cards
-  card: { backgroundColor: '#fff', borderRadius: 16, padding: 20, marginBottom: 20, borderWidth: 1, borderColor: '#e2e8f0' },
-  cardTitle: { fontSize: 16, fontWeight: '700', color: '#0f172a' },
-  divider: { height: 1, backgroundColor: '#f1f5f9', marginVertical: 12 },
-  rowContainer: { flexDirection: 'row', gap: 16 },
-  label: { fontSize: 12, color: '#64748b', marginBottom: 4 },
-  value: { fontSize: 16, color: '#0f172a', fontWeight: '600' },
+  card: { backgroundColor: '#fff', borderRadius: 16, padding: 16, marginBottom: 8, borderWidth: 1, borderColor: '#eef2f6' },
 
-  imageContainer: { width: '100%', height: 220, borderRadius: 12, overflow: 'hidden', backgroundColor: '#f1f5f9' },
-  imageContainerExpanded: { height: 400 },
+  // Patient summary
+  patientRow: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+  avatar: { width: 52, height: 52, borderRadius: 26, backgroundColor: '#ecfeff', alignItems: 'center', justifyContent: 'center' },
+  avatarText: { fontSize: 18, fontWeight: '700', color: '#0891b2' },
+  patientName: { fontSize: 19, fontWeight: '800', color: '#0f172a', letterSpacing: -0.3 },
+  idChip: { alignSelf: 'flex-start', backgroundColor: '#f1f5f9', borderRadius: 6, paddingHorizontal: 7, paddingVertical: 2, marginTop: 4 },
+  idChipText: { fontSize: 12, fontWeight: '700', color: '#64748b', letterSpacing: 0.3 },
+  infoList: { marginTop: 14, borderTopWidth: 1, borderTopColor: '#f1f5f9' },
+  infoRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 11, borderBottomWidth: 1, borderBottomColor: '#f1f5f9' },
+  infoLabel: { fontSize: 14, color: '#64748b', width: 72 },
+  infoValue: { flex: 1, fontSize: 14, fontWeight: '600', color: '#0f172a', textAlign: 'right' },
+  actionRow: { flexDirection: 'row', gap: 10, marginTop: 14 },
+  actionBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, height: 44, borderRadius: 12 },
+  actionBtnSecondary: { backgroundColor: '#ecfeff' },
+  actionBtnSecondaryText: { fontSize: 14, fontWeight: '700', color: '#0891b2' },
+  actionBtnPrimary: { backgroundColor: '#06b6d4' },
+  actionBtnPrimaryText: { fontSize: 14, fontWeight: '700', color: '#fff' },
+
+  // Sections
+  sectionHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 18, marginBottom: 10, paddingHorizontal: 4 },
+  sectionHeader: { fontSize: 16, fontWeight: '700', color: '#0f172a' },
+  countBadge: { minWidth: 22, height: 22, borderRadius: 11, paddingHorizontal: 6, backgroundColor: '#ecfeff', alignItems: 'center', justifyContent: 'center' },
+  countBadgeText: { fontSize: 12, fontWeight: '700', color: '#0891b2' },
+
+  listRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#f1f5f9' },
+  listRowLast: { borderBottomWidth: 0, paddingBottom: 2 },
+  rowIcon: { width: 38, height: 38, borderRadius: 10, backgroundColor: '#ecfeff', alignItems: 'center', justifyContent: 'center', alignSelf: 'flex-start' },
+  rowTitle: { fontSize: 15, fontWeight: '600', color: '#0f172a' },
+  rowMeta: { fontSize: 12, color: '#94a3b8', marginTop: 2 },
+  rowDetail: { fontSize: 13, color: '#475569', marginTop: 4 },
+  rowDetailLabel: { fontWeight: '700', color: '#64748b' },
+  statusPill: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
+  statusDone: { backgroundColor: '#ecfdf5' },
+  statusPending: { backgroundColor: '#fffbeb' },
+  statusText: { fontSize: 11, fontWeight: '700' },
+
+  imageContainer: { width: '100%', height: 220, borderRadius: 16, overflow: 'hidden', backgroundColor: '#f1f5f9', marginBottom: 8 },
+  imageContainerExpanded: { height: 420 },
   cardImage: { width: '100%', height: '100%' },
+  imageHint: { position: 'absolute', bottom: 10, right: 10, backgroundColor: 'rgba(15,23,42,0.6)', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4 },
+  imageHintText: { fontSize: 11, fontWeight: '600', color: '#fff' },
 
   // Timeline
-  timelineHeader: { marginBottom: 12, marginTop: 10 },
-  sectionHeader: { fontSize: 18, fontWeight: '700', color: '#0f172a' },
-  entryCard: { backgroundColor: '#fff', borderRadius: 12, padding: 12, marginBottom: 16, borderWidth: 1, borderColor: '#e2e8f0' },
-  entryHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
-  entryDate: { fontSize: 12, color: '#64748b', marginLeft: 6, fontWeight: '500' },
-  entryImage: { width: '100%', height: 150, borderRadius: 8, marginBottom: 8, backgroundColor: '#f1f5f9' },
+  timelineItem: { flexDirection: 'row' },
+  timelineRail: { width: 20, alignItems: 'center' },
+  timelineDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: '#06b6d4', marginTop: 16, borderWidth: 2, borderColor: '#cffafe' },
+  timelineLine: { flex: 1, width: 2, backgroundColor: '#e2e8f0', marginTop: 4 },
+  entryCard: { flex: 1, backgroundColor: '#fff', borderRadius: 14, padding: 12, marginBottom: 10, marginLeft: 8, borderWidth: 1, borderColor: '#eef2f6' },
+  entryDate: { fontSize: 12, color: '#64748b', fontWeight: '600', marginBottom: 6 },
+  entryImage: { width: '100%', height: 160, borderRadius: 10, marginBottom: 8, backgroundColor: '#f1f5f9' },
   entryNotes: { fontSize: 14, color: '#334155', lineHeight: 20 },
-  emptyState: { padding: 20, alignItems: 'center' },
-  emptyText: { color: '#94a3b8', fontStyle: 'italic' },
-
-  // FAB
-  fab: { position: 'absolute', bottom: 30, right: 20, width: 56, height: 56, borderRadius: 28, backgroundColor: '#06B6D4', alignItems: 'center', justifyContent: 'center', elevation: 6 },
+  emptyState: { alignItems: 'center', paddingVertical: 20 },
+  emptyText: { color: '#94a3b8', fontSize: 14 },
+  emptyLink: { color: '#0891b2', fontSize: 14, fontWeight: '700', marginTop: 6 },
 
   // MODAL STYLES
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
@@ -816,17 +885,6 @@ const styles = StyleSheet.create({
   saveBtn: { backgroundColor: '#06B6D4', paddingVertical: 16, borderRadius: 12, alignItems: 'center' },
   saveBtnText: { fontSize: 16, fontWeight: '700', color: '#fff' },
   disabledBtn: { backgroundColor: '#93c5fd', opacity: 0.8 },
-  requestLabBtn: {
-    backgroundColor: '#ecfeff',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
-  },
-  requestLabBtnText: {
-    fontSize: 12,
-    color: '#06b6d4',
-    fontWeight: '600',
-  },
   modalInput: {
     borderWidth: 1,
     borderColor: '#cbd5e1',
@@ -836,41 +894,6 @@ const styles = StyleSheet.create({
     fontSize: 15,
     backgroundColor: '#fff',
     marginBottom: 20,
-  },
-  labReportRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f1f5f9',
-  },
-  labReportTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#0f172a',
-    marginBottom: 2,
-  },
-  labReportDate: {
-    fontSize: 11,
-    color: '#94a3b8',
-    marginBottom: 4,
-  },
-  labReportDesc: {
-    fontSize: 12,
-    color: '#64748b',
-    fontStyle: 'italic',
-  },
-  viewReportBtn: {
-    backgroundColor: '#06b6d4',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 8,
-    marginLeft: 12,
-  },
-  viewReportBtnText: {
-    fontSize: 12,
-    color: '#fff',
-    fontWeight: '600',
   },
   noLabText: {
     fontSize: 13,

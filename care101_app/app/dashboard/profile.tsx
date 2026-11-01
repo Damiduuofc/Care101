@@ -12,6 +12,7 @@ import {
 import * as SecureStore from 'expo-secure-store';
 import * as ImagePicker from 'expo-image-picker';
 import BottomNavBar from '../../components/BottomNavBar';
+import { useAuth } from '../../context/auth';
 import { departments, departmentLabel } from '../lib/data';
 
 const API_URL = `${process.env.EXPO_PUBLIC_API_URL}/doctor`;
@@ -42,6 +43,7 @@ const clean = (v?: string | null) => (!v || v === 'N/A' ? '' : v);
 
 export default function ProfileScreen() {
   const router = useRouter();
+  const { signOut } = useAuth();
   const [loading, setLoading] = useState(true);
   const [isEditing, setIsEditing] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -224,12 +226,8 @@ export default function ProfileScreen() {
         text: "Log out",
         style: "destructive",
         onPress: async () => {
-          try {
-            await SecureStore.deleteItemAsync('token');
-            router.replace('/ads' as any);
-          } catch (error) {
-            router.replace('/ads' as any);
-          }
+          // Clears the stored session and the auth context, then returns to onboarding
+          await signOut();
         }
       }
     ]);

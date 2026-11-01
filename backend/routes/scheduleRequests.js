@@ -1,6 +1,7 @@
 import express from 'express';
 import ScheduleRequest from '../models/ScheduleRequest.js';
 import Doctor from '../models/Doctor.js';
+import Admin from '../models/Admin.js';
 import Notification from '../models/Notification.js';
 import { auth } from '../middleware/auth.js';
 import { findAutoAllocation, ROOM_DEPARTMENTS, getDoctorDept } from '../utils/autoAllocate.js';
@@ -566,6 +567,163 @@ router.post('/admin/create', auth, async (req, res) => {
     res.status(201).json({ msg: 'Schedule created and approved successfully', request: savedRequest });
   } catch (err) {
     console.error('Admin Create Schedule Error:', err);
+    res.status(500).json({ msg: 'Server error' });
+  }
+});
+
+// 8.1 RECEPTIONIST/ADMIN: Create approved daily schedules for every doctor
+router.post('/admin/create-daily', auth, async (req, res) => {
+  try {
+    if (!['receptionist', 'system_admin'].includes(req.user?.role)) {
+      return res.status(403).json({ msg: 'Not authorized. Only receptionists and system admins can perform this action.' });
+    }
+
+    const {
+      startDate,
+      endDate,
+      isUnlimited = true,
+      queueLimit = 20,
+      doctorIds,
+      includeDetails = false
+    } = req.body;
+
+    if (!endDate) {
+      return res.status(400).json({ msg: 'endDate is required.' });
+    }
+    if (!isUnlimited && Number(queueLimit) < 1) {
+      return res.status(400).json({ msg: 'queueLimit must be at least 1, or choose unlimited.' });
+    }
+
+    const start = startDate ? new Date(startDate) : new Date();
+    const end = new Date(endDate);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+      return res.status(400).json({ msg: 'startDate and endDate must be valid dates.' });
+    }
+    start.setHours(0, 0, 0, 0);
+    end.setHours(23, 59, 59, 999);
+    if (end < start) {
+      return res.status(400).json({ msg: 'endDate must be on or after startDate.' });
+    }
+
+    const doctorQuery = doctorIds?.length
+      ? { _id: { $in: doctorIds } }
+      : { isApproved: true };
+    const doctors = await Doctor.find(doctorQuery).sort({ _id: 1 });
+    const result = { created: [], skipped: [], doctors: doctors.length };
+    const rangeSchedules = await ScheduleRequest.find({
+      date: { $gte: start, $lte: end },
+      status: { $nin: ['rejected', 'cancelled'] }
+    }).populate('doctorId', 'specialization');
+    const nurses = (await Admin.find({ role: 'nurse' }).select('name'))
+      .map(nurse => nurse.name)
+      .filter(Boolean);
+    const newRequests = [];
+
+    const scheduleDateKey = schedule => {
+      const scheduleDate = new Date(schedule.date);
+      return `${scheduleDate.getFullYear()}-${String(scheduleDate.getMonth() + 1).padStart(2, '0')}-${String(scheduleDate.getDate()).padStart(2, '0')}`;
+    };
+
+    for (const doctor of doctors) {
+      for (const day = new Date(start); day <= end; day.setDate(day.getDate() + 1)) {
+        const date = new Date(day);
+        date.setHours(12, 0, 0, 0);
+        const dateKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+
+        const existing = rangeSchedules.find(schedule =>
+          schedule.doctorId?._id?.toString() === doctor._id.toString() && scheduleDateKey(schedule) === dateKey
+        );
+
+        if (existing) {
+          result.skipped.push({ doctorId: doctor._id, date: dateKey, reason: 'already scheduled' });
+          continue;
+        }
+
+        const department = getDoctorDept(doctor.specialization);
+        const departmentRooms = Object.keys(ROOM_DEPARTMENTS).filter(room => ROOM_DEPARTMENTS[room] === department);
+        const overlappingSchedules = hour => rangeSchedules.filter(schedule => {
+          if (schedule.status !== 'approved' || schedule.sessionEnded) return false;
+          if (scheduleDateKey(schedule) !== dateKey) return false;
+          const scheduleDepartment = schedule.allocatedRoom && ROOM_DEPARTMENTS[schedule.allocatedRoom]
+            ? ROOM_DEPARTMENTS[schedule.allocatedRoom]
+            : getDoctorDept(schedule.doctorId?.specialization);
+          if (scheduleDepartment !== department) return false;
+          const slotStart = new Date(day);
+          slotStart.setHours(hour, 0, 0, 0);
+          const slotEnd = new Date(day);
+          slotEnd.setHours(hour + 1, 0, 0, 0);
+          return new Date(schedule.startTime) < slotEnd && new Date(schedule.endTime) > slotStart;
+        });
+        const freeSlot = Array.from({ length: DAY_END_HOUR - DAY_START_HOUR }, (_, index) => DAY_START_HOUR + index)
+          .map(hour => ({ hour, schedules: overlappingSchedules(hour) }))
+          .find(slot => {
+            const usedRooms = new Set(slot.schedules.map(schedule => schedule.allocatedRoom).filter(Boolean));
+            const usedNurses = new Set(slot.schedules.map(schedule => schedule.allocatedNurse).filter(Boolean));
+            return usedRooms.size < departmentRooms.length && nurses.some(nurse => !usedNurses.has(nurse));
+          });
+        const selectedHour = freeSlot?.hour ?? DAY_START_HOUR;
+
+        const dayStart = new Date(day);
+        dayStart.setHours(selectedHour, 0, 0, 0);
+        const dayEnd = new Date(day);
+        dayEnd.setHours(selectedHour + 1, 0, 0, 0);
+        const usedRooms = new Set(freeSlot?.schedules.map(schedule => schedule.allocatedRoom).filter(Boolean) || []);
+        const usedNurses = new Set(freeSlot?.schedules.map(schedule => schedule.allocatedNurse).filter(Boolean) || []);
+        const allocatedRoom = [
+          ...departmentRooms,
+          ...Object.keys(ROOM_DEPARTMENTS).filter(room => ROOM_DEPARTMENTS[room] !== department)
+        ].find(room => !usedRooms.has(room));
+        const allocatedNurse = nurses.find(nurse => !usedNurses.has(nurse));
+
+        const request = new ScheduleRequest({
+          doctorId: doctor._id,
+          doctorName: doctor.name || doctor.fullName || 'Doctor',
+          date,
+          startTime: dayStart,
+          endTime: dayEnd,
+          isUnlimited,
+          queueLimit: isUnlimited ? null : Number(queueLimit),
+          status: 'approved'
+        });
+        request.allocatedRoom = allocatedRoom || '';
+        request.allocatedNurse = allocatedNurse || '';
+        newRequests.push(request);
+        rangeSchedules.push({
+          ...request.toObject(),
+          doctorId: { _id: doctor._id, specialization: doctor.specialization }
+        });
+      }
+    }
+
+    if (newRequests.length) {
+      const savedRequests = await ScheduleRequest.insertMany(newRequests);
+      result.created.push(...savedRequests);
+      await Notification.insertMany(savedRequests.map(savedRequest => ({
+        userId: savedRequest.doctorId,
+        type: 'schedule_request',
+        message: `A new schedule for ${new Date(savedRequest.date).toDateString()} was created and approved for you by the administration. Room: ${savedRequest.allocatedRoom || 'TBA'}`,
+        metadata: {
+          requestId: savedRequest._id,
+          status: 'approved',
+          allocatedRoom: savedRequest.allocatedRoom || 'TBA',
+          allocatedNurse: savedRequest.allocatedNurse || 'TBD'
+        }
+      })));
+    }
+
+    const response = {
+      msg: 'Daily schedule batch completed.',
+      createdCount: result.created.length,
+      skippedCount: result.skipped.length,
+      doctors: result.doctors
+    };
+    if (includeDetails) {
+      response.created = result.created;
+      response.skipped = result.skipped;
+    }
+    res.status(201).json(response);
+  } catch (err) {
+    console.error('Admin Create Daily Schedules Error:', err);
     res.status(500).json({ msg: 'Server error' });
   }
 });

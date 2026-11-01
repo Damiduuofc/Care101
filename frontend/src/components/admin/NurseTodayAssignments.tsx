@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { CalendarDays, Clock, DoorOpen, Stethoscope, Users } from "lucide-react";
+import { CalendarDays, Clock, DoorOpen, Sparkles, Stethoscope, Users } from "lucide-react";
 import { getAdminToken } from "@/lib/adminSession";
+import PatientSummaryModal from "./PatientSummaryModal";
 
 interface NurseTodayAssignmentsProps {
     nurseName?: string;
@@ -40,6 +41,7 @@ const formatTime = (value: string | Date) =>
 
 export default function NurseTodayAssignments({ nurseName, assignedDoctors, appointments, compact = false }: NurseTodayAssignmentsProps) {
     const [schedules, setSchedules] = useState<any[]>([]);
+    const [summaryFor, setSummaryFor] = useState<{ id: string; name?: string; queueNumber?: number } | null>(null);
 
     useEffect(() => {
         const fetchSchedules = async () => {
@@ -200,6 +202,16 @@ export default function NurseTodayAssignments({ nurseName, assignedDoctors, appo
                                                     </span>
                                                     {isServing && <span className="ml-auto text-[10px] font-bold text-emerald-700 uppercase shrink-0">Now</span>}
                                                     {!isServing && appt.arrived && !isDone && <span className="ml-auto text-[10px] font-bold text-cyan-700 uppercase shrink-0">Arrived</span>}
+                                                    {appt.patientId?._id && (
+                                                        <button
+                                                            onClick={() => setSummaryFor({ id: appt.patientId._id, name: appt.patientId.fullName, queueNumber: queueNo })}
+                                                            className={`${isServing || (appt.arrived && !isDone) ? "" : "ml-auto"} p-1 rounded-md text-cyan-600 hover:bg-cyan-50 hover:text-cyan-800 shrink-0`}
+                                                            title="AI patient summary"
+                                                            aria-label={`AI summary for ${appt.patientId.fullName || "patient"}`}
+                                                        >
+                                                            <Sparkles className="h-3.5 w-3.5" />
+                                                        </button>
+                                                    )}
                                                 </li>
                                             );
                                         })}
@@ -209,6 +221,14 @@ export default function NurseTodayAssignments({ nurseName, assignedDoctors, appo
                         </div>
                     ))}
                 </div>
+            )}
+            {summaryFor && (
+                <PatientSummaryModal
+                    patientId={summaryFor.id}
+                    patientName={summaryFor.name}
+                    queueNumber={summaryFor.queueNumber}
+                    onClose={() => setSummaryFor(null)}
+                />
             )}
         </section>
     );
