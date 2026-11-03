@@ -1,4 +1,8 @@
+import { installAppFont, appFonts } from '../utils/fonts';
+installAppFont();
+
 import { useEffect } from 'react';
+import { useFonts } from 'expo-font';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { AuthProvider, useAuth } from '../context/auth';
 import "../global.css";
@@ -15,6 +19,7 @@ LogBox.ignoreAllLogs();
 
 function RootLayoutNav() {
   const { user, isLoading } = useAuth();
+  const [fontsLoaded, fontError] = useFonts(appFonts);
   const segments = useSegments();
 
   const currentRoute: string = segments?.[0] || "index"; 
@@ -34,7 +39,8 @@ function RootLayoutNav() {
     }
   }, []);
 
-  if (isLoading) {
+  // Wait for the bundled font so text is never measured with the phone's system font.
+  if (isLoading || (!fontsLoaded && !fontError)) {
     return (
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
         <ActivityIndicator size="large" color="#06b6d4" />
