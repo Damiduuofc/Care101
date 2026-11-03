@@ -1,7 +1,7 @@
 import { installAppFont, appFonts } from '../utils/fonts';
 installAppFont();
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useFonts } from 'expo-font';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { AuthProvider, useAuth } from '../context/auth';
@@ -13,6 +13,11 @@ import * as NavigationBar from 'expo-navigation-bar';
 import { StripeProvider } from '@stripe/stripe-react-native';
 
 import { ChatProvider } from '@/context/ChatContext';
+import * as SplashScreen from 'expo-splash-screen';
+import VideoSplash from '@/components/VideoSplash';
+
+// Keep the native splash up until the splash video has its first frame ready.
+SplashScreen.preventAutoHideAsync().catch(() => {});
 
 // Suppress logs for a cleaner dev experience
 LogBox.ignoreAllLogs();
@@ -69,12 +74,19 @@ function RootLayoutNav() {
 }
 
 export default function RootLayout() {
+  const [showSplash, setShowSplash] = useState(true);
+
   return (
-    <StripeProvider publishableKey={process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY || ""} urlScheme="carelink">
-      <AuthProvider>
-        {/* ChatProvider is initialized inside RootLayoutNav above */}
-        <RootLayoutNav />
-      </AuthProvider>
-    </StripeProvider>
+    <View style={{ flex: 1 }}>
+      <StripeProvider publishableKey={process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY || ""} urlScheme="carelink">
+        <AuthProvider>
+          {/* ChatProvider is initialized inside RootLayoutNav above */}
+          <RootLayoutNav />
+        </AuthProvider>
+      </StripeProvider>
+
+      {/* The app loads underneath while the splash animation plays on top. */}
+      {showSplash && <VideoSplash onFinish={() => setShowSplash(false)} />}
+    </View>
   );
 }

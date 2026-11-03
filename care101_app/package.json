@@ -1,7 +1,7 @@
 {
   "name": "carelink_101",
   "main": "expo-router/entry",
-  "version": "2.2.2",
+  "version": "2.2.3",
   "scripts": {
     "start": "expo start",
     "reset-project": "node ./scripts/reset-project.js",
@@ -47,6 +47,7 @@
     "expo-status-bar": "~55.0.6",
     "expo-symbols": "~55.0.9",
     "expo-system-ui": "~55.0.18",
+    "expo-video": "~55.0.21",
     "expo-web-browser": "~55.0.16",
     "lucide-react-native": "^0.556.0",
     "moti": "^0.30.0",
