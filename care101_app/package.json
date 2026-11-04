@@ -7,9 +7,9 @@
     "reset-project": "node ./scripts/reset-project.js",
     "android": "expo run:android",
     "ios": "expo run:ios",
-    "ios:sim:17": "expo run:ios --device \"iPhone 17 Pro\"",
-    "ios:sim:18": "expo run:ios --device \"iPhone 18 Pro\"",
-    "ios:sim:both": "expo run:ios --device \"iPhone 17 Pro\" --no-bundler && expo run:ios --device \"iPhone 18 Pro\"",
+    "ios:sim:17": "scripts/ios-sim.sh \"iPhone 17 Pro\"",
+    "ios:sim:18": "scripts/ios-sim.sh \"iPhone 18 Pro\"",
+    "ios:sim:both": "scripts/ios-sim.sh \"iPhone 17 Pro\" \"iPhone 18 Pro\"",
     "build:ios:sim": "eas build --profile simulator --platform ios",
     "web": "expo start --web",
     "lint": "expo lint"
