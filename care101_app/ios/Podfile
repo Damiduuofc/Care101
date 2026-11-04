@@ -69,6 +69,11 @@ target 'carelinkdoctorapp' do
         if current.nil? || Gem::Version.new(current) < Gem::Version.new(min_ios)
           config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = min_ios
         end
+        # expo-router 55.0.x sets UIAction.subtitle (iOS 16+) without an availability
+        # check; Xcode 26+ treats that as an error. Its link-preview menus are iOS 16+ anyway.
+        if target.name == 'ExpoRouter'
+          config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '16.0'
+        end
       end
     end
   end
