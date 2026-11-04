@@ -6,7 +6,7 @@ import * as SplashScreen from 'expo-splash-screen';
 const splashVideo = require('../assets/videos/splash.mp4');
 
 // Safety net: never keep the user on the splash longer than this, even if the video stalls.
-const MAX_SPLASH_MS = 5000;
+const MAX_SPLASH_MS = 6500;
 
 type Props = { onFinish: () => void };
 
