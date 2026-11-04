@@ -1,0 +1,249 @@
+name: Build iOS Simulator App
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'care101_app/**'
+      - '.github/workflows/build-ios-simulator.yml'
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      api_url:
+        description: 'Override EXPO_PUBLIC_API_URL (Optional)'
+        required: false
+        default: ''
+        type: string
+      create_github_release:
+        description: 'Attach the simulator .app.zip to a GitHub Release'
+        required: false
+        default: false
+        type: boolean
+      release_tag:
+        description: 'Tag to use for the GitHub Release (for example, v2.2.4)'
+        required: false
+        default: ''
+        type: string
+
+concurrency:
+  group: ios-simulator-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  build-ios-simulator:
+    name: Build iOS Simulator App (with QueueWidget)
+    runs-on: macos-15
+    timeout-minutes: 60
+
+    env:
+      LANG: en_US.UTF-8
+      LC_ALL: en_US.UTF-8
+      SCHEME: carelinkdoctorapp
+      DERIVED_DATA: ${{ github.workspace }}/care101_app/ios/build/DerivedData
+
+    steps:
+
+      # ---------------------------------------------------------
+      # 1. Checkout
+      # ---------------------------------------------------------
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      # ---------------------------------------------------------
+      # 2. Xcode (WidgetKit containerBackground/AppIntents need the iOS 17+ SDK)
+      # ---------------------------------------------------------
+      - name: Select Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      # ---------------------------------------------------------
+      # 3. Node.js + npm cache
+      # ---------------------------------------------------------
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: care101_app/package-lock.json
+
+      # ---------------------------------------------------------
+      # 4. Configure environment (same secrets as the Android workflow)
+      # ---------------------------------------------------------
+      - name: Configure Environment
+        working-directory: care101_app
+        env:
+          DOT_ENV: ${{ secrets.DOT_ENV }}
+          API_URL_INPUT: ${{ inputs.api_url }}
+          API_URL_SECRET: ${{ secrets.EXPO_PUBLIC_API_URL }}
+          OPENROUTER_KEY: ${{ secrets.EXPO_PUBLIC_OPENROUTER_API_KEY }}
+          STRIPE_KEY: ${{ secrets.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY }}
+        run: |
+          set -e
+
+          if [ -n "$DOT_ENV" ]; then
+            echo "::notice::Using DOT_ENV from GitHub Secrets."
+            printf '%s\n' "$DOT_ENV" > .env
+            if [ -n "$API_URL_INPUT" ]; then
+              sed -i '' '/^EXPO_PUBLIC_API_URL=/d' .env
+              echo "EXPO_PUBLIC_API_URL=$API_URL_INPUT" >> .env
+            fi
+          else
+            echo "::notice::Creating .env from GitHub Secrets."
+
+            API_URL="$API_URL_INPUT"
+            if [ -z "$API_URL" ]; then
+              API_URL="$API_URL_SECRET"
+            fi
+
+            if [ -z "$API_URL" ]; then
+              echo "::error::EXPO_PUBLIC_API_URL is not configured."
+              exit 1
+            fi
+            if [ -z "$OPENROUTER_KEY" ]; then
+              echo "::error::EXPO_PUBLIC_OPENROUTER_API_KEY is not configured."
+              exit 1
+            fi
+            if [ -z "$STRIPE_KEY" ]; then
+              echo "::error::EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY is not configured."
+              exit 1
+            fi
+
+            cat > .env << EOF
+          EXPO_PUBLIC_API_URL=$API_URL
+          EXPO_PUBLIC_OPENROUTER_API_KEY=$OPENROUTER_KEY
+          EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY=$STRIPE_KEY
+          EOF
+          fi
+
+          echo "Environment configured successfully."
+
+      - name: Install Dependencies
+        working-directory: care101_app
+        run: npm ci --prefer-offline
+
+      # ---------------------------------------------------------
+      # 5. CocoaPods (cached)
+      # ---------------------------------------------------------
+      - name: Cache Pods
+        uses: actions/cache@v4
+        with:
+          path: |
+            care101_app/ios/Pods
+            ~/Library/Caches/CocoaPods
+          key: pods-${{ runner.os }}-${{ hashFiles('care101_app/ios/Podfile', 'care101_app/ios/Podfile.properties.json', 'care101_app/package-lock.json') }}
+          restore-keys: |
+            pods-${{ runner.os }}-
+
+      - name: Install Pods
+        working-directory: care101_app/ios
+        run: pod install
+
+      # ---------------------------------------------------------
+      # 6. Build (Release, JS bundle embedded, ad-hoc signed so the
+      #    App Group shared with the widget works in the simulator)
+      # ---------------------------------------------------------
+      - name: Build Simulator App
+        working-directory: care101_app/ios
+        run: |
+          set -eo pipefail
+
+          echo "========================================"
+          echo "Care101 iOS Simulator Build"
+          echo "Configuration: Release"
+          echo "Targets: carelinkdoctorapp + QueueWidget"
+          echo "========================================"
+
+          xcodebuild \
+            -workspace carelinkdoctorapp.xcworkspace \
+            -scheme "$SCHEME" \
+            -configuration Release \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath "$DERIVED_DATA" \
+            CODE_SIGN_IDENTITY="-" \
+            DEVELOPMENT_TEAM="" \
+            build > xcodebuild.log 2>&1 || {
+              echo "::error::xcodebuild failed. Errors:"
+              grep -E "error:" xcodebuild.log | head -40
+              tail -60 xcodebuild.log
+              exit 1
+            }
+
+          grep -E "\*\* BUILD" xcodebuild.log
+
+      # ---------------------------------------------------------
+      # 7. Package .app (must contain the widget extension)
+      # ---------------------------------------------------------
+      - name: Prepare App
+        run: |
+          set -e
+
+          APP_PATH="$DERIVED_DATA/Build/Products/Release-iphonesimulator/$SCHEME.app"
+          if [ ! -d "$APP_PATH" ]; then
+            echo "::error::No .app generated."
+            exit 1
+          fi
+          if [ ! -d "$APP_PATH/PlugIns/QueueWidget.appex" ]; then
+            echo "::error::QueueWidget.appex is missing from the app bundle."
+            exit 1
+          fi
+
+          mkdir -p build_output
+          TIMESTAMP=$(date +'%Y%m%d_%H%M%S')
+          FINAL_NAME="Care101_ios_simulator_${TIMESTAMP}.app.zip"
+          ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" "build_output/$FINAL_NAME"
+          FILE_SIZE=$(du -h "build_output/$FINAL_NAME" | cut -f1)
+
+          echo "APP_ZIP=build_output/$FINAL_NAME" >> "$GITHUB_ENV"
+          echo "APP_ZIP_NAME=$FINAL_NAME" >> "$GITHUB_ENV"
+
+          cat >> "$GITHUB_STEP_SUMMARY" << EOF
+          ## 🍎 Care101 iOS Simulator App
+
+          | Property | Value |
+          |---|---|
+          | Configuration | \`Release\` |
+          | Widget | \`QueueWidget.appex\` ✅ |
+          | Archive | \`$FINAL_NAME\` |
+          | Size | \`$FILE_SIZE\` |
+
+          **Install:** unzip, then \`xcrun simctl install booted carelinkdoctorapp.app\`
+          (or drag the .app onto a running simulator).
+          EOF
+
+      - name: Upload App Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.APP_ZIP_NAME }}
+          path: ${{ env.APP_ZIP }}
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30
+
+      - name: Upload Build Log on Failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: xcodebuild-log
+          path: care101_app/ios/xcodebuild.log
+          if-no-files-found: ignore
+          retention-days: 7
+
+      # ---------------------------------------------------------
+      # 8. Optional GitHub Release (same tag as the Android APK)
+      # ---------------------------------------------------------
+      - name: Attach to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/') || inputs.create_github_release == true
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ env.APP_ZIP }}
+          tag_name: ${{ inputs.release_tag || github.ref_name || format('build-{0}', github.run_number) }}
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

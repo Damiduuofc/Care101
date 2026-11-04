@@ -2,6 +2,8 @@ import { NativeModules, Platform, AppState } from 'react-native';
 import { io, Socket } from 'socket.io-client';
 
 const { QueueWidgetModule } = NativeModules;
+// Android: AppWidget + foreground service. iOS: WidgetKit extension (ios/QueueWidget).
+const WIDGET_SUPPORTED = Platform.OS === 'android' || Platform.OS === 'ios';
 
 export interface WidgetData {
   state: 'queue' | 'upcoming' | 'completed' | 'empty';
@@ -52,7 +54,7 @@ export const WidgetService = {
    * Save auth and server details so Android native widget can self-refresh via background network calls.
    */
   setAuthContext: async (token: string, apiUrl: string, patientId: string) => {
-    if (Platform.OS !== 'android' || !QueueWidgetModule) return;
+    if (!WIDGET_SUPPORTED || !QueueWidgetModule) return;
     try {
       await QueueWidgetModule.setAuthContext(token, apiUrl, patientId);
     } catch (error) {
@@ -64,7 +66,7 @@ export const WidgetService = {
    * Trigger a native heads-up notification on the Android phone notification bar.
    */
   showLocalNotification: async (id: string, title: string, message: string) => {
-    if (Platform.OS !== 'android' || !QueueWidgetModule || !message) return;
+    if (!WIDGET_SUPPORTED || !QueueWidgetModule || !message) return;
     try {
       await QueueWidgetModule.showLocalNotification(
         id || `${Date.now()}`,
@@ -80,7 +82,7 @@ export const WidgetService = {
    * Directly push state data to the Android home screen widget.
    */
   updateWidgetData: async (data: WidgetData) => {
-    if (Platform.OS !== 'android' || !QueueWidgetModule) return;
+    if (!WIDGET_SUPPORTED || !QueueWidgetModule) return;
     try {
       const normalizedData: WidgetData = {
         ...data,
@@ -102,7 +104,7 @@ export const WidgetService = {
    * the Android Home Screen Widget and Phone Notification Bar updated in real-time.
    */
   startRealtimeSocket: (token: string, patientId: string) => {
-    if (Platform.OS !== 'android' || !token || !patientId) return;
+    if (!WIDGET_SUPPORTED || !token || !patientId) return;
 
     const apiUrl = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:5002';
     WidgetService.setAuthContext(token, apiUrl, patientId);
@@ -361,7 +363,7 @@ export const WidgetService = {
    * Fetch latest widget data from backend and update the widget.
    */
   syncWithServer: async (token: string, patientId: string) => {
-    if (Platform.OS !== 'android' || !token || !patientId) return;
+    if (!WIDGET_SUPPORTED || !token || !patientId) return;
 
     const apiUrl = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:5002';
     const generation = sessionGeneration;
@@ -432,7 +434,7 @@ export const WidgetService = {
   clearWidget: async () => {
     sessionGeneration++;
     WidgetService.stopRealtimeSocket();
-    if (Platform.OS !== 'android' || !QueueWidgetModule) return;
+    if (!WIDGET_SUPPORTED || !QueueWidgetModule) return;
     try {
       await QueueWidgetModule.clearWidgetData();
     } catch (error) {
