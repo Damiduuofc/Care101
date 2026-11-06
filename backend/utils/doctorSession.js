@@ -5,6 +5,12 @@
 
 const isSameDay = (a, b) => a.toDateString() === b.toDateString();
 
+// True when an appointment date falls on today (hospital time zone). A doctor's live status
+// (arrival, delay, current token, running session) belongs only to today's bookings, never to
+// a booking for tomorrow or later with the same doctor.
+export const isTodayDate = (date, now = new Date()) =>
+  Boolean(date && isSameDay(new Date(date), now));
+
 // True when the doctor was checked in today (hospital time zone, see config/timezone.js)
 export const isArrivedToday = (doc, now = new Date()) =>
   Boolean(doc?.isArrived && doc.lastArrivalDate && isSameDay(new Date(doc.lastArrivalDate), now));

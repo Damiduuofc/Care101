@@ -135,6 +135,7 @@ export const buildWidgetStatus = async (patientId) => {
         currentToken: ongoingToken,
         peopleAhead,
         sessionStarted: true,
+        isToday: true,
         isArrived: true,
         isDelayed: channelingStatus.toLowerCase() !== "on time",
         delayMessage: channelingStatus.toLowerCase() !== "on time" ? `Delayed: ${channelingStatus}` : "Session in progress",
@@ -157,6 +158,7 @@ export const buildWidgetStatus = async (patientId) => {
       peopleAhead,
       awaitingPayment,
       sessionStarted: false,
+      isToday: true,
       formattedDate: "Today",
       channelingTime: scheduledTime,
       isArrived,
@@ -181,9 +183,11 @@ export const buildWidgetStatus = async (patientId) => {
     const rawFutureDocName = (doc && (doc.fullName || doc.name)) ? (doc.fullName || doc.name) : futureAppt.doctorName;
     const doctorName = formatDoctorName(rawFutureDocName);
     const room = (doc && doc.allocatedRoom) ? doc.allocatedRoom : "Room TBA";
+    // The doctor's arrival/delay status is for today's patients only, so a later booking
+    // always shows "On Time" until its own day comes
     const isArrived = false;
-    const channelingStatus = (doc && doc.channelingStatus) ? doc.channelingStatus : "On Time";
-    const isDelayed = channelingStatus.toLowerCase() !== "on time";
+    const channelingStatus = "On Time";
+    const isDelayed = false;
 
     return ({
       state: "upcoming",
@@ -191,6 +195,7 @@ export const buildWidgetStatus = async (patientId) => {
       hospitalName,
       doctorName,
       room,
+      isToday: false,
       myToken: futureAppt.queueNumber || "--",
       awaitingPayment: futureAppt.paymentStatus !== "paid",
       formattedDate: new Date(futureAppt.date).toLocaleDateString("en-US", { month: "short", day: "numeric", weekday: "short" }),

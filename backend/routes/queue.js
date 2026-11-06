@@ -8,7 +8,7 @@ import ConsultationHistory from "../models/ConsultationHistory.js";
 import Notification from "../models/Notification.js";
 import { calculatePrediction, updateDoctorAverageDuration } from "../services/predictionService.js";
 import { countPaidAhead, firstPaidToken, dayRange } from "../utils/queueToken.js";
-import { isArrivedToday, isSessionLive } from "../utils/doctorSession.js";
+import { isArrivedToday, isSessionLive, isTodayDate } from "../utils/doctorSession.js";
 import { emitAppointmentUpdated, emitNotification, emitDoctorQueueChanged, emitDoctorStatus } from "../utils/realtime.js";
 
 const router = express.Router();
@@ -280,7 +280,9 @@ router.get("/patient/:patientId", protect, async (req, res) => {
     }
 
     const doctor = appt.doctorId ? await Doctor.findById(appt.doctorId) : null;
-    const currentServing = doctor?.currentQueueNumber || 0;
+    // The doctor's live status only applies to today's booking, not one for a later day
+    const isToday = isTodayDate(appt.date);
+    const currentServing = isToday ? doctor?.currentQueueNumber || 0 : 0;
     // Unpaid patients keep their token but are not in the live queue until they pay
     const awaitingPayment = appt.paymentStatus !== "paid";
     const myQueueNumber = appt.queueNumber || null;
@@ -295,8 +297,9 @@ router.get("/patient/:patientId", protect, async (req, res) => {
       paymentStatus: appt.paymentStatus || "pending",
       awaitingPayment,
       appointmentDate: appt.date,
-      isArrived: isArrivedToday(doctor),
-      sessionStarted: isSessionLive(doctor),
+      isArrived: isToday && isArrivedToday(doctor),
+      sessionStarted: isToday && isSessionLive(doctor),
+      isToday,
       queueNumber: myQueueNumber,
       currentServingNumber: currentServing,
       currentToken: currentServing,

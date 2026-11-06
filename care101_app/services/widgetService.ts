@@ -27,6 +27,8 @@ export interface WidgetData {
   nextRoom?: string;
   nextToken?: number | string;
   nextDate?: string;
+  // Set by the server: true only when the booking shown is for today
+  isToday?: boolean;
 }
 
 let widgetSocket: Socket | null = null;
@@ -40,6 +42,18 @@ let sessionGeneration = 0;
 let syncRequestSeq = 0;
 let lastAppliedSyncSeq = 0;
 const SYNC_TIMEOUT_MS = 8000;
+
+// Live doctor events (arrival, delay, queue moves) are broadcast to every connected app.
+// They only concern the patient when the widget is showing today's booking with that doctor;
+// a booking for tomorrow with the same doctor must not react to today's session.
+const isLiveForDoctor = (doctorId: any): boolean =>
+  Boolean(
+    lastWidgetPayload &&
+      lastWidgetPayload.isToday === true &&
+      lastWidgetPayload.doctorId &&
+      doctorId &&
+      String(lastWidgetPayload.doctorId) === String(doctorId)
+  );
 
 const formatDoctorName = (raw?: string | null): string => {
   const trimmed = (raw || '').trim();
@@ -159,9 +173,7 @@ export const WidgetService = {
     // 1. Instant optimistic update + server sync on doctor status change (Arrival / Delay / Session Start)
     widgetSocket.on('doctorStatusUpdated', async (updatedDoc: any) => {
       if (lastWidgetPayload && updatedDoc) {
-        const isOurDoc =
-          !lastWidgetPayload.doctorId ||
-          String(lastWidgetPayload.doctorId) === String(updatedDoc._id);
+        const isOurDoc = isLiveForDoctor(updatedDoc._id);
 
         if (isOurDoc) {
           const currentServing = updatedDoc.currentQueueNumber ?? lastWidgetPayload.ongoingToken ?? 0;
@@ -216,9 +228,7 @@ export const WidgetService = {
     // 2. Instant Doctor Arrival Alert -> Update Widget + Pop Phone Notification Bar
     widgetSocket.on('doctorArrivalAlert', async (payload: any) => {
       if (payload && lastWidgetPayload) {
-        const isOurDoc =
-          !lastWidgetPayload.doctorId ||
-          String(lastWidgetPayload.doctorId) === String(payload.doctorId);
+        const isOurDoc = isLiveForDoctor(payload.doctorId);
 
         if (isOurDoc) {
           const room = payload.allocatedRoom || lastWidgetPayload.room || 'Room TBA';
@@ -251,10 +261,7 @@ export const WidgetService = {
     // 3. Instant Queue Token Update
     widgetSocket.on('queueUpdated', async (payload: any) => {
       if (lastWidgetPayload && payload && payload.currentToken !== undefined) {
-        const isOurDoc =
-          !lastWidgetPayload.doctorId ||
-          !payload.doctorId ||
-          String(lastWidgetPayload.doctorId) === String(payload.doctorId);
+        const isOurDoc = isLiveForDoctor(payload.doctorId);
 
         if (isOurDoc && !lastWidgetPayload.awaitingPayment) {
           const myTokenNum = Number(lastWidgetPayload.myToken) || 0;
@@ -282,9 +289,7 @@ export const WidgetService = {
     // 4. Instant Doctor Delay Alert -> Update Widget + Pop Phone Notification Bar
     widgetSocket.on('doctorDelayAlert', async (payload: any) => {
       if (payload && lastWidgetPayload) {
-        const isOurDoc =
-          !lastWidgetPayload.doctorId ||
-          String(lastWidgetPayload.doctorId) === String(payload.doctorId);
+        const isOurDoc = isLiveForDoctor(payload.doctorId);
 
         if (isOurDoc) {
           const status = String(payload.channelingStatus || payload.status || 'Delayed');

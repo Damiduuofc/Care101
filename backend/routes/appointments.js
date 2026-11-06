@@ -6,7 +6,7 @@ import Bill from "../models/Bill.js";
 import Notification from "../models/Notification.js";
 import HospitalFinance from "../models/Finance.js";
 import Doctor from "../models/Doctor.js";
-import { isArrivedToday, isSessionLive } from "../utils/doctorSession.js";
+import { isArrivedToday, isSessionLive, isTodayDate } from "../utils/doctorSession.js";
 import ScheduleRequest from "../models/ScheduleRequest.js";
 import { protect as auth, protect, authorize } from "../middleware/authRole.js";
 import Patient from "../models/Patient.js";
@@ -154,15 +154,17 @@ router.get("/upcoming", auth, async (req, res) => {
     }
 
     const doc = upcoming.doctorId && typeof upcoming.doctorId === "object" ? upcoming.doctorId : null;
+    // The doctor's live status (arrival, delay, current token) only applies to a booking for today
+    const isToday = isTodayDate(upcoming.date);
     // Unpaid patients keep their token but are not in the live queue until they pay
     const awaitingPayment = upcoming.paymentStatus !== "paid";
     const myToken = upcoming.queueNumber || null;
-    const currentToken = doc && typeof doc.currentQueueNumber === "number" ? doc.currentQueueNumber : 0;
+    const currentToken = isToday && doc && typeof doc.currentQueueNumber === "number" ? doc.currentQueueNumber : 0;
     const peopleAhead = awaitingPayment ? null : await countPaidAhead(upcoming, currentToken);
     const allocatedRoom = (doc && doc.allocatedRoom) ? doc.allocatedRoom : "Room TBA";
-    const sessionStarted = isSessionLive(doc);
-    const isArrived = isArrivedToday(doc);
-    const channelingStatus = (doc && doc.channelingStatus) ? doc.channelingStatus : "On Time";
+    const sessionStarted = isToday && isSessionLive(doc);
+    const isArrived = isToday && isArrivedToday(doc);
+    const channelingStatus = isToday && doc && doc.channelingStatus ? doc.channelingStatus : "On Time";
 
     const appointmentObj = {
       ...upcoming.toObject(),
@@ -177,7 +179,8 @@ router.get("/upcoming", auth, async (req, res) => {
       allocatedRoom,
       sessionStarted,
       isArrived,
-      channelingStatus
+      channelingStatus,
+      isToday
     };
 
     res.json({ appointment: appointmentObj });

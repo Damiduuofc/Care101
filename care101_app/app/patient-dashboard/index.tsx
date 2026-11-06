@@ -59,6 +59,16 @@ export default function PatientDashboardScreen() {
     const [notifications, setNotifications] = useState<any[]>([]); 
     const [unreadCount, setUnreadCount] = useState(0);
 
+    // Live doctor socket events belong to today's session only: a booking for a later day
+    // with the same doctor must not pick up today's queue, arrival or delay updates.
+    const isLiveForAppt = (appt: any, doctorId: any): boolean => {
+        if (!appt || !doctorId) return false;
+        const apptDocId = appt.doctorId?._id || appt.doctorId;
+        if (!apptDocId || String(apptDocId) !== String(doctorId)) return false;
+        if (typeof appt.isToday === "boolean") return appt.isToday;
+        return Boolean(appt.date) && new Date(appt.date).toDateString() === new Date().toDateString();
+    };
+
     const upcomingAppointmentRef = React.useRef(upcomingAppointment);
     const socketRef = React.useRef<any>(null);
     useEffect(() => {
@@ -125,8 +135,7 @@ export default function PatientDashboardScreen() {
                 }
             }
             if (currentAppt && updatedDoc) {
-                const apptDocId = currentAppt.doctorId?._id || currentAppt.doctorId;
-                if (!apptDocId || String(apptDocId) === String(updatedDoc._id)) {
+                if (isLiveForAppt(currentAppt, updatedDoc._id)) {
                     const myToken = Number(currentAppt.queueNumber) || 1;
                     const currentToken = Number(updatedDoc.currentQueueNumber ?? 0);
                     const peopleAhead = Math.max(0, myToken - currentToken);
@@ -172,8 +181,7 @@ export default function PatientDashboardScreen() {
                 }
             }
             if (currentAppt && payload) {
-                const apptDocId = currentAppt.doctorId?._id || currentAppt.doctorId;
-                if (!apptDocId || !payload.doctorId || String(apptDocId) === String(payload.doctorId)) {
+                if (isLiveForAppt(currentAppt, payload.doctorId)) {
                     const myToken = Number(currentAppt.queueNumber) || 1;
                     const currentToken = Number(payload.currentToken ?? payload.currentServingNumber ?? 0);
                     const peopleAhead = Math.max(0, myToken - currentToken);
