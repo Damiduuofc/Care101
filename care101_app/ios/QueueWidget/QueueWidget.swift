@@ -1,6 +1,7 @@
 import WidgetKit
 import SwiftUI
 import AppIntents
+import ActivityKit
 
 // MARK: - Shared storage (same keys as QueueWidgetModule in the app)
 
@@ -155,8 +156,11 @@ struct QueueProvider: TimelineProvider {
 
 // MARK: - Refresh button (iOS 17+)
 
+// iOS runs this inside the app (a LiveActivityIntent), where a same-named copy in
+// QueueWidgetModule.swift also updates the Live Activity and posts alerts. This copy is
+// only the fallback if the system runs it in the extension.
 @available(iOS 17.0, *)
-struct RefreshQueueIntent: AppIntent {
+struct RefreshQueueIntent: LiveActivityIntent {
   static var title: LocalizedStringResource = "Refresh Queue"
   func perform() async throws -> some IntentResult {
     await WidgetStore.refreshFromServer()
@@ -447,7 +451,185 @@ struct QueueWidget: Widget {
   }
 }
 
+// MARK: - Live Activity (Lock Screen + Dynamic Island)
+
+/// Keep identical to the copy in carelinkdoctorapp/QueueWidgetModule.swift (and to
+/// liveActivityContentState in backend/utils/iosPush.js).
+@available(iOS 16.1, *)
+struct QueueActivityAttributes: ActivityAttributes {
+  public struct ContentState: Codable, Hashable {
+    var state: String
+    var myToken: String
+    var ongoingToken: String
+    var peopleAhead: Int
+    var room: String
+    var channelingStatus: String
+    var channelingTime: String
+    var isArrived: Bool
+    var isDelayed: Bool
+    var awaitingPayment: Bool
+  }
+
+  var appointmentId: String
+  var doctorName: String
+  var hospitalName: String
+}
+
+@available(iOS 16.1, *)
+struct LiveQueueInfo {
+  let s: QueueActivityAttributes.ContentState
+
+  var myToken: String { s.awaitingPayment ? "--" : "#" + QueueData.formatToken(s.myToken) }
+  var ongoing: String { "#" + QueueData.formatToken(s.ongoingToken) }
+  var inQueue: Bool { s.state == "queue" }
+  var done: Bool { s.state == "completed" || s.state == "empty" }
+  var isYourTurn: Bool { inQueue && s.peopleAhead <= 0 }
+  var delayText: String {
+    let st = s.channelingStatus
+    return st.isEmpty || st.lowercased() == "on time" ? "Session start is delayed" : st
+  }
+
+  var badge: (text: String, fg: Color, bg: Color) {
+    if done { return ("✓ DONE", .greenText, .greenBg) }
+    if s.awaitingPayment { return ("● UNPAID", .amberText, .amberBg) }
+    if isYourTurn { return ("● YOUR TURN", .white, .greenText) }
+    if inQueue { return s.isDelayed ? ("● DELAYED", .amberText, .amberBg) : ("● LIVE", .white, .liveRed) }
+    if s.isArrived { return ("● ARRIVED", .greenText, .greenBg) }
+    if s.isDelayed { return ("● DELAYED", .amberText, .amberBg) }
+    return ("● ON TIME", .cyanText, .cyanBg)
+  }
+
+  var headline: String {
+    if done { return "Consultation finished" }
+    if s.awaitingPayment { return "Pay the fee to get your token" }
+    if isYourTurn { return "It's your turn! Go to \(s.room)" }
+    if inQueue { return s.peopleAhead == 1 ? "You're next • 1 patient ahead" : "\(s.peopleAhead) patients ahead of you" }
+    if s.isArrived { return "Doctor arrived • \(s.room)" }
+    if s.isDelayed { return "Delayed: \(delayText)" }
+    let t = s.channelingTime
+    return t.isEmpty || t.lowercased().hasPrefix("scheduled") ? "Waiting for the doctor" : "Starts around \(t)"
+  }
+
+  var headlineColor: Color {
+    if isYourTurn || (s.isArrived && !inQueue) { return .greenText }
+    if s.awaitingPayment || s.isDelayed { return .amberText }
+    return .brandDark
+  }
+
+  /// How far the queue has moved towards this patient's token (0...1)
+  var progress: Double? {
+    guard inQueue, let mine = Double(s.myToken), mine > 0, let now = Double(s.ongoingToken) else { return nil }
+    return min(1, max(0, now / mine))
+  }
+}
+
+@available(iOS 16.1, *)
+struct LiveActivityLockScreenView: View {
+  let context: ActivityViewContext<QueueActivityAttributes>
+
+  var body: some View {
+    let info = LiveQueueInfo(s: context.state)
+    let badge = info.badge
+    VStack(alignment: .leading, spacing: 8) {
+      HStack(alignment: .top) {
+        VStack(alignment: .leading, spacing: 1) {
+          Text(context.attributes.hospitalName.uppercased())
+            .font(.system(size: 10, weight: .heavy)).foregroundColor(.brandDark).lineLimit(1)
+          Text(QueueData.formatDoctor(context.attributes.doctorName))
+            .font(.system(size: 15, weight: .bold)).foregroundColor(.ink).lineLimit(1)
+          Text(context.state.room).font(.system(size: 11, weight: .medium)).foregroundColor(.muted).lineLimit(1)
+        }
+        Spacer(minLength: 6)
+        Badge(text: badge.text, fg: badge.fg, bg: badge.bg)
+        RefreshButton()
+      }
+      if !info.done {
+        HStack(spacing: 8) {
+          TokenTile(label: "YOUR TOKEN", value: info.myToken, tint: .brand)
+          TokenTile(label: "NOW SERVING", value: info.inQueue ? info.ongoing : "--", tint: .liveRed)
+        }
+        if let p = info.progress {
+          ProgressView(value: p).tint(info.isYourTurn ? .greenText : .brand)
+        }
+      }
+      Text(info.headline)
+        .font(.system(size: 12, weight: .semibold)).foregroundColor(info.headlineColor).lineLimit(1)
+    }
+    .padding(14)
+  }
+}
+
+@available(iOS 16.1, *)
+struct QueueLiveActivity: Widget {
+  var body: some WidgetConfiguration {
+    ActivityConfiguration(for: QueueActivityAttributes.self) { context in
+      LiveActivityLockScreenView(context: context)
+        .activityBackgroundTint(Color.white)
+        .activitySystemActionForegroundColor(Color.brandDark)
+        .widgetURL(URL(string: "carelink://patient-dashboard"))
+    } dynamicIsland: { context in
+      let info = LiveQueueInfo(s: context.state)
+      return DynamicIsland {
+        DynamicIslandExpandedRegion(.leading) {
+          VStack(alignment: .leading, spacing: 0) {
+            Text("YOUR TOKEN").font(.system(size: 9, weight: .bold)).foregroundColor(.gray)
+            Text(info.myToken).font(.system(size: 26, weight: .black, design: .rounded)).foregroundColor(.cyan)
+          }
+          .padding(.leading, 4)
+        }
+        DynamicIslandExpandedRegion(.trailing) {
+          VStack(alignment: .trailing, spacing: 0) {
+            Text("NOW").font(.system(size: 9, weight: .bold)).foregroundColor(.gray)
+            Text(info.inQueue ? info.ongoing : "--")
+              .font(.system(size: 26, weight: .black, design: .rounded)).foregroundColor(.red)
+          }
+          .padding(.trailing, 4)
+        }
+        DynamicIslandExpandedRegion(.center) {
+          Text(QueueData.formatDoctor(context.attributes.doctorName))
+            .font(.system(size: 13, weight: .bold)).lineLimit(1)
+        }
+        DynamicIslandExpandedRegion(.bottom) {
+          VStack(spacing: 6) {
+            if let p = info.progress { ProgressView(value: p).tint(info.isYourTurn ? .green : .cyan) }
+            Text(info.headline).font(.system(size: 12, weight: .semibold))
+              .foregroundColor(info.isYourTurn ? .green : (context.state.isDelayed ? .orange : .white))
+              .lineLimit(1)
+          }
+        }
+      } compactLeading: {
+        Text(info.myToken).font(.system(size: 14, weight: .heavy, design: .rounded)).foregroundColor(.cyan)
+      } compactTrailing: {
+        if info.isYourTurn {
+          Image(systemName: "figure.walk").foregroundColor(.green)
+        } else if info.inQueue {
+          Text("\(context.state.peopleAhead) ahead").font(.system(size: 12, weight: .semibold)).foregroundColor(.white)
+        } else if context.state.isDelayed {
+          Image(systemName: "clock.badge.exclamationmark").foregroundColor(.orange)
+        } else {
+          Image(systemName: context.state.isArrived ? "checkmark.circle.fill" : "clock")
+            .foregroundColor(context.state.isArrived ? .green : .cyan)
+        }
+      } minimal: {
+        if info.inQueue && !info.isYourTurn {
+          Text("\(context.state.peopleAhead)").font(.system(size: 13, weight: .heavy)).foregroundColor(.cyan)
+        } else {
+          Image(systemName: info.isYourTurn ? "figure.walk" : "cross.case.fill")
+            .foregroundColor(info.isYourTurn ? .green : .cyan)
+        }
+      }
+      .widgetURL(URL(string: "carelink://patient-dashboard"))
+      .keylineTint(.cyan)
+    }
+  }
+}
+
 @main
 struct QueueWidgetBundle: WidgetBundle {
-  var body: some Widget { QueueWidget() }
+  var body: some Widget {
+    QueueWidget()
+    if #available(iOS 16.1, *) {
+      QueueLiveActivity()
+    }
+  }
 }

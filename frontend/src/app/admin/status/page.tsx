@@ -1,12 +1,13 @@
 "use client";
 
+import { notify } from "@/lib/notify";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Activity, Save, ArrowLeft, Loader2 } from "lucide-react";
-import { getAdminToken } from "@/lib/adminSession";
+import { getAdminToken, getAdminUser } from "@/lib/adminSession";
 
 export default function ManageStatus() {
   const router = useRouter();
@@ -17,6 +18,11 @@ export default function ManageStatus() {
     emergencyUnit: "Normal",
     pharmacy: "Open"
   });
+
+  // Only system admins can change hospital status (the API rejects everyone else)
+  useEffect(() => {
+    if (getAdminUser()?.role !== "system_admin") router.replace("/admin/dashboard");
+  }, [router]);
 
   // 1. Load Current Status on Page Load (Safe Version)
   useEffect(() => {
@@ -80,20 +86,20 @@ export default function ManageStatus() {
       });
 
       if (res.ok) {
-        alert("✅ Hospital Status Saved to Database!");
+        notify("✅ Hospital Status Saved to Database!");
         router.push("/admin/dashboard");
       } else {
         const contentType = res.headers.get("content-type");
         if (contentType && contentType.includes("application/json")) {
           const errorData = await res.json();
-          alert(`Failed to update: ${errorData.msg || 'Unknown error'}`);
+          notify(`Failed to update: ${errorData.msg || 'Unknown error'}`);
         } else {
-          alert("Failed to update status. Please try again.");
+          notify("Failed to update status. Please try again.");
         }
       }
     } catch (err) {
       console.error(err);
-      alert("Server Connection Error");
+      notify("Server Connection Error");
     } finally {
       setLoading(false);
     }

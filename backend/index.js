@@ -1,6 +1,7 @@
 import "dotenv/config";
 import "./config/timezone.js";
 import express from "express";
+import compression from "compression";
 import mongoose from "mongoose";
 import cors from "cors";
 import path from "path";
@@ -29,11 +30,12 @@ import scheduleRequestRoutes from "./routes/scheduleRequests.js"; // <--- NEW: S
 import labRequestRoutes from "./routes/labRequests.js"; // <--- NEW: Lab Requests
 import labTestRoutes from "./routes/labTests.js";
 import queueRoutes from "./routes/queue.js";
+import pushRoutes from "./routes/push.js";
 import Doctor from "./models/Doctor.js";
 import ScheduleRequest from "./models/ScheduleRequest.js";
 import LabTest from "./models/LabTest.js";
 import labTests from "./config/labTests.js";
-import { joinDefaultRooms } from "./utils/realtime.js";
+import { joinDefaultRooms, dashboardSignalMiddleware } from "./utils/realtime.js";
 import { releaseExpiredHolds } from "./utils/bookingService.js";
 
 const app = express();
@@ -122,6 +124,9 @@ app.use((req, res, next) => {
   next();
 });
 
+// Keep open dashboards live: any successful write tells them to refetch
+app.use(dashboardSignalMiddleware(io));
+
 io.on("connection", (socket) => {
   joinDefaultRooms(socket);
   console.log(`🔌 Authenticated client connected: ${socket.id} (User: ${socket.user?.id || socket.user?.name || "unknown"}, Role: ${socket.user?.role || "patient"})`);
@@ -162,6 +167,8 @@ app.use(cors({
 
 
 // Increase payload size (images, files)
+// Gzip JSON responses (large lists shrink ~10x over ngrok / mobile networks)
+app.use(compression());
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
@@ -195,6 +202,7 @@ app.use("/api/schedule-requests", scheduleRequestRoutes); // <--- NEW: Schedule 
 app.use("/api/lab-requests", labRequestRoutes); // <--- NEW: Lab Requests
 app.use("/api/lab-tests", labTestRoutes);
 app.use("/api/queue", queueRoutes);
+app.use("/api/push", pushRoutes);
 /* =========================
    SERVER START
  ========================= */
@@ -204,7 +212,10 @@ const PORT = process.env.PORT || 5000;
 const startServer = async () => {
   try {
     console.log("Connecting to MongoDB...");
-    await mongoose.connect(process.env.MONGO_URI);
+    await mongoose.connect(process.env.MONGO_URI, {
+      maxPoolSize: 20, // enough sockets for the parallel queries each request now makes
+      minPoolSize: 5, // keep warm connections so the first query isn't a fresh TLS handshake to Atlas
+    });
     console.log("✅ MongoDB Connected");
 
     const seedResult = await LabTest.bulkWrite(

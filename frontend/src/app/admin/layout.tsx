@@ -1,9 +1,39 @@
 "use client";
 
+import { PageSkeleton } from "@/components/ui/skeleton-presets";
 import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { clearAdminSession, getAdminLandingPath, getAdminToken, getAdminUser } from "@/lib/adminSession";
 import { SidebarProvider } from "@/components/admin/SidebarContext";
+import ConfirmHost from "@/components/admin/ConfirmHost";
+import { notify } from "@/lib/notify";
+
+// When the staff login expires mid-shift, send them back to the login page with a message
+// instead of leaving every page silently empty.
+let fetchPatched = false;
+let expiredHandled = false;
+function handleExpiredSession() {
+  if (expiredHandled || window.location.pathname === "/admin/login") return;
+  expiredHandled = true;
+  clearAdminSession();
+  notify("Your session has expired. Please log in again.", "info");
+  window.location.href = "/admin/login";
+}
+function watchForExpiredSession() {
+  if (fetchPatched || typeof window === "undefined") return;
+  fetchPatched = true;
+  const apiBase = process.env.NEXT_PUBLIC_API_URL || "";
+  const originalFetch = window.fetch.bind(window);
+  window.fetch = async (input, init) => {
+    const response = await originalFetch(input, init);
+    const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+    // 401 from our API = token missing/expired (wrong passwords return 400, so login is unaffected)
+    if (response.status === 401 && apiBase && url.startsWith(apiBase) && !url.includes("/login")) {
+      handleExpiredSession();
+    }
+    return response;
+  };
+}
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -14,6 +44,17 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   // Login and gatekeeper routes render immediately without a blocking layout spinner
   const [isAuthorized, setIsAuthorized] = useState(isLoginRoute || isGatekeeperRoute);
+
+  // Catch expiry both from failed API calls and from the token's own expiry time
+  useEffect(() => {
+    if (isLoginRoute || isGatekeeperRoute) return;
+    watchForExpiredSession();
+    expiredHandled = false;
+    const timer = setInterval(() => {
+      if (!getAdminToken()) handleExpiredSession();
+    }, 30 * 1000);
+    return () => clearInterval(timer);
+  }, [isLoginRoute, isGatekeeperRoute]);
 
   useEffect(() => {
     const token = getAdminToken();
@@ -57,11 +98,14 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   // If on a protected route and not yet authorized, show the loading spinner
   if (!isAuthorized && !isLoginRoute && !isGatekeeperRoute) {
     return (
-      <div className="min-h-screen bg-slate-900 flex items-center justify-center">
-        <div className="animate-spin h-8 w-8 border-4 border-cyan-600 border-t-transparent rounded-full"></div>
-      </div>
+      <PageSkeleton />
     );
   }
 
-  return <SidebarProvider>{children}</SidebarProvider>;
+  return (
+    <SidebarProvider>
+      {children}
+      <ConfirmHost />
+    </SidebarProvider>
+  );
 }

@@ -1,5 +1,6 @@
 "use client";
 
+import { TextSkeleton } from "@/components/ui/skeleton-presets";
 import { useEffect, useState } from "react";
 import { Check, Loader2 } from "lucide-react";
 import { getAdminToken } from "@/lib/adminSession";
@@ -34,7 +35,7 @@ export default function LabTestPicker({ selectedIds, onChange }: { selectedIds: 
     const total = tests.filter(t => selectedIds.includes(t._id)).reduce((sum, t) => sum + Number(t.price || 0), 0);
 
     if (loading) {
-        return <div className="flex justify-center py-6"><Loader2 className="animate-spin h-5 w-5 text-cyan-600" /></div>;
+        return <TextSkeleton lines={4} className="py-4" />;
     }
 
     if (tests.length === 0) {

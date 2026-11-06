@@ -1,5 +1,6 @@
 "use client";
 
+import { CardGridSkeleton } from "@/components/ui/skeleton-presets";
 import { useEffect, useState, useRef } from "react";
 import Sidebar from "@/components/admin/Sidebar";
 import { Button } from "@/components/ui/button";
@@ -166,7 +167,17 @@ export default function NurseDoctorArrivals() {
             }));
         });
 
+        // Catch-all change signal from the server, plus a catch-up after reconnects
+        let liveTimer: ReturnType<typeof setTimeout> | null = null;
+        const liveRefresh = () => {
+            if (liveTimer) return;
+            liveTimer = setTimeout(() => { liveTimer = null; fetchDoctors(); }, 250);
+        };
+        socket.on("dashboardUpdated", liveRefresh);
+        socket.io.on("reconnect", liveRefresh);
+
         return () => {
+            if (liveTimer) clearTimeout(liveTimer);
             socket.disconnect();
         };
     }, []);
@@ -484,10 +495,7 @@ export default function NurseDoctorArrivals() {
                 </div>
 
                 {loading ? (
-                    <div className="flex flex-col items-center justify-center h-64 text-slate-400">
-                        <Loader2 className="animate-spin h-8 w-8 mb-2 text-cyan-600" />
-                        <p className="text-sm font-medium">Loading medical staff...</p>
-                    </div>
+                    <CardGridSkeleton cards={6} />
                 ) : (
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5 sm:gap-4">
                         {filteredDoctors.map(doc => {

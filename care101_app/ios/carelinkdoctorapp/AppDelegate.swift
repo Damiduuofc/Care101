@@ -1,5 +1,6 @@
 internal import Expo
 import React
+import UserNotifications
 import ReactAppDependencyProvider
 
 @main
@@ -20,9 +21,38 @@ class AppDelegate: ExpoAppDelegate {
     reactNativeDelegate = delegate
     reactNativeFactory = factory
 
+    // Queue alerts, widget refreshes and Live Activity updates arrive as Apple push
+    // notifications, because iOS suspends the app's live socket in the background.
+    UNUserNotificationCenter.current().delegate = PushNotificationDelegate.shared
+    application.registerForRemoteNotifications()
+    if #available(iOS 16.2, *) { LiveActivityManager.start() }
+    // Periodic queue refresh while the app is closed (no paid developer account needed)
+    QueueRefresher.register()
+
     // The window and React Native root are created in SceneDelegate: apps built with the
     // iOS 27 SDK must adopt the UIScene lifecycle or UIKit terminates them at launch.
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
+  }
+
+  // MARK: - Apple push
+
+  public override func application(_ application: UIApplication,
+                                   didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
+    PushRegistrar.didRegister(deviceToken: deviceToken)
+    super.application(application, didRegisterForRemoteNotificationsWithDeviceToken: deviceToken)
+  }
+
+  public override func application(_ application: UIApplication,
+                                   didFailToRegisterForRemoteNotificationsWithError error: Error) {
+    NSLog("APNs registration failed: \(error.localizedDescription)")
+    super.application(application, didFailToRegisterForRemoteNotificationsWithError: error)
+  }
+
+  // Background push carrying the latest widget-status payload
+  public override func application(_ application: UIApplication,
+                                   didReceiveRemoteNotification userInfo: [AnyHashable: Any],
+                                   fetchCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void) {
+    completionHandler(RemotePushHandler.handle(userInfo) ? .newData : .noData)
   }
 
   func application(
@@ -86,6 +116,16 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
       withModuleName: "main",
       in: window,
       launchOptions: launchOptions)
+  }
+
+  // Ask iOS to wake us for a queue refresh while we're in the background
+  func sceneDidEnterBackground(_ scene: UIScene) {
+    QueueRefresher.schedule()
+  }
+
+  // Coming back to the app: catch up right away (the JS socket also resyncs)
+  func sceneWillEnterForeground(_ scene: UIScene) {
+    Task { await QueueRefresher.refresh() }
   }
 
   // Warm deep links: with scenes, UIKit delivers these here instead of the app delegate.

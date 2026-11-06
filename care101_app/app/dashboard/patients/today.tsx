@@ -1,3 +1,4 @@
+import { SkeletonList } from '../../../components/Skeleton';
 import React, { useState, useCallback, useRef, useMemo } from 'react';
 import {
   View,
@@ -282,7 +283,7 @@ export default function TodayPatientsScreen() {
 
         {/* HEADER */}
         <View style={styles.header}>
-          <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+          <TouchableOpacity style={styles.backButton} onPress={() => router.back()} accessibilityRole="button" accessibilityLabel="Go back">
             <ArrowLeft size={22} color="#0f172a" />
           </TouchableOpacity>
 
@@ -300,7 +301,7 @@ export default function TodayPatientsScreen() {
         <View style={styles.divider} />
 
         {loading ? (
-          <ActivityIndicator size="large" color="#06B6D4" style={{ marginTop: 50 }} />
+          <SkeletonList rows={6} style={{ paddingHorizontal: 0 }} />
         ) : (
           <FlatList
             data={appointments}

@@ -1,3 +1,5 @@
+import crypto from "crypto";
+import { isValidPhone, PHONE_HINT } from "../utils/phone.js";
 import Doctor from "../models/Doctor.js";
 import Patient from "../models/Patient.js";
 import jwt from "jsonwebtoken";
@@ -9,6 +11,9 @@ import { sendPatientWelcomeEmail, sendPasswordResetOtp } from "../utils/emailSer
 export const registerDoctor = async (req, res) => {
   try {
     const { fullName, email, password, specialization, nicNumber, phoneNumber, slmcRegistrationNumber, nameWithInitials } = req.body;
+    if (phoneNumber && !isValidPhone(phoneNumber)) {
+      return res.status(400).json({ msg: PHONE_HINT, message: PHONE_HINT });
+    }
 
     // Email uniqueness check removed to allow duplicate emails
 
@@ -51,6 +56,9 @@ export const registerPatient = async (req, res) => {
 
     if (!email || email.trim() === "") {
       return res.status(400).json({ message: "Email is required" });
+    }
+    if (!isValidPhone(mobileNumber)) {
+      return res.status(400).json({ msg: PHONE_HINT, message: PHONE_HINT });
     }
 
     // Email uniqueness check removed to allow duplicate emails
@@ -127,7 +135,7 @@ export const login = async (req, res) => {
     if (isNumeric) {
       // 1. Check Doctor Collection by SLMC Registration Number
       const slmcNumber = parseInt(trimmedIdentifier, 10);
-      const doctor = await Doctor.findOne({ slmcReg: slmcNumber });
+      const doctor = await Doctor.findOne({ slmcReg: slmcNumber }).select("+password");
       if (doctor) {
         // Block unapproved doctors
         if (!doctor.isApproved) {
@@ -140,7 +148,7 @@ export const login = async (req, res) => {
       // 2. Check Patient Collection by Patient ID
       const patient = await Patient.findOne({
         patientId: trimmedIdentifier.toUpperCase()
-      });
+      }).select("+password");
       if (patient) {
         user = patient;
         role = "patient";
@@ -245,6 +253,9 @@ export const updateProfile = async (req, res) => {
 
     // Update fields if provided
     if (fullName) patient.fullName = fullName;
+    if (mobileNumber && !isValidPhone(mobileNumber)) {
+      return res.status(400).json({ msg: PHONE_HINT, message: PHONE_HINT });
+    }
     if (mobileNumber) patient.mobileNumber = mobileNumber;
     if (district) patient.district = district;
     if (emergencyContact) patient.emergencyContact = emergencyContact;
@@ -267,7 +278,7 @@ export const updateProfile = async (req, res) => {
 export const changePassword = async (req, res) => {
   try {
     const { currentPassword, newPassword } = req.body;
-    const patient = await Patient.findById(req.user.id);
+    const patient = await Patient.findById(req.user.id).select("+password");
 
     // Verify current password
     const isMatch = await bcrypt.compare(currentPassword, patient.password);
@@ -306,6 +317,9 @@ const maskEmail = (email) => {
 };
 
 // Helper to find patient or doctor by various identifiers
+// Reset fields are hidden by default (select: false in the models)
+const RESET_FIELDS = "+resetPasswordOtp +resetPasswordExpire +resetPasswordAttempts";
+
 const findUserByIdentifier = async (identifier) => {
   if (!identifier) return null;
   const searchStr = identifier.toString().trim();
@@ -316,17 +330,17 @@ const findUserByIdentifier = async (identifier) => {
       { patientId: searchStr.toUpperCase() },
       { email: searchStr.toLowerCase() }
     ]
-  });
+  }).select(RESET_FIELDS);
   if (user) return { user, userType: "Patient" };
 
   // 2. Try finding doctor by slmcReg or email
   if (/^\d+$/.test(searchStr)) {
     const slmcNum = parseInt(searchStr, 10);
-    user = await Doctor.findOne({ slmcReg: slmcNum });
+    user = await Doctor.findOne({ slmcReg: slmcNum }).select(RESET_FIELDS);
     if (user) return { user, userType: "Doctor" };
   }
 
-  user = await Doctor.findOne({ email: searchStr.toLowerCase() });
+  user = await Doctor.findOne({ email: searchStr.toLowerCase() }).select(RESET_FIELDS);
   if (user) return { user, userType: "Doctor" };
 
   return null;
@@ -353,11 +367,12 @@ export const forgotPassword = async (req, res) => {
     }
 
     // 2. Generate a 6-digit OTP
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const otp = crypto.randomInt(100000, 1000000).toString(); // cryptographically random
 
     // 3. Save OTP and set expiration (10 minutes)
     user.resetPasswordOtp = otp;
     user.resetPasswordExpire = Date.now() + 10 * 60 * 1000;
+    user.resetPasswordAttempts = 0;
     await user.save();
 
     // 4. Send Password Reset Code using our service (both SMS and email if available)
@@ -367,8 +382,7 @@ export const forgotPassword = async (req, res) => {
 
     res.json({ 
       msg: "If the account is registered, an OTP has been sent.", 
-      maskedEmail,
-      email: user.email || null
+      maskedEmail // never the full address: anyone can call this with just a patient ID
     });
 
   } catch (err) {
@@ -380,6 +394,28 @@ export const forgotPassword = async (req, res) => {
 // ==========================================
 // VERIFY OTP
 // ==========================================
+// A code allows MAX_OTP_ATTEMPTS wrong guesses, then it is destroyed and a new one must be requested.
+const MAX_OTP_ATTEMPTS = 5;
+const checkOtp = async (user, otp) => {
+  if (!user.resetPasswordOtp || !user.resetPasswordExpire || user.resetPasswordExpire < Date.now()) {
+    return { ok: false, msg: "OTP has expired. Please request a new one." };
+  }
+  const given = Buffer.from(String(otp || ""));
+  const expected = Buffer.from(String(user.resetPasswordOtp));
+  if (given.length === expected.length && crypto.timingSafeEqual(given, expected)) return { ok: true };
+
+  user.resetPasswordAttempts = (user.resetPasswordAttempts || 0) + 1;
+  if (user.resetPasswordAttempts >= MAX_OTP_ATTEMPTS) {
+    user.resetPasswordOtp = undefined;
+    user.resetPasswordExpire = undefined;
+    user.resetPasswordAttempts = 0;
+    await user.save();
+    return { ok: false, msg: "Too many wrong codes. Please request a new OTP." };
+  }
+  await user.save();
+  return { ok: false, msg: `Invalid OTP. ${MAX_OTP_ATTEMPTS - user.resetPasswordAttempts} attempt(s) left.` };
+};
+
 export const verifyOtp = async (req, res) => {
   const { email, otp } = req.body;
 
@@ -389,14 +425,8 @@ export const verifyOtp = async (req, res) => {
 
     const { user } = result;
 
-    // Check if OTP matches and is not expired
-    if (user.resetPasswordOtp !== otp) {
-      return res.status(400).json({ msg: "Invalid OTP." });
-    }
-
-    if (user.resetPasswordExpire < Date.now()) {
-      return res.status(400).json({ msg: "OTP has expired. Please request a new one." });
-    }
+    const check = await checkOtp(user, otp);
+    if (!check.ok) return res.status(400).json({ msg: check.msg });
 
     res.json({ msg: "OTP verified successfully." });
 
@@ -418,9 +448,11 @@ export const resetPassword = async (req, res) => {
 
     const { user } = result;
 
-    // Final security check
-    if (user.resetPasswordOtp !== otp || user.resetPasswordExpire < Date.now()) {
-      return res.status(400).json({ msg: "Invalid or expired OTP." });
+    // Final security check (counts toward the same attempt limit)
+    const check = await checkOtp(user, otp);
+    if (!check.ok) return res.status(400).json({ msg: check.msg });
+    if (!newPassword || String(newPassword).length < 6) {
+      return res.status(400).json({ msg: "Password must be at least 6 characters." });
     }
 
     // Hash new password
@@ -430,6 +462,7 @@ export const resetPassword = async (req, res) => {
     // Clear the OTP fields
     user.resetPasswordOtp = undefined;
     user.resetPasswordExpire = undefined;
+    user.resetPasswordAttempts = 0;
     await user.save();
 
     res.json({ msg: "Password reset successfully. You can now log in." });

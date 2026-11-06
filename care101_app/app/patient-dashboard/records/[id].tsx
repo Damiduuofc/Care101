@@ -1,3 +1,4 @@
+import { SkeletonScreen } from '../../../components/Skeleton';
 import React, { useState, useEffect } from 'react';
 import {
     View, Text, StyleSheet, ScrollView, Image, TouchableOpacity,
@@ -215,10 +216,7 @@ export default function PatientRecordDetailsScreen() {
 
     if (loading) {
         return (
-            <View style={[styles.container, styles.centerContent]}>
-                <ActivityIndicator size="large" color="#06b6d4" />
-                <Text style={styles.loadingText}>Loading record details...</Text>
-            </View>
+            <SkeletonScreen variant="detail" />
         );
     }
     
@@ -235,7 +233,7 @@ export default function PatientRecordDetailsScreen() {
 
                 {/* Detail Header */}
                 <View style={styles.detailHeader}>
-                    <TouchableOpacity onPress={() => router.back()} style={styles.iconButton}>
+                    <TouchableOpacity onPress={() => router.back()} style={styles.iconButton} accessibilityRole="button" accessibilityLabel="Go back">
                         <ArrowLeft size={24} color="#0f172a" />
                     </TouchableOpacity>
                     <View style={styles.headerTextContainer}>
@@ -525,7 +523,7 @@ export default function PatientRecordDetailsScreen() {
                                     <Text style={styles.modalTitle} numberOfLines={1}>{selectedRecordData?.title || selectedRecordData?.fileName || 'Document'}</Text>
                                     <Text style={styles.modalSubtitle}>{selectedRecordData?.doctorName || selectedRecordData?.fileType || 'Medical Record'}</Text>
                                 </View>
-                                <TouchableOpacity onPress={() => setShowViewRecordModal(false)} style={styles.closeBtn}>
+                                <TouchableOpacity onPress={() => setShowViewRecordModal(false)} style={styles.closeBtn} accessibilityRole="button" accessibilityLabel="Close">
                                     <X size={20} color="#64748b" />
                                 </TouchableOpacity>
                             </View>

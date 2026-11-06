@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { UserCheck, CalendarRange, Building, Clock, ChevronRight, Activity } from "lucide-react";
 import Link from "next/link";
+import { Skeleton } from "@/components/ui/skeleton";
 
 import { useRouter } from "next/navigation";
 import { clearAdminSession, getAdminUser } from "@/lib/adminSession";
@@ -31,7 +32,32 @@ export default function ReceptionistDashboard() {
         setLoading(false);
     }, []);
 
-    if (loading) return <div className="p-8 text-center text-slate-500">Loading Dashboard...</div>;
+    if (loading) {
+        return (
+            <div className="space-y-8 max-w-7xl mx-auto p-4 md:p-8 ml-0 md:ml-64" aria-busy="true" aria-label="Loading dashboard">
+                <Sidebar />
+                <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex flex-col md:flex-row justify-between gap-4">
+                    <div className="space-y-3">
+                        <Skeleton className="h-8 w-72" />
+                        <Skeleton className="h-5 w-96 max-w-full" />
+                    </div>
+                    <Skeleton className="h-11 w-56 rounded-xl" />
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {Array.from({ length: 4 }).map((_, i) => (
+                        <div key={i} className="bg-white rounded-xl border border-slate-200 p-8 flex gap-5">
+                            <Skeleton className="h-16 w-16 rounded-2xl shrink-0" />
+                            <div className="flex-1 space-y-3">
+                                <Skeleton className="h-6 w-1/2" />
+                                <Skeleton className="h-4 w-full" />
+                                <Skeleton className="h-4 w-3/4" />
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            </div>
+        );
+    }
 
     const actions = [
         {

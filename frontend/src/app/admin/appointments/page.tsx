@@ -1,5 +1,9 @@
 "use client";
 
+import { isValidPhone, PHONE_HINT } from "@/lib/phone";
+import { confirmDialog } from "@/lib/confirmDialog";
+import { useLiveRefresh } from "@/lib/useLiveRefresh";
+import { ListSkeleton, PageSkeleton } from "@/components/ui/skeleton-presets";
 import { useEffect, useState, useRef } from "react";
 import {
   Search, CheckCircle, Trash2, Clock, DollarSign, Calendar, AlertCircle, XCircle, Plus, X, User, Stethoscope, CreditCard, Loader2, Eye, ArrowUpDown, ArrowUp, ArrowDown, Phone
@@ -21,6 +25,9 @@ export default function AppointmentsPage() {
   const [appointments, setAppointments] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
+  // Narrow the (ever-growing) list: receptionists mostly need today's bookings
+  const [dateFilter, setDateFilter] = useState<"today" | "upcoming" | "past" | "all">("today");
+  const [statusFilter, setStatusFilter] = useState<"all" | "pending" | "confirmed" | "completed" | "cancelled">("all");
 const [generatedPatientId, setGeneratedPatientId] = useState("Loading...");
   // Booking Modal States
   const [isBookingModalOpen, setIsBookingModalOpen] = useState(false);
@@ -283,6 +290,9 @@ const fetchNextPatientId = async () => {
     fetchAppointments();
   }, []);
 
+  // Live: new bookings, payments and status changes appear without a reload
+  useLiveRefresh(() => fetchAppointments());
+
   // Fetch Doctors for the Booking Form
   const fetchDoctors = async () => {
     try {
@@ -360,6 +370,7 @@ const fetchNextPatientId = async () => {
     if (showRegistrationForm) {
       if (!formData.fullName.trim()) errors.fullName = "Enter the patient's full name.";
       if (!formData.phone.trim()) errors.phone = "Enter the patient's phone number.";
+      else if (!isValidPhone(formData.phone)) errors.phone = PHONE_HINT;
     } else if (!selectedPatient) {
       errors.patient = "Search for and select a patient, or register a new one.";
     }
@@ -517,7 +528,7 @@ const fetchNextPatientId = async () => {
 
   // 3. Handle Delete
   const deleteAppointment = async (id: string) => {
-    if (!confirm("Are you sure you want to delete this appointment?")) return;
+    if (!await confirmDialog("Are you sure you want to delete this appointment?")) return;
     try {
       const token = getAdminToken();
       await fetch(`${process.env.NEXT_PUBLIC_API_URL}/admin/appointments/${id}`, {
@@ -553,7 +564,35 @@ const fetchNextPatientId = async () => {
     );
   };
 
+  const startOfToday = new Date();
+  startOfToday.setHours(0, 0, 0, 0);
+  const startOfTomorrow = new Date(startOfToday);
+  startOfTomorrow.setDate(startOfTomorrow.getDate() + 1);
+  const matchesDate = (appt: any) => {
+    if (dateFilter === "all") return true;
+    const d = new Date(appt.date);
+    if (Number.isNaN(d.getTime())) return false;
+    if (dateFilter === "today") return d >= startOfToday && d < startOfTomorrow;
+    if (dateFilter === "upcoming") return d >= startOfToday;
+    return d < startOfToday; // past
+  };
+  const matchesStatus = (appt: any) =>
+    statusFilter === "all" || String(appt.status || "").toLowerCase() === statusFilter;
+  // How many bookings each date tab would show (with the current status filter)
+  const countFor = (key: typeof dateFilter) => {
+    return appointments.filter((a) => {
+      if (!matchesStatus(a)) return false;
+      if (key === "all") return true;
+      const d = new Date(a.date);
+      if (Number.isNaN(d.getTime())) return false;
+      if (key === "today") return d >= startOfToday && d < startOfTomorrow;
+      if (key === "upcoming") return d >= startOfToday;
+      return d < startOfToday;
+    }).length;
+  };
+
   const filteredAppointments = appointments
+    .filter((appt) => matchesDate(appt) && matchesStatus(appt))
     .filter((appt) => {
       const query = searchTerm.toLowerCase();
       const patientName = appt.patientId?.fullName?.toLowerCase() || "";
@@ -593,7 +632,7 @@ const fetchNextPatientId = async () => {
   // Derive unique departments from fetched doctors
   const departments = Array.from(new Set(doctors.map(d => d.specialization || "General")));
 
-  if (loading) return <div className="p-8 text-center text-slate-500 ml-64">Loading...</div>;
+  if (loading) return <PageSkeleton />;
 
   return (
     <div className="flex min-h-screen bg-slate-50">
@@ -627,6 +666,47 @@ const fetchNextPatientId = async () => {
                 <Plus className="w-4 h-4" /> Book Walk-in
               </Button>
             </div>
+          </div>
+
+          {/* Date + status filters */}
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+            <div className="flex flex-wrap gap-2" role="tablist" aria-label="Filter by date">
+              {([
+                ["today", "Today"],
+                ["upcoming", "Upcoming"],
+                ["past", "Past"],
+                ["all", "All"],
+              ] as const).map(([key, label]) => (
+                <button
+                  key={key}
+                  role="tab"
+                  aria-selected={dateFilter === key}
+                  onClick={() => setDateFilter(key)}
+                  className={`px-3.5 py-1.5 rounded-full text-sm font-semibold border transition-colors ${
+                    dateFilter === key
+                      ? "bg-cyan-600 border-cyan-600 text-white"
+                      : "bg-white border-slate-200 text-slate-600 hover:border-cyan-300"
+                  }`}
+                >
+                  {label}
+                  <span className={`ml-1.5 text-xs ${dateFilter === key ? "text-cyan-100" : "text-slate-400"}`}>{countFor(key)}</span>
+                </button>
+              ))}
+            </div>
+            <label className="flex items-center gap-2 text-sm text-slate-500">
+              Status
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value as typeof statusFilter)}
+                className="h-9 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-cyan-500"
+              >
+                <option value="all">All statuses</option>
+                <option value="pending">Pending</option>
+                <option value="confirmed">Confirmed</option>
+                <option value="completed">Completed</option>
+                <option value="cancelled">Cancelled</option>
+              </select>
+            </label>
           </div>
 
           <Card className="border-slate-200 shadow-sm overflow-hidden">
@@ -670,7 +750,16 @@ const fetchNextPatientId = async () => {
                   </thead>
                   <tbody>
                     {filteredAppointments.length === 0 ? (
-                      <tr><td colSpan={6} className="p-8 text-center text-slate-400">No appointments found.</td></tr>
+                      <tr><td colSpan={6} className="p-8 text-center text-slate-400">
+                        {searchTerm
+                          ? "No bookings match your search."
+                          : dateFilter === "today"
+                            ? "No bookings for today yet."
+                            : "No bookings match these filters."}
+                        {dateFilter !== "all" && (
+                          <button onClick={() => setDateFilter("all")} className="ml-2 text-cyan-600 font-semibold hover:underline">Show all dates</button>
+                        )}
+                      </td></tr>
                     ) : (
                       filteredAppointments.map((appt) => (
                         <tr key={appt._id} className="border-b border-slate-50 hover:bg-slate-50/80 transition-colors">
@@ -1027,9 +1116,7 @@ const fetchNextPatientId = async () => {
                       </div>
 
                       {isSearchingMobile && (
-                        <div className="py-8 text-center text-sm text-slate-500 flex items-center justify-center gap-2">
-                          <Loader2 className="animate-spin h-5 w-5 text-cyan-500" /> Searching registry...
-                        </div>
+                        <ListSkeleton rows={2} className="py-4" />
                       )}
 
                       {/* Case 1: Existing Patient (Single Match) */}

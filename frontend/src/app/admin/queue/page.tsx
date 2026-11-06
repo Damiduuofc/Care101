@@ -1,5 +1,8 @@
 "use client";
 
+import { confirmDialog } from "@/lib/confirmDialog";
+import { notify } from "@/lib/notify";
+import { PageSkeleton, ListSkeleton, TextSkeleton } from "@/components/ui/skeleton-presets";
 import { useEffect, useState } from "react";
 import Sidebar from "@/components/admin/Sidebar";
 import { Button } from "@/components/ui/button";
@@ -100,14 +103,14 @@ export default function NurseQueueDashboard() {
                     setPreviews(prev => ({ ...prev, [recordId]: { fileData: data.fileData, fileType: data.fileType } }));
                     setShowPreviews(prev => ({ ...prev, [recordId]: true }));
                 } else {
-                    alert("No attachment file data found.");
+                    notify("No attachment file data found.");
                 }
             } else {
-                alert("Failed to fetch preview file.");
+                notify("Failed to fetch preview file.");
             }
         } catch (err) {
             console.error("Preview fetch error:", err);
-            alert("An error occurred fetching preview.");
+            notify("An error occurred fetching preview.");
         } finally {
             setLoadingPreviews(prev => ({ ...prev, [recordId]: false }));
         }
@@ -176,7 +179,7 @@ export default function NurseQueueDashboard() {
 
     const handleShareInstruction = async () => {
         if (!selectedPatient || !shareInstructionId || !shareExpiry) {
-            alert("Please select a surgical instruction and an expiry date.");
+            notify("Please select a surgical instruction and an expiry date.");
             return;
         }
 
@@ -201,11 +204,11 @@ export default function NurseQueueDashboard() {
             if (res.ok) {
                 setShareResult(data);
             } else {
-                alert(data?.msg || "Failed to share surgical instructions.");
+                notify(data?.msg || "Failed to share surgical instructions.");
             }
         } catch (err) {
             console.error("Share instruction error:", err);
-            alert("An error occurred while sharing instructions.");
+            notify("An error occurred while sharing instructions.");
         } finally {
             setSharingInstruction(false);
         }
@@ -261,10 +264,10 @@ export default function NurseQueueDashboard() {
                     downloadLink.download = data.fileName || fileName || "medical_record";
                     downloadLink.click();
                 } else {
-                    alert("No file data associated with this record.");
+                    notify("No file data associated with this record.");
                 }
             } else {
-                alert("Failed to download record file.");
+                notify("Failed to download record file.");
             }
         } catch (err) {
             console.error("Download Error:", err);
@@ -312,7 +315,7 @@ export default function NurseQueueDashboard() {
                 body: JSON.stringify(payload)
             });
             if (res.ok) {
-                alert(editingRecordId ? "Medical Record Updated Successfully!" : "Medical Record Uploaded Successfully!");
+                notify(editingRecordId ? "Medical Record Updated Successfully!" : "Medical Record Uploaded Successfully!");
                 setIsNewRecordOpen(false);
                 setEditingRecordId(null);
                 setNewRecordData({
@@ -327,11 +330,11 @@ export default function NurseQueueDashboard() {
                 });
                 fetchMedicalRecords(selectedPatient.id);
             } else {
-                alert("Failed to save medical record.");
+                notify("Failed to save medical record.");
             }
         } catch (err) {
             console.error("Upload error:", err);
-            alert("An error occurred during save.");
+            notify("An error occurred during save.");
         } finally {
             setUploadingRecord(false);
         }
@@ -340,7 +343,7 @@ export default function NurseQueueDashboard() {
     const handleCreateLabRequest = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!selectedPatient || newLabData.testIds.length === 0) {
-            alert("Please select at least one lab test.");
+            notify("Please select at least one lab test.");
             return;
         }
         setSubmittingLab(true);
@@ -363,16 +366,16 @@ export default function NurseQueueDashboard() {
             });
             if (res.ok) {
                 const created = await res.json();
-                alert(`Lab Request Created! Total: LKR ${Number(created.totalAmount || 0).toLocaleString()}`);
+                notify(`Lab Request Created! Total: LKR ${Number(created.totalAmount || 0).toLocaleString()}`);
                 setNewLabData({ testIds: [], description: "" });
                 fetchLabRequests(selectedPatient.id);
             } else {
                 const errData = await res.json().catch(() => ({}));
-                alert(errData.msg || "Failed to create lab request.");
+                notify(errData.msg || "Failed to create lab request.");
             }
         } catch (err) {
             console.error("Create lab request error:", err);
-            alert("An error occurred.");
+            notify("An error occurred.");
         } finally {
             setSubmittingLab(false);
         }
@@ -429,13 +432,12 @@ export default function NurseQueueDashboard() {
         try {
             const token = getAdminToken();
             
-            // 1. Fetch Doctors
-            const docRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/admin/doctors`, {
-                headers: {
-                    "x-auth-token": token || "",
-                    "ngrok-skip-browser-warning": "true"
-                }
-            });
+            const headers = { "x-auth-token": token || "", "ngrok-skip-browser-warning": "true" };
+            // Doctors and appointments are independent: fetch both at once
+            const [docRes, apptRes] = await Promise.all([
+                fetch(`${process.env.NEXT_PUBLIC_API_URL}/admin/doctors`, { headers }),
+                fetch(`${process.env.NEXT_PUBLIC_API_URL}/admin/appointments`, { headers }),
+            ]);
 
             if (docRes.ok) {
                 const docData = await docRes.json();
@@ -444,13 +446,6 @@ export default function NurseQueueDashboard() {
                 }
             }
 
-            // 2. Fetch Appointments
-            const apptRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/admin/appointments`, {
-                headers: {
-                    "x-auth-token": token || "",
-                    "ngrok-skip-browser-warning": "true"
-                }
-            });
 
             if (apptRes.ok) {
                 const apptData = await apptRes.json();
@@ -555,7 +550,17 @@ export default function NurseQueueDashboard() {
             console.log("🔌 Disconnected from Socket.IO Server");
         });
 
+        // Catch-all change signal from the server, plus a catch-up after reconnects
+        let liveTimer: ReturnType<typeof setTimeout> | null = null;
+        const liveRefresh = () => {
+            if (liveTimer) return;
+            liveTimer = setTimeout(() => { liveTimer = null; fetchData(); }, 250);
+        };
+        socket.on("dashboardUpdated", liveRefresh);
+        socket.io.on("reconnect", liveRefresh);
+
         return () => {
+            if (liveTimer) clearTimeout(liveTimer);
             socket.disconnect();
         };
     }, []);
@@ -654,7 +659,7 @@ export default function NurseQueueDashboard() {
                 }
             } else {
                 const errData = await res.json().catch(() => ({}));
-                alert(errData.msg || "Could not update the session. Please try again.");
+                notify(errData.msg || "Could not update the session. Please try again.");
             }
         } catch (err) {
             console.error("Failed to update doctor", err);
@@ -686,18 +691,18 @@ export default function NurseQueueDashboard() {
                     allocatedRoom: updatedDoc.allocatedRoom !== undefined ? updatedDoc.allocatedRoom : d.allocatedRoom
                 } : d));
             } else {
-                alert("Failed to update doctor arrival status.");
+                notify("Failed to update doctor arrival status.");
             }
         } catch (err) {
             console.error("Arrival update error:", err);
-            alert("Error updating arrival status.");
+            notify("Error updating arrival status.");
         } finally {
             setSaving(prev => ({ ...prev, [doctor._id]: false }));
         }
     };
 
     if (loading || !user) {
-        return <div className="p-10 flex justify-center"><Loader2 className="animate-spin text-cyan-600 h-8 w-8" /></div>;
+        return <PageSkeleton variant="cards" />;
     }
 
     const assignedDoctors = doctors.filter(doc => {
@@ -800,8 +805,8 @@ export default function NurseQueueDashboard() {
 
                                     {doc.sessionStarted ? (
                                         <Button
-                                            onClick={() => {
-                                                if (window.confirm("End this session? It cannot be restarted. The doctor's later sessions today can still be started.")) {
+                                            onClick={async () => {
+                                                if (await confirmDialog("End this session? It cannot be restarted. The doctor's later sessions today can still be started.")) {
                                                     handleUpdateDoctor(doc, { sessionStarted: false, currentQueueNumber: 0 }, "end");
                                                 }
                                             }}
@@ -1164,10 +1169,7 @@ export default function NurseQueueDashboard() {
                         
                         <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4">
                             {loadingRecords ? (
-                                <div className="flex flex-col items-center justify-center py-20 text-slate-400">
-                                    <Loader2 className="animate-spin h-8 w-8 mb-2 text-cyan-600" />
-                                    <p className="text-sm font-medium">Loading history...</p>
-                                </div>
+                                <ListSkeleton rows={4} />
                             ) : medicalRecords.length === 0 ? (
                                 <div className="text-center py-16 text-slate-400">
                                     <BookOpen className="h-12 w-12 mx-auto mb-2 text-slate-300" />
@@ -1251,10 +1253,7 @@ export default function NurseQueueDashboard() {
                                                 {showPreviews[rec._id] && (
                                                     <div className="mt-3 pt-3 border-t border-slate-100/60">
                                                         {loadingPreviews[rec._id] ? (
-                                                            <div className="flex items-center gap-2 text-xs text-slate-400 py-3 justify-center">
-                                                                <Loader2 className="animate-spin h-4 w-4 text-cyan-600" />
-                                                                <span>Loading preview...</span>
-                                                            </div>
+                                                            <TextSkeleton lines={3} className="py-2" />
                                                         ) : previews[rec._id] ? (
                                                             (() => {
                                                                     const preview = previews[rec._id];
@@ -1458,10 +1457,7 @@ export default function NurseQueueDashboard() {
                                     </p>
                                 </div>
                             ) : loadingInstructions ? (
-                                <div className="flex flex-col items-center justify-center py-16 text-slate-400">
-                                    <Loader2 className="animate-spin h-8 w-8 mb-2 text-cyan-600" />
-                                    <p className="text-sm font-medium">Loading surgical instructions...</p>
-                                </div>
+                                <ListSkeleton rows={3} />
                             ) : instructionsError ? (
                                 <div className="text-center py-10 text-rose-600 bg-rose-50 rounded-xl border border-rose-100 text-sm font-semibold px-4">
                                     {instructionsError}
@@ -1576,10 +1572,7 @@ export default function NurseQueueDashboard() {
                             <div className="space-y-3 border-r-0 lg:border-r border-slate-100 pr-0 lg:pr-6">
                                 <h4 className="font-bold text-slate-800 text-xs uppercase tracking-wider mb-2">Requested Reports</h4>
                                 {loadingLabs ? (
-                                    <div className="flex flex-col items-center justify-center py-16 text-slate-400">
-                                        <Loader2 className="animate-spin h-8 w-8 mb-2 text-cyan-600" />
-                                        <p className="text-sm font-medium">Loading requests...</p>
-                                    </div>
+                                    <ListSkeleton rows={3} />
                                 ) : labRequests.length === 0 ? (
                                     <div className="text-center py-12 text-slate-400 bg-slate-50 rounded-xl border border-dashed border-slate-200">
                                         <Activity className="h-9 w-9 mx-auto mb-2 text-slate-300" />
@@ -1630,10 +1623,7 @@ export default function NurseQueueDashboard() {
                                                     {showPreviews[req.recordId] && (
                                                         <div className="mt-2.5 pt-2.5 border-t border-slate-100/60">
                                                             {loadingPreviews[req.recordId] ? (
-                                                                <div className="flex items-center gap-2 text-[10px] text-slate-400 py-2 justify-center">
-                                                                    <Loader2 className="animate-spin h-3.5 w-3.5 text-cyan-600" />
-                                                                    <span>Loading preview...</span>
-                                                                </div>
+                                                                <TextSkeleton lines={2} className="py-2" />
                                                             ) : previews[req.recordId] ? (
                                                                 (() => {
                                                                     const preview = previews[req.recordId];

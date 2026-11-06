@@ -1,5 +1,7 @@
 "use client";
 
+import { notify } from "@/lib/notify";
+import { ListSkeleton } from "@/components/ui/skeleton-presets";
 import { useEffect, useState } from "react";
 import Sidebar from "@/components/admin/Sidebar";
 import { Button } from "@/components/ui/button";
@@ -104,7 +106,17 @@ export default function NursePatientArrivals() {
             }
         });
 
+        // Catch-all change signal from the server, plus a catch-up after reconnects
+        let liveTimer: ReturnType<typeof setTimeout> | null = null;
+        const liveRefresh = () => {
+            if (liveTimer) return;
+            liveTimer = setTimeout(() => { liveTimer = null; fetchInitialData(); }, 250);
+        };
+        socket.on("dashboardUpdated", liveRefresh);
+        socket.io.on("reconnect", liveRefresh);
+
         return () => {
+            if (liveTimer) clearTimeout(liveTimer);
             socket.disconnect();
         };
     }, []);
@@ -165,9 +177,9 @@ export default function NursePatientArrivals() {
                 const contentType = res.headers.get("content-type");
                 if (contentType && contentType.includes("application/json")) {
                     const err = await res.json();
-                    alert(`Error: ${err.msg}`);
+                    notify(`Error: ${err.msg}`);
                 } else {
-                    alert(`Error: ${res.status} ${res.statusText}`);
+                    notify(`Error: ${res.status} ${res.statusText}`);
                 }
             }
         } catch (err) {
@@ -376,10 +388,7 @@ export default function NursePatientArrivals() {
                     </CardHeader>
                     <CardContent className="p-0">
                         {loading ? (
-                            <div className="flex flex-col items-center justify-center h-64 text-slate-400">
-                                <Loader2 className="animate-spin h-8 w-8 mb-2 text-cyan-600" />
-                                <p className="text-sm font-medium">Loading appointments...</p>
-                            </div>
+                            <ListSkeleton rows={6} className="p-4" />
                         ) : filteredAppointments.length === 0 ? (
                             <div className="text-center py-16 text-slate-400">
                                 <Calendar className="h-10 w-10 mx-auto mb-2 text-slate-300" />

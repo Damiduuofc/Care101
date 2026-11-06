@@ -1,3 +1,4 @@
+import { SkeletonScreen } from '../components/Skeleton';
 import React, { useEffect, useRef, useState } from 'react';
 import {
   View,
@@ -101,9 +102,7 @@ export default function OnboardingScreen() {
 
   if (isLoading) {
     return (
-      <View style={[styles.container, styles.center]}>
-        <ActivityIndicator size="large" color="#06b6d4" />
-      </View>
+      <SkeletonScreen />
     );
   }
 

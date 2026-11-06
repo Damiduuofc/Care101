@@ -1,3 +1,4 @@
+import { SkeletonScreen } from '../../../components/Skeleton';
 import React, { useState, useEffect } from 'react';
 import {
     View, Text, StyleSheet, ScrollView, Image, TouchableOpacity,
@@ -150,7 +151,7 @@ export default function PatientRecordDetailsScreen() {
         }
     };
 
-    if (loading) return <ActivityIndicator style={{ marginTop: 50 }} size="large" color="#00aeef" />;
+    if (loading) return <SkeletonScreen variant="detail" />;
     if (!record) return null;
 
     return (
@@ -159,7 +160,7 @@ export default function PatientRecordDetailsScreen() {
 
             {/* Header */}
             <View style={styles.header}>
-                <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+                <TouchableOpacity onPress={() => router.back()} style={styles.backBtn} accessibilityRole="button" accessibilityLabel="Go back">
                     <ArrowLeft size={24} color="#0f172a" />
                 </TouchableOpacity>
                 <Text style={styles.headerTitle}>{record.name || 'Surgery Record'}</Text>
@@ -275,7 +276,7 @@ export default function PatientRecordDetailsScreen() {
                     <View style={styles.recordModalContentCard}>
                         <View style={styles.recordModalHeaderRow}>
                             <Text style={styles.recordModalTitle} numberOfLines={1}>{selectedRecordData?.fileName || 'Record Details'}</Text>
-                            <TouchableOpacity onPress={() => setShowViewRecordModal(false)}>
+                            <TouchableOpacity onPress={() => setShowViewRecordModal(false)} accessibilityRole="button" accessibilityLabel="Close">
                                 <X size={24} color="#64748b" />
                             </TouchableOpacity>
                         </View>

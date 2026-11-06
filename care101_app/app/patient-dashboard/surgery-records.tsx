@@ -1,3 +1,4 @@
+import { SkeletonScreen } from '../../components/Skeleton';
 import React, { useState, useEffect } from 'react';
 import {
     View,
@@ -115,9 +116,7 @@ export default function PatientSurgeryRecordsScreen() {
 
     if (loading) {
         return (
-            <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
-                <ActivityIndicator size="large" color="#00aeef" />
-            </View>
+            <SkeletonScreen />
         );
     }
 
@@ -127,7 +126,7 @@ export default function PatientSurgeryRecordsScreen() {
                 {/* Header */}
                 <View style={styles.header}>
                     <Text style={styles.title}>Surgery Records</Text>
-                    <TouchableOpacity style={styles.searchIconHeader}>
+                    <TouchableOpacity style={styles.searchIconHeader} accessibilityRole="button" accessibilityLabel="Search">
                         <Search size={24} color="#0f172a" />
                     </TouchableOpacity>
                 </View>

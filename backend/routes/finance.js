@@ -1,8 +1,11 @@
 import express from "express";
 import HospitalFinance from "../models/Finance.js";
-import { auth } from "../middleware/auth.js";
+import { auth, authorize } from "../middleware/auth.js";
 
 const router = express.Router();
+
+// Finance records are private to the doctor who owns them
+router.use(auth, authorize(["doctor"]));
 
 /**
  * 1. GET ALL HOSPITAL FINANCE DATA
@@ -87,7 +90,7 @@ router.post("/add-hospital", auth, async (req, res) => {
  */
 router.get("/:id", auth, async (req, res) => {
   try {
-    const hospital = await HospitalFinance.findById(req.params.id);
+    const hospital = await HospitalFinance.findOne({ _id: req.params.id, doctorId: req.user.id });
 
     if (!hospital) {
       return res.status(404).json({ msg: "Hospital not found" });
@@ -104,7 +107,7 @@ router.get("/:id", auth, async (req, res) => {
  */
 router.delete("/:id", auth, async (req, res) => {
   try {
-    const hospital = await HospitalFinance.findById(req.params.id);
+    const hospital = await HospitalFinance.findOne({ _id: req.params.id, doctorId: req.user.id });
 
     if (!hospital) {
       return res.status(404).json({ msg: "Hospital not found" });
@@ -116,7 +119,7 @@ router.delete("/:id", auth, async (req, res) => {
         .json({ msg: "Cannot delete the default hospital Suwasevana" });
     }
 
-    await HospitalFinance.findByIdAndDelete(req.params.id);
+    await HospitalFinance.deleteOne({ _id: req.params.id, doctorId: req.user.id });
     res.json({ msg: "Deleted" });
   } catch (err) {
     res.status(500).json({ msg: "Server Error" });
@@ -130,7 +133,7 @@ router.post("/:id/add-record", auth, async (req, res) => {
   try {
     const { type, date, patients, income, bht, amount } = req.body;
 
-    const hospital = await HospitalFinance.findById(req.params.id);
+    const hospital = await HospitalFinance.findOne({ _id: req.params.id, doctorId: req.user.id });
 
     if (!hospital) {
       return res.status(404).json({ msg: "Hospital not found" });
@@ -158,9 +161,7 @@ router.post("/:id/add-record", auth, async (req, res) => {
  */
 router.delete("/:hospitalId/record/:recordId", auth, async (req, res) => {
   try {
-    const hospital = await HospitalFinance.findById(
-      req.params.hospitalId
-    );
+    const hospital = await HospitalFinance.findOne({ _id: req.params.hospitalId, doctorId: req.user.id });
 
     if (!hospital) {
       return res.status(404).json({ msg: "Hospital not found" });

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import KeyboardSafe from '../../components/KeyboardSafe';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityIndicator } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -45,7 +46,8 @@ export default function NewPasswordScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: '#fff' }}>
+      <KeyboardSafe contentContainerStyle={styles.container}>
       <Text style={styles.title}>New Password</Text>
       <Text style={styles.subtitle}>Create a strong new password for your account.</Text>
 
@@ -58,7 +60,7 @@ export default function NewPasswordScreen() {
           onChangeText={setNewPassword}
           secureTextEntry={!showPassword}
         />
-        <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={{ padding: 4 }}>
+        <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={{ padding: 4 }} accessibilityRole="button" accessibilityLabel="Show or hide password">
           <Ionicons 
             name={showPassword ? "eye-outline" : "eye-off-outline"} 
             size={20} 
@@ -76,7 +78,7 @@ export default function NewPasswordScreen() {
           onChangeText={setConfirmPassword}
           secureTextEntry={!showConfirmPassword}
         />
-        <TouchableOpacity onPress={() => setShowConfirmPassword(!showConfirmPassword)} style={{ padding: 4 }}>
+        <TouchableOpacity onPress={() => setShowConfirmPassword(!showConfirmPassword)} style={{ padding: 4 }} accessibilityRole="button" accessibilityLabel="Show or hide password">
           <Ionicons 
             name={showConfirmPassword ? "eye-outline" : "eye-off-outline"} 
             size={20} 
@@ -88,6 +90,7 @@ export default function NewPasswordScreen() {
       <TouchableOpacity style={styles.button} onPress={handleReset} disabled={loading}>
         {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Change Password</Text>}
       </TouchableOpacity>
+      </KeyboardSafe>
     </SafeAreaView>
   );
 }

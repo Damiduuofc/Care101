@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { isValidPhone, PHONE_HINT } from '../../../utils/phone';
 import {
     View,
     Text,
@@ -102,6 +103,14 @@ export default function AddPatientScreen() {
             Alert.alert('Required', 'Please fill in all required fields (marked with *)');
             return;
         }
+        if (formData.mobileNumber && !isValidPhone(formData.mobileNumber)) {
+            Alert.alert('Check the mobile number', PHONE_HINT);
+            return;
+        }
+        if (formData.emergencyContact && !isValidPhone(formData.emergencyContact)) {
+            Alert.alert('Check the emergency contact', PHONE_HINT);
+            return;
+        }
 
         try {
             setLoading(true);
@@ -147,7 +156,7 @@ export default function AddPatientScreen() {
             <SafeAreaView style={styles.safeArea}>
                 {/* Header */}
                 <View style={styles.header}>
-                    <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+                    <TouchableOpacity onPress={() => router.back()} style={styles.backButton} accessibilityRole="button" accessibilityLabel="Go back">
                         <ArrowLeft size={24} color="#0f172a" />
                     </TouchableOpacity>
                     <View style={styles.headerTextContainer}>

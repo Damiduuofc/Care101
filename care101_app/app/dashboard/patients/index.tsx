@@ -1,3 +1,4 @@
+import { SkeletonScreen } from '../../../components/Skeleton';
 import React, { useState, useCallback } from 'react';
 import {
   View,
@@ -84,9 +85,7 @@ export default function PatientsScreen() {
 
   if (loading) {
     return (
-      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
-        <ActivityIndicator size="large" color="#06B6D4" />
-      </View>
+      <SkeletonScreen />
     );
   }
 
@@ -98,8 +97,7 @@ export default function PatientsScreen() {
         <View style={styles.header}>
           <TouchableOpacity
             style={styles.backButton}
-            onPress={() => router.push('/dashboard')}
-          >
+            onPress={() => router.push('/dashboard')} accessibilityRole="button" accessibilityLabel="Go back">
             <ArrowLeft size={22} color="#0f172a" />
           </TouchableOpacity>
 

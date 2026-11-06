@@ -12,7 +12,21 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.damiduuofc.carelinkdoctorapp",
       "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSSupportsLiveActivities": true,
+        "NSSupportsLiveActivitiesFrequentUpdates": true,
+        "UIBackgroundModes": [
+          "remote-notification",
+          "fetch"
+        ],
+        "BGTaskSchedulerPermittedIdentifiers": [
+          "com.damiduuofc.carelinkdoctorapp.queue-refresh"
+        ]
+      },
+      "entitlements": {
+        "com.apple.security.application-groups": [
+          "group.com.damiduuofc.carelinkdoctorapp"
+        ]
       }
     },
     "android": {

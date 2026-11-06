@@ -1,3 +1,5 @@
+import { SkeletonRow, SkeletonGrid } from '../../components/Skeleton';
+import KeyboardSafe from '../../components/KeyboardSafe';
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
     View,
@@ -11,7 +13,8 @@ import {
     Alert,
     FlatList,
     Platform,
-    Modal
+    Modal,
+    RefreshControl
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -51,6 +54,8 @@ export default function BookAppointmentScreen() {
     const { token } = useAuth();
     const { initPaymentSheet, presentPaymentSheet } = useStripe();
 
+    const [refreshKey, setRefreshKey] = useState(0);
+    const [pullRefreshing, setPullRefreshing] = useState(false);
     const [doctors, setDoctors] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [submitting, setSubmitting] = useState(false);
@@ -106,7 +111,7 @@ export default function BookAppointmentScreen() {
         fetchSchedules();
         setSelectedDate(null); // Reset date and session selection when doctor changes
         setSelectedSession(null);
-    }, [selectedDoctor, token]);
+    }, [selectedDoctor, token, refreshKey]);
 
     // DERIVED: Available dates from approved schedules (deduplicated by day)
     const availableDates = useMemo(() => {
@@ -177,8 +182,8 @@ export default function BookAppointmentScreen() {
                 setLoading(false);
             }
         };
-        fetchDoctors();
-    }, [token]);
+        fetchDoctors().finally(() => setPullRefreshing(false));
+    }, [token, refreshKey]);
 
     const departments = useMemo(() => {
         const uniqueDepts = new Set(
@@ -337,7 +342,7 @@ export default function BookAppointmentScreen() {
         <View style={styles.container}>
             <SafeAreaView edges={['top']} style={styles.safeArea}>
                 <View style={styles.header}>
-                    <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+                    <TouchableOpacity onPress={() => router.back()} style={styles.backButton} accessibilityRole="button" accessibilityLabel="Go back">
                         <ChevronLeft size={24} color="#1e293b" />
                     </TouchableOpacity>
                     <Text style={styles.headerTitle}>New Appointment</Text>
@@ -351,9 +356,23 @@ export default function BookAppointmentScreen() {
                 </View>
             </SafeAreaView>
 
+            <KeyboardSafe scroll={false}>
             <ScrollView
+                keyboardShouldPersistTaps="handled"
+                keyboardDismissMode="interactive"
                 contentContainerStyle={styles.scrollContent}
                 nestedScrollEnabled
+                refreshControl={
+                    <RefreshControl
+                        refreshing={pullRefreshing}
+                        tintColor="#06b6d4"
+                        colors={['#06b6d4']}
+                        onRefresh={() => {
+                            setPullRefreshing(true);
+                            setRefreshKey((k) => k + 1); // reloads doctors and the open doctor's sessions
+                        }}
+                    />
+                }
             >
                 {/* STEP 1: SELECT DEPARTMENT */}
                 <Text style={styles.sectionTitle}>1. Select Department</Text>
@@ -370,7 +389,7 @@ export default function BookAppointmentScreen() {
                 </View>
 
                 {loading ? (
-                    <ActivityIndicator color="#06b6d4" style={{ marginBottom: 20 }} />
+                    <SkeletonRow items={3} style={{ marginBottom: 20 }} />
                 ) : (
                     <ScrollView
                         horizontal
@@ -521,7 +540,7 @@ export default function BookAppointmentScreen() {
                 <Text style={styles.sectionTitle}>3. Select Date</Text>
                 
                 {loadingSchedules ? (
-                    <ActivityIndicator color="#06b6d4" style={{ marginVertical: 20 }} />
+                    <SkeletonGrid items={8} columns={4} height={56} style={{ marginVertical: 12 }} />
                 ) : !selectedDoctor ? (
                     <View style={styles.placeholderBoxSmall}>
                          <Text style={styles.placeholderTextSmall}>Please select a doctor to see their availability.</Text>
@@ -652,6 +671,7 @@ export default function BookAppointmentScreen() {
 
                 <View style={{ height: 120 }} />
             </ScrollView>
+            </KeyboardSafe>
 
             {/* BOTTOM ACTION BAR */}
             <View style={styles.bottomBar}>

@@ -1,6 +1,10 @@
 "use client";
 
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { confirmDialog } from "@/lib/confirmDialog";
+import { notify } from "@/lib/notify";
+import { useLiveRefresh } from "@/lib/useLiveRefresh";
+import { CardGridSkeleton } from "@/components/ui/skeleton-presets";
+import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import Sidebar from "@/components/admin/Sidebar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -499,8 +503,11 @@ export default function RoomAllocation() {
     }
   }, [router]);
 
+  // Room/nurse picks the user has made but not saved yet, so a live refresh doesn't wipe them
+  const unsavedEditsRef = useRef<Map<string, Partial<ScheduleRequest>>>(new Map());
+
   const fetchData = useCallback(async () => {
-    setLoading(true);
+    // `loading` starts true; later (live) refreshes update quietly without the skeleton
     try {
       const token = getAdminToken() || "";
       const headers = { "Authorization": `Bearer ${token}`, "x-auth-token": token, "ngrok-skip-browser-warning": "true" };
@@ -516,7 +523,20 @@ export default function RoomAllocation() {
       const allStaff = resStaff?.ok ? await resStaff.json() : [];
       const fetchedDoctors = resDoctors?.ok ? await resDoctors.json() : [];
 
-      setSchedules(fetchedSchedules);
+      const edits = unsavedEditsRef.current;
+      setSchedules(
+        (Array.isArray(fetchedSchedules) ? fetchedSchedules : []).map((sched: any) => {
+          const local = edits.get(sched._id);
+          if (!local) return sched;
+          // Once the server holds the same values the edit has been saved
+          const stillUnsaved = Object.entries(local).some(([key, value]) => sched[key] !== value);
+          if (!stillUnsaved) {
+            edits.delete(sched._id);
+            return sched;
+          }
+          return { ...sched, ...local };
+        })
+      );
       setNurses(Array.isArray(allStaff) ? allStaff.filter(s => s.role === "nurse") : []);
       setAllDoctors(fetchedDoctors);
     } catch (err) {
@@ -531,15 +551,19 @@ export default function RoomAllocation() {
     fetchData();
   }, [fetchData]);
 
+  // Live: approvals, arrivals and allocations from other desks appear without a reload
+  useLiveRefresh(() => fetchData());
+
   // Lifted state handler
   const handleUpdateAllocation = (id: string, field: "allocatedRoom" | "allocatedNurse", value: string) => {
+    unsavedEditsRef.current.set(id, { ...unsavedEditsRef.current.get(id), [field]: value });
     setSchedules(prev => prev.map(s => 
       s._id === id ? { ...s, [field]: value } : s
     ));
   };
 
   const handleDeleteSchedule = async (id: string) => {
-    if (!window.confirm("Are you sure you want to permanently delete this schedule? Any booked appointments will be cancelled and resources will be released.")) {
+    if (!await confirmDialog("Are you sure you want to permanently delete this schedule? Any booked appointments will be cancelled and resources will be released.")) {
       return;
     }
     try {
@@ -572,7 +596,7 @@ export default function RoomAllocation() {
   };
 
   const handleCancelSchedule = async (id: string) => {
-    if (!window.confirm("Are you sure you want to cancel this schedule? Any booked appointments will be cancelled and room/nurse resources will be released.")) {
+    if (!await confirmDialog("Are you sure you want to cancel this schedule? Any booked appointments will be cancelled and room/nurse resources will be released.")) {
       return;
     }
     try {
@@ -782,7 +806,7 @@ export default function RoomAllocation() {
   // Handle pending schedule approval + resource allocation
   const handleConfirmApproval = async (id: string) => {
     if (!approvalRoom || !approvalNurse) {
-      alert("Please select both a Room and a Nurse.");
+      notify("Please select both a Room and a Nurse.");
       return;
     }
     
@@ -808,11 +832,11 @@ export default function RoomAllocation() {
         fetchData();
       } else {
         const errData = await res.json();
-        alert(errData.msg || "Failed to allocate resources");
+        notify(errData.msg || "Failed to allocate resources");
       }
     } catch (error) {
       console.error("Allocation Error:", error);
-      alert("An error occurred. Please try again.");
+      notify("An error occurred. Please try again.");
     } finally {
       setApprovalSubmitting(false);
     }
@@ -936,10 +960,7 @@ export default function RoomAllocation() {
 
       {/* Main Content Area */}
       {loading ? (
-        <div className="p-20 flex flex-col justify-center items-center gap-3">
-          <Loader2 className="animate-spin text-cyan-600 h-8 w-8" />
-          <span className="text-sm font-semibold text-slate-500">Loading allocations...</span>
-        </div>
+        <CardGridSkeleton cards={6} className="mt-2" />
       ) : (
         <>
           {viewMode === "grid" && (

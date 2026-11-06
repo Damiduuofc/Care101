@@ -1,3 +1,4 @@
+import { SkeletonScreen } from '../../../components/Skeleton';
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, Image, TouchableOpacity, StatusBar,
@@ -388,7 +389,7 @@ export default function RecordDetailsScreen() {
     ]);
   };
 
-  if (loading) return <ActivityIndicator style={{ marginTop: 50 }} size="large" color="#06b6d4" />;
+  if (loading) return <SkeletonScreen variant="detail" />;
   if (!record) return null;
 
   const standaloneReports = labReports.filter(
@@ -403,13 +404,13 @@ export default function RecordDetailsScreen() {
 
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.iconBtn} hitSlop={8}>
+        <TouchableOpacity onPress={() => router.back()} style={styles.iconBtn} hitSlop={8} accessibilityRole="button" accessibilityLabel="Go back">
           <ArrowLeft size={20} color="#0f172a" />
         </TouchableOpacity>
         <View style={{ flex: 1, marginHorizontal: 12 }}>
           <Text style={styles.headerTitle}>Surgery Record</Text>
         </View>
-        <TouchableOpacity onPress={handleDelete} style={[styles.iconBtn, styles.deleteBtn]} hitSlop={8}>
+        <TouchableOpacity onPress={handleDelete} style={[styles.iconBtn, styles.deleteBtn]} hitSlop={8} accessibilityRole="button" accessibilityLabel="Delete">
           <Trash2 size={18} color="#ef4444" />
         </TouchableOpacity>
       </View>
@@ -607,7 +608,7 @@ export default function RecordDetailsScreen() {
                 {entryImage ? (
                   <View style={{ width: '100%', height: '100%' }}>
                     <Image source={{ uri: entryImage }} style={{ width: '100%', height: '100%', borderRadius: 8 }} resizeMode="cover" />
-                    <TouchableOpacity style={styles.removeImageBtn} onPress={() => setEntryImage(null)}>
+                    <TouchableOpacity style={styles.removeImageBtn} onPress={() => setEntryImage(null)} accessibilityRole="button" accessibilityLabel="Close">
                       <X size={16} color="#fff" />
                     </TouchableOpacity>
                   </View>
@@ -713,7 +714,7 @@ export default function RecordDetailsScreen() {
           <View style={styles.recordModalContentCard}>
             <View style={styles.recordModalHeaderRow}>
               <Text style={styles.recordModalTitle} numberOfLines={1}>{selectedRecordData?.title || selectedRecordData?.fileName || 'Record Details'}</Text>
-              <TouchableOpacity onPress={() => setShowViewRecordModal(false)}>
+              <TouchableOpacity onPress={() => setShowViewRecordModal(false)} accessibilityRole="button" accessibilityLabel="Close">
                 <X size={24} color="#64748b" />
               </TouchableOpacity>
             </View>

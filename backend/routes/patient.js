@@ -1,8 +1,9 @@
 import express from "express";
+import { canSeeAnyPatient, escapeRegex } from "../utils/access.js";
 import bcrypt from "bcryptjs";
 import Patient from "../models/Patient.js";
 import Appointment from "../models/Appointment.js";
-import { auth } from "../middleware/auth.js";
+import { auth, authorize, ROLES } from "../middleware/auth.js";
 
 const router = express.Router();
 
@@ -59,7 +60,7 @@ router.put("/profile", auth, async (req, res) => {
 router.put("/change-password", auth, async (req, res) => {
   try {
     const { currentPassword, newPassword } = req.body;
-    const patient = await Patient.findById(req.user.id);
+    const patient = await Patient.findById(req.user.id).select("+password");
 
     const isMatch = await bcrypt.compare(currentPassword, patient.password);
     if (!isMatch) return res.status(400).json({ msg: "Current password is incorrect" });
@@ -158,9 +159,11 @@ router.get("/dashboard", auth, async (req, res) => {
 // ==========================================
 // 6. SEARCH PATIENTS (For Doctors)
 // ==========================================
-router.get("/search", auth, async (req, res) => {
+router.get("/search", auth, authorize(ROLES.CLINICAL), async (req, res) => {
   try {
-    const { query } = req.query;
+    const { query: rawQuery } = req.query;
+    // Literal match: user input must not act as a regular expression
+    const query = rawQuery ? escapeRegex(String(rawQuery).trim()) : rawQuery;
 
     if (!query || query.trim().length === 0) {
       return res.status(400).json({ msg: "Search query is required" });
@@ -178,8 +181,8 @@ router.get("/search", auth, async (req, res) => {
     };
 
     // If query looks like an ObjectId, also search by _id
-    if (query.match(/^[0-9a-fA-F]{24}$/)) {
-      searchCriteria.$or.push({ _id: query });
+    if (/^[0-9a-fA-F]{24}$/.test(String(rawQuery).trim())) {
+      searchCriteria.$or.push({ _id: String(rawQuery).trim() });
     }
 
     // Find patients
@@ -223,6 +226,9 @@ router.get("/search", auth, async (req, res) => {
 router.get("/:id/medical-history", auth, async (req, res) => {
   try {
     const patientId = req.params.id;
+    if (!canSeeAnyPatient(req.user) && String(patientId) !== String(req.user.id)) {
+      return res.status(404).json({ msg: "Patient not found" });
+    }
 
     // Get patient details
     const patient = await Patient.findById(patientId)

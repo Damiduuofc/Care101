@@ -1,4 +1,5 @@
 import Doctor from "../models/Doctor.js";
+import { isArrivedToday, isSessionLive } from "../utils/doctorSession.js";
 import ConsultationHistory from "../models/ConsultationHistory.js";
 
 /**
@@ -23,7 +24,7 @@ export const calculatePrediction = async (doctorId, currentServingNumber, patien
   let baseTime = now;
   let estimatedWaitingMinutes = 0;
 
-  if (!doctor.sessionStarted) {
+  if (!isSessionLive(doctor)) {
     // Session hasn't started yet — anchor to the scheduled channeling time
     // rather than "now", so the estimate reflects when the doctor is actually
     // expected to begin, not just patients ahead * average.
@@ -54,7 +55,7 @@ export const calculatePrediction = async (doctorId, currentServingNumber, patien
   if (historyCount > 15) {
     confidenceLevel = "Refined (Historical)";
   }
-  if (!doctor.isArrived && !doctor.sessionStarted) {
+  if (!isArrivedToday(doctor)) {
     confidenceLevel = "Low (Doctor Not Arrived)";
   }
 

@@ -1,9 +1,13 @@
 import mongoose from "mongoose";
+import { isValidPhone, PHONE_HINT } from "../utils/phone.js";
+import { loginLimiter, resetRequestLimiter, otpCheckLimiter } from "../utils/rateLimit.js";
+import { escapeRegex } from "../utils/access.js";
 import express from "express";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import Admin from "../models/Admin.js";
 import Doctor from "../models/Doctor.js";
+import { isArrivedToday, clearStaleSession } from "../utils/doctorSession.js";
 import Patient from "../models/Patient.js";
 import Appointment from "../models/Appointment.js";
 import HospitalStatus from "../models/HospitalStatus.js";
@@ -11,9 +15,9 @@ import Bill from "../models/Bill.js";
 import HospitalFinance from "../models/Finance.js";
 import Notification from "../models/Notification.js";
 import ScheduleRequest from "../models/ScheduleRequest.js";
-import { protect, authorize } from "../middleware/authRole.js";
+import { protect, authorize, ROLES } from "../middleware/authRole.js";
 import { assignQueueToken, countPaidAhead } from "../utils/queueToken.js";
-import { emitAppointmentUpdated, emitNotification } from "../utils/realtime.js";
+import { emitAppointmentUpdated, emitNotification, emitDoctorQueueChanged, getLastWriteAt, emitDoctorStatus } from "../utils/realtime.js";
 import { getOrCreateBillIntent, verifyIntentForBill, markBillPaid } from "../utils/paymentService.js";
 import {
   findBookableSession,
@@ -29,11 +33,11 @@ const router = express.Router();
 // ==========================================
 // 1. ADMIN LOGIN
 // ==========================================
-router.post("/login", async (req, res) => {
+router.post("/login", loginLimiter, async (req, res) => {
   const { email, password } = req.body;
 
   try {
-    const admin = await Admin.findOne({ email });
+    const admin = await Admin.findOne({ email }).select("+password");
     if (!admin) return res.status(400).json({ msg: "Invalid Credentials" });
 
     const isMatch = await bcrypt.compare(password, admin.password);
@@ -67,43 +71,54 @@ router.post("/login", async (req, res) => {
 // ==========================================
 // 2. DASHBOARD STATS
 // ==========================================
-router.get("/stats", protect, async (req, res) => {
-  try {
-    const totalDoctors = await Doctor.countDocuments();
-    const pendingDoctors = await Doctor.countDocuments({ isApproved: false });
-    const totalPatients = await Patient.countDocuments();
+// Every booking normally creates its own "Appointment" bill, so appointments are only
+// counted directly when they have no bill (older bookings). Otherwise revenue doubles.
+const appointmentIdsWithBills = async () => {
+  const ids = await Bill.distinct("appointmentId", { appointmentId: { $exists: true, $nin: [null, ""] } });
+  return ids.filter((id) => mongoose.Types.ObjectId.isValid(id)).map((id) => new mongoose.Types.ObjectId(String(id)));
+};
 
+router.get("/stats", protect, authorize(ROLES.STAFF), async (req, res) => {
+  try {
     const startOfDay = new Date();
     startOfDay.setHours(0, 0, 0, 0);
     const endOfDay = new Date();
     endOfDay.setHours(23, 59, 59, 999);
 
-    const appointmentsToday = await Appointment.countDocuments({
-      date: { $gte: startOfDay, $lte: endOfDay }
-    });
-
-    const pendingAppointments = await Appointment.countDocuments({
-      status: { $regex: /^pending$/i }
-    });
-
-    const appointmentRevenue = await Appointment.aggregate([
-      { $match: { paymentStatus: { $regex: /^paid$/i } } },
-      { $group: { _id: null, total: { $sum: "$amount" } } }
-    ]);
-
-    const billRevenue = await Bill.aggregate([
-      { $match: { status: { $regex: /^paid$/i } } },
-      { $group: { _id: null, total: { $sum: "$amount" } } }
+    // All independent, so run them in parallel (one round trip to Atlas instead of seven)
+    const [
+      totalDoctors,
+      pendingDoctors,
+      totalPatients,
+      appointmentsToday,
+      pendingAppointments,
+      appointmentRevenue,
+      billRevenue,
+      savedStatus,
+    ] = await Promise.all([
+      Doctor.estimatedDocumentCount(),
+      Doctor.countDocuments({ isApproved: false }),
+      Patient.estimatedDocumentCount(),
+      Appointment.countDocuments({ date: { $gte: startOfDay, $lte: endOfDay } }),
+      Appointment.countDocuments({ status: { $regex: /^pending$/i } }),
+      appointmentIdsWithBills().then((billed) =>
+        Appointment.aggregate([
+          { $match: { paymentStatus: { $regex: /^paid$/i }, _id: { $nin: billed } } },
+          { $group: { _id: null, total: { $sum: "$amount" } } }
+        ])
+      ),
+      Bill.aggregate([
+        { $match: { status: { $regex: /^paid$/i } } },
+        { $group: { _id: null, total: { $sum: "$amount" } } }
+      ]),
+      HospitalStatus.findOne().lean(),
     ]);
 
     const appTotal = appointmentRevenue.length > 0 ? appointmentRevenue[0].total : 0;
     const billTotal = billRevenue.length > 0 ? billRevenue[0].total : 0;
     const totalRevenue = appTotal + billTotal;
 
-    let status = await HospitalStatus.findOne();
-    if (!status) {
-      status = { generalWard: "Available", icuBeds: 0, emergencyUnit: "Normal", pharmacy: "Open" };
-    }
+    const status = savedStatus || { generalWard: "Available", icuBeds: 0, emergencyUnit: "Normal", pharmacy: "Open" };
 
     res.json({
       doctors: { total: totalDoctors, pending: pendingDoctors },
@@ -157,16 +172,17 @@ router.put("/status", protect, authorize(["system_admin"]), async (req, res) => 
 // ==========================================
 // 4. APPOINTMENT MANAGEMENT
 // ==========================================
-router.get("/appointments", protect, async (req, res) => {
+router.get("/appointments", protect, authorize(ROLES.STAFF), async (req, res) => {
   try {
     const appointments = await Appointment.find()
       .populate("patientId", "fullName phone mobileNumber patientId nicNumber email dateOfBirth")
       .populate("doctorId", "name department")
-      .sort({ createdAt: -1, date: -1 });
+      .sort({ createdAt: -1, date: -1 })
+      .lean();
 
     // Sanitize any existing records where payment is pending but status was set to confirmed
     const sanitizedAppointments = appointments.map((appt) => {
-      const apptObj = appt.toObject();
+      const apptObj = appt;
       if (
         apptObj.paymentStatus?.toLowerCase() !== "paid" &&
         apptObj.status?.toLowerCase() === "confirmed"
@@ -185,7 +201,7 @@ router.get("/appointments", protect, async (req, res) => {
 // ==========================================
 // 4A. WALK-IN APPOINTMENT BOOKING
 // ==========================================
-router.post("/appointments/walkin", protect, async (req, res) => {
+router.post("/appointments/walkin", protect, authorize(ROLES.DESK), async (req, res) => {
   try {
     const { patientDetails, appointmentDetails } = req.body;
 
@@ -198,6 +214,10 @@ router.post("/appointments/walkin", protect, async (req, res) => {
 
     if (!fullName || !phone) {
       return res.status(400).json({ msg: "Patient Name and Phone number are required." });
+    }
+    // New walk-in registrations need a number SMS reminders can reach
+    if (!patientId && !isValidPhone(phone)) {
+      return res.status(400).json({ msg: PHONE_HINT, message: PHONE_HINT });
     }
 
     if (!doctorId || (!date && !appointmentDetails.scheduleId)) {
@@ -306,7 +326,7 @@ router.post("/appointments/walkin", protect, async (req, res) => {
   }
 });
 
-router.put("/appointments/:id", protect, async (req, res) => {
+router.put("/appointments/:id", protect, authorize(ROLES.DESK), async (req, res) => {
   try {
     const { status, paymentStatus, arrived, cancelReason } = req.body;
     let appointment = await Appointment.findById(req.params.id);
@@ -465,7 +485,7 @@ router.delete("/appointments/:id", protect, authorize(["system_admin", "receptio
 // ==========================================
 // 5. BILLING MANAGEMENT
 // ==========================================
-router.get("/patients/search/patientid/:patientId", protect, async (req, res) => {
+router.get("/patients/search/patientid/:patientId", protect, authorize(ROLES.DESK), async (req, res) => {
   try {
     const patient = await Patient.findOne({ patientId: req.params.patientId.toUpperCase() }).select("-password");
     if (!patient) return res.status(404).json({ msg: "Patient not found" });
@@ -475,11 +495,11 @@ router.get("/patients/search/patientid/:patientId", protect, async (req, res) =>
   }
 });
 
-router.get("/patients/search/mobile/:mobileNumber", protect, async (req, res) => {
+router.get("/patients/search/mobile/:mobileNumber", protect, authorize(ROLES.DESK), async (req, res) => {
   try {
     const { mobileNumber } = req.params;
     const patients = await Patient.find({
-      mobileNumber: { $regex: mobileNumber, $options: "i" }
+      mobileNumber: { $regex: escapeRegex(mobileNumber), $options: "i" }
     }).select("-password");
     res.json(patients);
   } catch (err) {
@@ -489,8 +509,15 @@ router.get("/patients/search/mobile/:mobileNumber", protect, async (req, res) =>
 
 router.get("/bills/all", protect, authorize(["system_admin", "receptionist"]), async (req, res) => {
   try {
-    const manualBills = await Bill.find().populate("patientId", "fullName nicNumber patientId").lean();
-    const appointments = await Appointment.find({ amount: { $gt: 0 } }).populate("patientId", "fullName nicNumber patientId").lean();
+    const billed = await appointmentIdsWithBills();
+    const [manualBills, appointments] = await Promise.all([
+      Bill.find().populate("patientId", "fullName nicNumber patientId").lean(),
+      // Only appointments without their own bill, so nothing is listed twice
+      Appointment.find({ amount: { $gt: 0 }, _id: { $nin: billed } })
+        .select("patientId status amount paymentStatus date")
+        .populate("patientId", "fullName nicNumber patientId")
+        .lean(),
+    ]);
 
     const appointmentBills = appointments.map(app => ({
       _id: app._id,
@@ -750,7 +777,7 @@ router.post("/create-staff", protect, authorize(["system_admin"]), async (req, r
 
 router.get("/staff", protect, authorize(["system_admin", "receptionist"]), async (req, res) => {
   try {
-    const staff = await Admin.find().select("-password");
+    const staff = await Admin.find().select("-password").lean();
     res.json(staff);
   } catch (err) {
     res.status(500).send("Server Error");
@@ -846,7 +873,7 @@ router.post("/create-doctor", protect, authorize(["system_admin"]), async (req, 
 
 router.get("/all-doctors", protect, authorize(["system_admin"]), async (req, res) => {
   try {
-    const doctors = await Doctor.find().select("-password").sort({ createdAt: -1 });
+    const doctors = await Doctor.find().select("-password").sort({ createdAt: -1 }).lean();
     res.json(doctors);
   } catch (err) {
     res.status(500).send("Server Error");
@@ -940,7 +967,7 @@ router.put("/all-doctors/:id", protect, authorize(["system_admin"]), async (req,
   }
 });
 
-const syncTodaySchedulesToDoctors = async () => {
+const syncTodaySchedulesToDoctorsNow = async () => {
   try {
     const now = new Date();
     
@@ -951,10 +978,19 @@ const syncTodaySchedulesToDoctors = async () => {
     endOfDay.setHours(23, 59, 59, 999);
 
     // Fetch approved schedule requests for today
-    const todaySchedules = await ScheduleRequest.find({
-      status: "approved",
-      date: { $gte: startOfDay, $lte: endOfDay }
-    }).sort({ startTime: 1 });
+    // Both reads are independent: one round trip instead of two
+    const [todaySchedules, doctors] = await Promise.all([
+      ScheduleRequest.find({
+        status: "approved",
+        date: { $gte: startOfDay, $lte: endOfDay }
+      })
+        .select("doctorId startTime endTime sessionEnded allocatedRoom allocatedNurse")
+        .sort({ startTime: 1 })
+        .lean(),
+      Doctor.find().select("lastArrivalDate isArrived sessionStarted sessionEndedToday currentQueueNumber allocatedRoom allocatedNurse"),
+    ]);
+    // Saves are collected and written together at the end
+    const dirty = new Set();
 
     // Group schedules by doctorId
     const doctorSchedules = {};
@@ -967,7 +1003,6 @@ const syncTodaySchedulesToDoctors = async () => {
       doctorSchedules[docIdStr].push(sched);
     });
 
-    const doctors = await Doctor.find();
 
     for (const doc of doctors) {
       const docIdStr = doc._id.toString();
@@ -983,7 +1018,7 @@ const syncTodaySchedulesToDoctors = async () => {
         if (doc.sessionStarted) { doc.sessionStarted = false; changed = true; }
         if (doc.sessionEndedToday) { doc.sessionEndedToday = false; changed = true; }
         if (doc.currentQueueNumber !== 0) { doc.currentQueueNumber = 0; changed = true; }
-        if (changed) await doc.save();
+        if (changed) dirty.add(doc);
       }
 
       // Filter out any schedules that have explicitly ended
@@ -998,7 +1033,7 @@ const syncTodaySchedulesToDoctors = async () => {
         // If doctor already ended their session today and has no more active schedules, ensure nurse is released
         if (doc.allocatedNurse !== "") {
           doc.allocatedNurse = "";
-          await doc.save();
+          dirty.add(doc);
         }
         continue;
       }
@@ -1043,26 +1078,44 @@ const syncTodaySchedulesToDoctors = async () => {
           changed = true;
         }
         if (changed) {
-          await doc.save();
+          dirty.add(doc);
         }
       } else {
         // Only clear room and nurse if no active schedule exists and session is not started
         if (!doc.sessionStarted && !doc.isArrived && (doc.allocatedRoom !== "" || doc.allocatedNurse !== "")) {
           doc.allocatedRoom = "";
           doc.allocatedNurse = "";
-          await doc.save();
+          dirty.add(doc);
         }
       }
     }
+    await Promise.all([...dirty].map((d) => d.save()));
   } catch (err) {
     console.error("Error in syncTodaySchedulesToDoctors:", err);
   }
 };
 
+// The sync only needs to run when something changed (a write) or the day may have rolled over.
+// Concurrent callers share one run.
+let lastSyncAt = 0;
+let syncInFlight = null;
+const SYNC_MAX_AGE_MS = 60 * 1000;
+const syncTodaySchedulesToDoctors = async () => {
+  if (syncInFlight) return syncInFlight;
+  const fresh = Date.now() - lastSyncAt < SYNC_MAX_AGE_MS && getLastWriteAt() < lastSyncAt;
+  if (fresh) return;
+  const startedAt = Date.now();
+  syncInFlight = syncTodaySchedulesToDoctorsNow().finally(() => {
+    lastSyncAt = startedAt;
+    syncInFlight = null;
+  });
+  return syncInFlight;
+};
+
 router.get("/doctors", protect, authorize(["system_admin", "receptionist", "nurse"]), async (req, res) => {
   try {
     await syncTodaySchedulesToDoctors();
-    const doctors = await Doctor.find().select("name specialization isArrived allocatedRoom allocatedNurse channelingTime channelingStatus phone profileImage sessionStarted sessionEndedToday currentQueueNumber");
+    const doctors = await Doctor.find().select("name specialization isArrived allocatedRoom allocatedNurse channelingTime channelingStatus phone profileImage sessionStarted sessionEndedToday currentQueueNumber").lean();
     res.json(doctors);
   } catch (err) {
     res.status(500).send("Server Error");
@@ -1122,6 +1175,7 @@ router.put("/doctors/:id/status", protect, authorize(["system_admin", "reception
     if (isArrived !== undefined) {
       doctor.isArrived = isArrived;
       if (isArrived === true) {
+        clearStaleSession(doctor);
         doctor.lastArrivalDate = new Date();
         doctor.sessionEndedToday = false;
         // When doctor arrives, clear pre-arrival delay unless explicitly setting a new delay status
@@ -1134,7 +1188,12 @@ router.put("/doctors/:id/status", protect, authorize(["system_admin", "reception
     if (allocatedNurse !== undefined) doctor.allocatedNurse = allocatedNurse;
     if (channelingTime !== undefined) doctor.channelingTime = channelingTime;
     if (channelingStatus !== undefined) doctor.channelingStatus = channelingStatus;
-    if (sessionStarted !== undefined) doctor.sessionStarted = sessionStarted;
+    if (sessionStarted !== undefined) {
+      if (sessionStarted === true && !isArrivedToday(doctor)) {
+        return res.status(400).json({ msg: "Cannot start session until the doctor has been marked as arrived." });
+      }
+      doctor.sessionStarted = sessionStarted;
+    }
     if (currentQueueNumber !== undefined) doctor.currentQueueNumber = currentQueueNumber;
 
     await doctor.save();
@@ -1237,7 +1296,8 @@ router.put("/doctors/:id/status", protect, authorize(["system_admin", "reception
     }
 
     if (req.io) {
-      req.io.emit("doctorStatusUpdated", doctor);
+      emitDoctorStatus(req.io, doctor);
+      emitDoctorQueueChanged(doctor._id);
       if (isArrived !== undefined && isArrived !== prevArrived) {
         req.io.emit("doctorArrivalAlert", {
           doctorId: doctor._id,
@@ -1287,7 +1347,7 @@ router.put("/doctors/:id/status", protect, authorize(["system_admin", "reception
 // ==========================================
 // 1A. FORGOT PASSWORD (ADMIN)
 // ==========================================
-router.post("/forgot-password", async (req, res) => {
+router.post("/forgot-password", resetRequestLimiter, async (req, res) => {
   try {
     const { email } = req.body;
     const admin = await Admin.findOne({ email });
@@ -1323,7 +1383,7 @@ router.post("/forgot-password", async (req, res) => {
 // ==========================================
 // 1B. RESET PASSWORD WITH TOKEN (ADMIN)
 // ==========================================
-router.put("/reset-password/:token", async (req, res) => {
+router.put("/reset-password/:token", otpCheckLimiter, async (req, res) => {
   try {
     const { newPassword } = req.body;
 
@@ -1370,8 +1430,8 @@ router.post("/staff/:id/reset-password", protect, authorize(["system_admin"]), a
     if (!staff) return res.status(404).json({ msg: "Staff member not found" });
 
     // 1. Generate a temporary password (e.g., Care101@4928)
-    const randomPin = Math.floor(1000 + Math.random() * 9000);
-    const tempPassword = `Care101@${randomPin}`;
+    // Random and unguessable (the old Care101@NNNN had only 9,000 possibilities)
+    const tempPassword = `Care101@${crypto.randomBytes(6).toString("base64url")}`;
 
     // 2. Hash the temporary password
     const salt = await bcrypt.genSalt(10);
@@ -1402,7 +1462,7 @@ router.put("/change-password", protect, async (req, res) => {
     const { currentPassword, newPassword } = req.body;
 
     // 1. Find the logged-in user (req.user.id comes from your 'protect' middleware)
-    const admin = await Admin.findById(req.user.id);
+    const admin = await Admin.findById(req.user.id).select("+password");
     if (!admin) {
       return res.status(404).json({ msg: "User not found" });
     }
@@ -1431,9 +1491,10 @@ router.put("/change-password", protect, async (req, res) => {
 // ==========================================
 // TEST NOTIFICATIONS (Email & SMS Diagnostic)
 // ==========================================
-router.post("/test-notifications", async (req, res) => {
+router.post("/test-notifications", protect, authorize(["system_admin"]), async (req, res) => {
   try {
     const { email, phone } = req.body || {};
+    // Diagnostic only: defaults to the system's own inbox
     const targetEmail = email || process.env.EMAIL_USER;
     const targetPhone = phone;
 

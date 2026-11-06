@@ -1,5 +1,9 @@
 "use client";
 
+import { confirmDialog } from "@/lib/confirmDialog";
+import { notify } from "@/lib/notify";
+import { useLiveRefresh } from "@/lib/useLiveRefresh";
+import { PageSkeleton } from "@/components/ui/skeleton-presets";
 import { useEffect, useState } from "react";
 import {
  Eye, EyeOff, UserPlus, Trash2, Mail, Lock, Building, Briefcase, Loader2, Key, Copy, CheckCircle2, Search
@@ -94,10 +98,13 @@ const [showPassword, setShowPassword] = useState(false);
     fetchStaff();
   }, []);
 
+  // Live: staff changes from other admins appear without a reload
+  useLiveRefresh(() => fetchStaff());
+
   // 2. Add New Staff
   const handleAddStaff = async () => {
     if (!formData.name || !formData.email || !formData.password || !formData.department) {
-      alert("Please fill in all fields");
+      notify("Please fill in all fields");
       return;
     }
 
@@ -117,23 +124,23 @@ const [showPassword, setShowPassword] = useState(false);
 
       const contentType = res.headers.get("content-type");
       if (!contentType || !contentType.includes("application/json")) {
-        alert("Server Error: Invalid response format");
+        notify("Server Error: Invalid response format");
         return;
       }
 
       const data = await res.json();
 
       if (res.ok) {
-        alert("Staff Member Created Successfully!");
+        notify("Staff Member Created Successfully!");
         setIsModalOpen(false);
         setFormData({ name: "", email: "", password: "", role: "nurse", department: "" });
         fetchStaff();
       } else {
-        alert(`Error: ${data.msg}`);
+        notify(`Error: ${data.msg}`);
       }
     } catch (error) {
       console.error("Add staff error:", error);
-      alert("Server Error");
+      notify("Server Error");
     } finally {
       setSubmitLoading(false);
     }
@@ -141,7 +148,7 @@ const [showPassword, setShowPassword] = useState(false);
 
   // 3. Remove Staff
   const handleDelete = async (id: string) => {
-    if (!confirm("Are you sure you want to remove this staff member? Access will be revoked immediately.")) return;
+    if (!await confirmDialog("Are you sure you want to remove this staff member? Access will be revoked immediately.")) return;
 
     const token = getAdminToken();
     try {
@@ -159,14 +166,14 @@ const [showPassword, setShowPassword] = useState(false);
         const contentType = res.headers.get("content-type");
         if (contentType && contentType.includes("application/json")) {
           const data = await res.json();
-          alert(data.msg);
+          notify(data.msg);
         } else {
-          alert("Failed to delete staff member");
+          notify("Failed to delete staff member");
         }
       }
     } catch (err) {
       console.error("Delete failed", err);
-      alert("Server Error");
+      notify("Server Error");
     }
   };
 
@@ -193,14 +200,14 @@ const [showPassword, setShowPassword] = useState(false);
         if (res.ok) {
           setTempPassword(data.tempPassword);
         } else {
-          alert(`Error: ${data.msg}`);
+          notify(`Error: ${data.msg}`);
         }
       } else {
-        alert(`Server Error: ${res.status}. Endpoint might be missing.`);
+        notify(`Server Error: ${res.status}. Endpoint might be missing.`);
       }
     } catch (err) {
       console.error(err);
-      alert("Failed to reset password. Check your browser console.");
+      notify("Failed to reset password. Check your browser console.");
     } finally {
       setResetLoading(false);
     }
@@ -221,7 +228,7 @@ const [showPassword, setShowPassword] = useState(false);
     setCopied(false);
   };
 
-  if (loading) return <div className="p-10 flex justify-center"><Loader2 className="animate-spin text-cyan-600" /></div>;
+  if (loading) return <PageSkeleton />;
 
   return (
     <div className="min-h-screen bg-slate-50">

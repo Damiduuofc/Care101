@@ -1,9 +1,10 @@
 import express from 'express';
+import { escapeRegex } from '../utils/access.js';
 import ScheduleRequest from '../models/ScheduleRequest.js';
 import Doctor from '../models/Doctor.js';
 import Admin from '../models/Admin.js';
 import Notification from '../models/Notification.js';
-import { auth } from '../middleware/auth.js';
+import { auth, authorize, ROLES } from '../middleware/auth.js';
 import { findAutoAllocation, ROOM_DEPARTMENTS, getDoctorDept } from '../utils/autoAllocate.js';
 import { emitAppointmentUpdated, emitNotification } from '../utils/realtime.js';
 import { describeSession, cancelAppointment } from '../utils/bookingService.js';
@@ -91,7 +92,7 @@ const validateRangeAgainstTimeline = async (dateInput, specialization, start, en
 };
 
 // 0. AVAILABILITY: hour-by-hour timeline for a date (doctor = self, receptionist passes doctorId)
-router.get('/availability', auth, async (req, res) => {
+router.get('/availability', auth, authorize(["doctor", ...ROLES.SCHEDULING]), async (req, res) => {
   try {
     const { date } = req.query;
     if (!date) return res.status(400).json({ msg: 'Date parameter is required' });
@@ -112,7 +113,7 @@ router.get('/availability', auth, async (req, res) => {
 });
 
 // 1. DOCTOR: Send a schedule request
-router.post('/request', auth, async (req, res) => {
+router.post('/request', auth, authorize(["doctor"]), async (req, res) => {
   try {
     const { date, startTime, endTime, isUnlimited, queueLimit } = req.body;
     if (!date || !startTime || !endTime) {
@@ -153,7 +154,7 @@ router.post('/request', auth, async (req, res) => {
 });
 
 // 3. RECEPTIONIST: Get pending requests
-router.get('/pending', auth, async (req, res) => {
+router.get('/pending', auth, authorize(ROLES.STAFF), async (req, res) => {
   try {
     let query = { status: 'pending' };
 
@@ -176,9 +177,31 @@ router.get('/pending', auth, async (req, res) => {
 });
 
 // 4. RECEPTIONIST: Get all requests
-router.get('/all', auth, async (req, res) => {
+router.get('/all', auth, authorize(ROLES.STAFF), async (req, res) => {
   try {
-    const requests = await ScheduleRequest.find().sort({ createdAt: -1 });
+    const { scope } = req.query;
+
+    // ?scope=pending -> every request still waiting for a decision
+    if (scope === 'pending') {
+      return res.json(await ScheduleRequest.find({ status: 'pending' }).sort({ createdAt: -1 }).lean());
+    }
+
+    // ?scope=history&skip=0&limit=50&q=<doctor> -> one page of decided requests (there are thousands)
+    if (scope === 'history') {
+      const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 50, 1), 500);
+      const skip = Math.max(parseInt(req.query.skip, 10) || 0, 0);
+      const filter = { status: { $ne: 'pending' } };
+      const q = String(req.query.q || '').trim();
+      if (q) filter.doctorName = { $regex: escapeRegex(q), $options: 'i' };
+      const [items, total] = await Promise.all([
+        ScheduleRequest.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
+        ScheduleRequest.countDocuments(filter),
+      ]);
+      return res.json({ items, total, hasMore: skip + items.length < total });
+    }
+
+    // No scope: everything (kept for older clients)
+    const requests = await ScheduleRequest.find().sort({ createdAt: -1 }).lean();
     res.json(requests);
   } catch (err) {
     res.status(500).json({ msg: 'Server error' });
@@ -354,7 +377,7 @@ router.put('/:id/status', auth, async (req, res) => {
 // ==========================================
 // 2. DOCTOR: Get my requests (Finalized Population)
 // ==========================================
-router.get('/my-requests', auth, async (req, res) => {
+router.get('/my-requests', auth, authorize(["doctor"]), async (req, res) => {
   try {
     const requests = await ScheduleRequest.find({ doctorId: req.user.id })
       .populate('doctorId', 'allocatedRoom allocatedNurse') 
@@ -396,7 +419,7 @@ router.get('/doctor/:doctorId/approved', auth, async (req, res) => {
 
 
 // 7. RECEPTIONIST: Today's Approved or by specified Date
-router.get('/approved/today', auth, async (req, res) => {
+router.get('/approved/today', auth, authorize(ROLES.STAFF), async (req, res) => {
   try {
     let query = { status: 'approved' };
 
@@ -425,7 +448,7 @@ router.get('/approved/today', auth, async (req, res) => {
 });
 
 // 7.0 RECEPTIONIST: Suggest an available room and nurse for a request
-router.get('/:id/auto-allocation', auth, async (req, res) => {
+router.get('/:id/auto-allocation', auth, authorize(ROLES.SCHEDULING), async (req, res) => {
   try {
     const request = await ScheduleRequest.findById(req.params.id);
     if (!request) return res.status(404).json({ msg: 'Request not found' });
@@ -440,7 +463,7 @@ router.get('/:id/auto-allocation', auth, async (req, res) => {
 });
 
 // 7.1 RECEPTIONIST: Allocate room and nurse to an approved schedule
-router.put('/:id/allocate', auth, async (req, res) => {
+router.put('/:id/allocate', auth, authorize(ROLES.SCHEDULING), async (req, res) => {
   try {
     const { allocatedRoom, allocatedNurse } = req.body;
 

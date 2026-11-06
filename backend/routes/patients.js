@@ -1,8 +1,10 @@
 import express from "express";
+import { isValidPhone, PHONE_HINT } from "../utils/phone.js";
+import { canSeeAnyPatient, escapeRegex } from "../utils/access.js";
 import mongoose from "mongoose";
 import bcrypt from "bcryptjs";
 import Patient from "../models/Patient.js";
-import { auth } from "../middleware/auth.js";
+import { auth, authorize, ROLES } from "../middleware/auth.js";
 
 const router = express.Router();
 
@@ -27,12 +29,13 @@ router.get("/search-by-patientid/:patientId", auth, async (req, res) => {
         }
 
         if (!patient) {
-            patient = await Patient.findOne({ nicNumber: new RegExp(`^${trimmed}$`, "i") })
+            patient = await Patient.findOne({ nicNumber: new RegExp(`^${escapeRegex(trimmed)}$`, "i") })
                 .select("-password")
                 .lean();
         }
 
-        if (!patient) {
+        // Patients may only look themselves up (the app uses this to open their own records)
+        if (!patient || (!canSeeAnyPatient(req.user) && String(patient._id) !== String(req.user.id))) {
             return res.status(404).json({ msg: "Patient not found", found: false });
         }
 
@@ -47,7 +50,7 @@ router.get("/search-by-patientid/:patientId", auth, async (req, res) => {
 // ==========================================
 // 2. ADD PATIENT MANUALLY (For Doctor)
 // ==========================================
-router.post("/add-patient", auth, async (req, res) => {
+router.post("/add-patient", auth, authorize(ROLES.CLINICAL), async (req, res) => {
     try {
         const {
             username,
@@ -62,6 +65,9 @@ router.post("/add-patient", auth, async (req, res) => {
             medicalConditions,
             allergies
         } = req.body;
+        if (mobileNumber && !isValidPhone(mobileNumber)) {
+            return res.status(400).json({ msg: PHONE_HINT, message: PHONE_HINT });
+        }
 
         // Validation
         if (!password || !fullName) {
@@ -119,7 +125,7 @@ router.post("/add-patient", auth, async (req, res) => {
 // ==========================================
 // 3. GET ALL PATIENTS (For Doctor)
 // ==========================================
-router.get("/all-patients", auth, async (req, res) => {
+router.get("/all-patients", auth, authorize(ROLES.CLINICAL), async (req, res) => {
     try {
         const patients = await Patient.find()
             .select("patientId username fullName nicNumber mobileNumber email dateOfBirth gender createdAt")

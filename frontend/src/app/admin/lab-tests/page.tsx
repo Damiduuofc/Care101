@@ -1,5 +1,9 @@
 "use client";
 
+import { confirmDialog } from "@/lib/confirmDialog";
+import { notify } from "@/lib/notify";
+import { useLiveRefresh } from "@/lib/useLiveRefresh";
+import { ListSkeleton } from "@/components/ui/skeleton-presets";
 import { useEffect, useState } from "react";
 import { FlaskConical, Loader2, Pencil, Plus, Search, Trash2 } from "lucide-react";
 import Sidebar from "@/components/admin/Sidebar";
@@ -53,6 +57,9 @@ export default function LabTestsManagement() {
     fetchTests();
   }, []);
 
+  // Live: catalogue edits from other admins appear without a reload
+  useLiveRefresh(() => fetchTests());
+
   const openCreate = () => {
     setEditingId(null);
     setFormData(emptyForm);
@@ -73,7 +80,7 @@ export default function LabTestsManagement() {
 
   const handleSave = async () => {
     if (!formData.name.trim() || formData.price === "" || Number(formData.price) < 0) {
-      alert("Test name and a valid price are required");
+      notify("Test name and a valid price are required");
       return;
     }
     setSaving(true);
@@ -91,18 +98,18 @@ export default function LabTestsManagement() {
         setIsModalOpen(false);
         fetchTests();
       } else {
-        alert(`Error: ${data.msg}`);
+        notify(`Error: ${data.msg}`);
       }
     } catch (err) {
       console.error("Save lab test failed", err);
-      alert("Server Error");
+      notify("Server Error");
     } finally {
       setSaving(false);
     }
   };
 
   const handleDelete = async (test: any) => {
-    if (!confirm(`Remove "${test.name}"? Existing lab requests keep their price.`)) return;
+    if (!await confirmDialog(`Remove "${test.name}"? Existing lab requests keep their price.`)) return;
     try {
       const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/lab-tests/${test._id}`, {
         method: "DELETE",
@@ -112,11 +119,11 @@ export default function LabTestsManagement() {
         setTests(prev => prev.filter(t => t._id !== test._id));
       } else {
         const data = await res.json();
-        alert(`Error: ${data.msg}`);
+        notify(`Error: ${data.msg}`);
       }
     } catch (err) {
       console.error("Delete lab test failed", err);
-      alert("Server Error");
+      notify("Server Error");
     }
   };
 
@@ -146,7 +153,7 @@ export default function LabTestsManagement() {
           </div>
 
           {loading ? (
-            <div className="p-10 flex justify-center"><Loader2 className="animate-spin text-cyan-500" /></div>
+            <ListSkeleton rows={6} />
           ) : filtered.length === 0 ? (
             <div className="p-10 text-center text-slate-400 bg-white rounded-xl border border-dashed border-slate-200">
               <FlaskConical className="h-10 w-10 mx-auto mb-2 text-slate-300" />

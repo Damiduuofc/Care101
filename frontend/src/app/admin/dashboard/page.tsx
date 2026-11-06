@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -10,7 +11,8 @@ import NurseTodayAssignments from "@/components/admin/NurseTodayAssignments";
 
 import { useRouter } from "next/navigation";
 import { clearAdminSession, getAdminToken, getAdminUser } from "@/lib/adminSession";
-import { io } from "socket.io-client";
+import { useLiveRefresh } from "@/lib/useLiveRefresh";
+import { Skeleton } from "@/components/ui/skeleton";
 import { playDingSound } from "@/lib/soundUtils";
 
 export default function Dashboard() {
@@ -111,59 +113,20 @@ export default function Dashboard() {
     fetchNurseAssignments();
   }, []);
 
-  useEffect(() => {
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5002";
-    let socketUrl = apiUrl;
-    try {
-      const urlObj = new URL(apiUrl);
-      socketUrl = urlObj.origin;
-    } catch (e) {
-      console.error("Invalid API URL for socket:", e);
+  // Live updates: refetch whenever the server signals a change (see useLiveRefresh)
+  useLiveRefresh(
+    () => {
+      fetchStats();
+      fetchNurseAssignments();
+    },
+    {
+      on: {
+        doctorDelayAlert: () => playDingSound(),
+      },
     }
+  );
 
-    const token = getAdminToken() || "";
-    const socket = io(socketUrl, {
-      auth: { token },
-      extraHeaders: {
-        "Authorization": `Bearer ${token}`,
-        "x-auth-token": token
-      }
-    });
-
-    socket.on("connect", () => {
-      console.log("🔌 Admin Dashboard Connected to Socket.IO Server");
-    });
-
-    socket.on("doctorStatusUpdated", () => {
-      fetchStats();
-      fetchNurseAssignments();
-    });
-
-    socket.on("doctorDelayAlert", (alertData: any) => {
-      console.log("🚨 Received doctor delay alert in admin dashboard:", alertData);
-      playDingSound();
-      fetchStats();
-    });
-
-    socket.on("appointmentUpdated", () => {
-      fetchStats();
-      fetchNurseAssignments();
-    });
-
-    socket.on("queueUpdated", () => {
-      fetchNurseAssignments();
-    });
-
-    socket.on("hospitalStatusUpdated", () => {
-      fetchStats();
-    });
-
-    return () => {
-      socket.disconnect();
-    };
-  }, []);
-
-  if (loading) return <div className="p-8 text-center text-slate-500">Loading Dashboard...</div>;
+  if (loading) return <DashboardSkeleton />;
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -240,9 +203,12 @@ export default function Dashboard() {
                   <Activity className="h-5 w-5 text-cyan-600" />
                   Hospital Real-Time Status
                 </CardTitle>
-                <a href="/admin/status" className="text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-1 rounded-md transition-colors font-medium">
-                  Edit Status
-                </a>
+                {/* Only system admins can save hospital status */}
+                {user?.role === "system_admin" && (
+                  <Link href="/admin/status" className="text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-1 rounded-md transition-colors font-medium">
+                    Edit Status
+                  </Link>
+                )}
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
@@ -300,4 +266,51 @@ function StatusItem({ label, status, color }: any) {
       </div>
     </div>
   )
+}
+
+function DashboardSkeleton() {
+  return (
+    <div className="min-h-screen bg-slate-50" aria-busy="true" aria-label="Loading dashboard">
+      <Sidebar />
+      <main className="flex-1 md:ml-64 p-4 lg:p-8">
+        <div className="max-w-7xl mx-auto space-y-8">
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+            <div className="space-y-3">
+              <Skeleton className="h-8 w-48" />
+              <Skeleton className="h-4 w-64" />
+            </div>
+            <Skeleton className="h-10 w-36 rounded-xl" />
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <Card key={i} className="border-slate-100 shadow-sm">
+                <CardContent className="p-6 flex justify-between items-start">
+                  <div className="space-y-3">
+                    <Skeleton className="h-4 w-28" />
+                    <Skeleton className="h-7 w-20" />
+                  </div>
+                  <Skeleton className="h-12 w-12 rounded-xl" />
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            <Card className="shadow-sm border-slate-200">
+              <CardHeader className="flex flex-row items-center justify-between pb-2">
+                <Skeleton className="h-6 w-56" />
+                <Skeleton className="h-6 w-20" />
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {Array.from({ length: 4 }).map((_, i) => (
+                  <Skeleton key={i} className="h-12 w-full rounded-lg" />
+                ))}
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+      </main>
+    </div>
+  );
 }

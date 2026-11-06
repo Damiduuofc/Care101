@@ -21,6 +21,8 @@ const LabRequestSchema = new mongoose.Schema({
 });
 
 LabRequestSchema.index({ patientId: 1, createdAt: -1 });
+LabRequestSchema.index({ createdAt: -1 });
+LabRequestSchema.index({ doctorId: 1, createdAt: -1 });
 LabRequestSchema.index({ status: 1, createdAt: -1 });
 
 export default mongoose.model("LabRequest", LabRequestSchema);

@@ -23,5 +23,7 @@ const ScheduleRequestSchema = new mongoose.Schema({
 });
 
 ScheduleRequestSchema.index({ doctorId: 1, status: 1, date: 1 });
+ScheduleRequestSchema.index({ status: 1, date: 1 });
+ScheduleRequestSchema.index({ createdAt: -1 });
 
 export default mongoose.model('ScheduleRequest', ScheduleRequestSchema);

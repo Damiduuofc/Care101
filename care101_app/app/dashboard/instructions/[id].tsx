@@ -1,3 +1,4 @@
+import { SkeletonScreen } from '../../../components/Skeleton';
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, ActivityIndicator, StatusBar, Modal, Linking, Share
@@ -113,7 +114,7 @@ export default function InstructionDetailScreen() {
 
   const handleOpenLink = (url: string) => { if (url) Linking.openURL(url); };
 
-  if (loading) return <ActivityIndicator style={{marginTop:50}} size="large" color="#0891b2" />;
+  if (loading) return <SkeletonScreen variant="detail" />;
   if (!data) return <Text>Not Found</Text>;
   const getFrontendUrl = () => {
     if (process.env.EXPO_PUBLIC_FRONTEND_URL) {
@@ -193,7 +194,7 @@ export default function InstructionDetailScreen() {
       
       <View style={styles.header}>
         <View style={{flexDirection:'row', alignItems:'center'}}>
-            <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+            <TouchableOpacity onPress={() => router.back()} style={styles.backBtn} accessibilityRole="button" accessibilityLabel="Go back">
                 <ArrowLeft size={24} color="#0f172a" />
             </TouchableOpacity>
             <View>
@@ -201,7 +202,7 @@ export default function InstructionDetailScreen() {
                 <Text style={styles.headerSub}>Smart Care, Starts Here</Text>
             </View>
         </View>
-        <TouchableOpacity onPress={handleDeleteInstruction} style={styles.deleteBtn}>
+        <TouchableOpacity onPress={handleDeleteInstruction} style={styles.deleteBtn} accessibilityRole="button" accessibilityLabel="Delete">
             <Trash2 size={20} color="#ef4444" />
         </TouchableOpacity>
       </View>
@@ -241,7 +242,7 @@ export default function InstructionDetailScreen() {
       <Modal visible={qrVisible} transparent animationType="fade" onRequestClose={() => setQrVisible(false)}>
         <View style={styles.modalOverlay}>
             <View style={styles.modalContent}>
-                <TouchableOpacity style={styles.closeModal} onPress={() => setQrVisible(false)}>
+                <TouchableOpacity style={styles.closeModal} onPress={() => setQrVisible(false)} accessibilityRole="button" accessibilityLabel="Close">
                     <X size={24} color="#64748b" />
                 </TouchableOpacity>
                 <Text style={styles.qrTitle}>Patient Access Link & QR</Text>
@@ -280,7 +281,7 @@ export default function InstructionDetailScreen() {
       <Modal visible={showExpireSelect} transparent animationType="slide" onRequestClose={() => setShowExpireSelect(false)}>
         <View style={styles.modalOverlay}>
             <View style={styles.modalContent}>
-                <TouchableOpacity style={styles.closeModal} onPress={() => setShowExpireSelect(false)}>
+                <TouchableOpacity style={styles.closeModal} onPress={() => setShowExpireSelect(false)} accessibilityRole="button" accessibilityLabel="Close">
                     <X size={24} color="#64748b" />
                 </TouchableOpacity>
                 <Text style={styles.modalTitle}>Share Instructions</Text>
@@ -308,7 +309,7 @@ const InstructionSection = ({ title, color, onQrPress, files, onUpload, onRemove
         <View style={styles.sectionHeader}>
             <View style={[styles.accentBar, { backgroundColor: color }]} />
             <Text style={styles.sectionTitle}>{title}</Text>
-            <TouchableOpacity style={[styles.qrBtn, {backgroundColor: `${color}15`}]} onPress={onQrPress}>
+            <TouchableOpacity style={[styles.qrBtn, {backgroundColor: `${color}15`}]} onPress={onQrPress} accessibilityRole="button" accessibilityLabel="Show QR code">
                 <QrCode size={20} color={color} />
             </TouchableOpacity>
         </View>
@@ -342,18 +343,17 @@ const MediaRow = ({ type, label, url, onUpload, onRemove, onView }: any) => {
             {/* Buttons: Upload vs (View + Delete) */}
             {hasFile ? (
                 <View style={{flexDirection: 'row', gap: 8}}>
-                     <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#10b981' }]} onPress={onView}>
+                     <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#10b981' }]} onPress={onView} accessibilityRole="button" accessibilityLabel="View">
                         <Eye size={18} color="#fff" />
                      </TouchableOpacity>
-                     <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#fee2e2' }]} onPress={onRemove}>
+                     <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#fee2e2' }]} onPress={onRemove} accessibilityRole="button" accessibilityLabel="Delete">
                         <Trash2 size={18} color="#ef4444" />
                      </TouchableOpacity>
                 </View>
             ) : (
                 <TouchableOpacity 
                     style={[styles.actionBtn, { backgroundColor: '#3b82f6' }]} // Always blue (active)
-                    onPress={onUpload}
-                >
+                    onPress={onUpload} accessibilityRole="button" accessibilityLabel="Upload file">
                     <CloudUpload size={20} color="#fff" />
                 </TouchableOpacity>
             )}

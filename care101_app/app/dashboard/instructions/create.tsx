@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import KeyboardSafe from '../../../components/KeyboardSafe';
 import {
   View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, Alert, ActivityIndicator
 } from 'react-native';
@@ -70,8 +71,9 @@ export default function CreateInstructionScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
+      <KeyboardSafe scroll={false}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn} accessibilityRole="button" accessibilityLabel="Go back">
           <ArrowLeft size={24} color="#0f172a" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Surgery Instructions</Text>
@@ -113,6 +115,7 @@ export default function CreateInstructionScreen() {
         </TouchableOpacity>
 
       </ScrollView>
+      </KeyboardSafe>
     </SafeAreaView>
   );
 }

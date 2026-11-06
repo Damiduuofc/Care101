@@ -127,7 +127,7 @@ export default function PatientSignupStep3() {
                             autoCapitalize="none"
                         />
                         {isPassword && (
-                            <TouchableOpacity onPress={togglePass} style={styles.eyeButton}>
+                            <TouchableOpacity onPress={togglePass} style={styles.eyeButton} accessibilityRole="button" accessibilityLabel="Show or hide password">
                                 <Ionicons
                                     name={showPassState ? "eye-off-outline" : "eye-outline"}
                                     size={20}

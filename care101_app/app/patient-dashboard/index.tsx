@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
     View,
     Text,
@@ -11,11 +11,13 @@ import {
     ActivityIndicator,
     Modal,
     Alert,
-    FlatList
+    FlatList,
+    AppState,
+    RefreshControl
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import * as SecureStore from 'expo-secure-store';
 import {
     ChevronRight,
@@ -35,6 +37,7 @@ import {
 import PatientBottomNavBar from '../../components/PatientBottomNavBar';
 import { useAuth } from '@/context/auth';
 import AiAssistant from '@/components/ui/AiAssistant';
+import Skeleton, { SkeletonGrid } from '../../components/Skeleton';
 import { io } from 'socket.io-client';
 import { WidgetService } from '@/services/widgetService';
 
@@ -46,6 +49,7 @@ export default function PatientDashboardScreen() {
 
     // --- STATE MANAGEMENT ---
     const [loading, setLoading] = useState(true);
+    const [pullRefreshing, setPullRefreshing] = useState(false);
     const [upcomingAppointment, setUpcomingAppointment] = useState<any>(null);
     const [queueData, setQueueData] = useState<any>(null);
 
@@ -228,6 +232,18 @@ export default function PatientDashboardScreen() {
         socket.on("appointmentUpdated", () => {
             fetchDashboardData();
             if (user) WidgetService.syncWithServer(token, user._id || user.id);
+        });
+
+        // Generic server-side change signal (payments, bookings, schedule edits, ...)
+        socket.on("dashboardUpdated", () => {
+            fetchDashboardData();
+            fetchUnreadCount();
+        });
+
+        // Missed events while offline: catch up when the socket comes back
+        socket.io.on("reconnect", () => {
+            fetchDashboardData();
+            fetchUnreadCount();
         });
 
         socket.on("disconnect", () => {
@@ -561,22 +577,34 @@ export default function PatientDashboardScreen() {
     };
 
     // --- REAL-TIME REFRESH LOGIC ---
-    useEffect(() => {
-        if (user && token) {
-            fetchDashboardData();
-            fetchUnreadCount();
-            WidgetService.syncWithServer(token, user._id || user.id);
-
-            const refreshInterval = setInterval(() => {
+    // The socket above delivers changes instantly, so polling is only a slow safety net.
+    // It runs while this screen is on top and the app is in the foreground.
+    useFocusEffect(
+        useCallback(() => {
+            if (!user || !token) return;
+            const refreshAll = () => {
                 fetchDashboardData();
                 fetchNotifications(false); // Silent background fetch
                 fetchUnreadCount();
                 WidgetService.syncWithServer(token, user._id || user.id);
-            }, 10000);
+            };
+            refreshAll();
 
-            return () => clearInterval(refreshInterval);
-        }
-    }, [user, token]);
+            const refreshInterval = setInterval(() => {
+                if (AppState.currentState === 'active') refreshAll();
+            }, 60000);
+            // Coming back to the app: catch up straight away
+            const appStateSub = AppState.addEventListener('change', (state) => {
+                if (state === 'active') refreshAll();
+            });
+
+            return () => {
+                clearInterval(refreshInterval);
+                appStateSub.remove();
+            };
+            // eslint-disable-next-line react-hooks/exhaustive-deps
+        }, [user, token])
+    );
 
     const getFormattedName = () => {
         if (!user) return "Patient";
@@ -595,8 +623,58 @@ export default function PatientDashboardScreen() {
 
     if (authLoading || loading) {
         return (
-            <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
-                <ActivityIndicator size="large" color="#06b6d4" />
+            <View style={styles.container}>
+                <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent />
+                <SafeAreaView edges={['top']} style={styles.headerSafeArea}>
+                    <View style={styles.headerContainer}>
+                        <View style={styles.profileSection}>
+                            <Skeleton width={50} height={50} radius={25} style={{ marginRight: 15 }} />
+                            <View style={{ gap: 6 }}>
+                                <Skeleton width={100} height={12} />
+                                <Skeleton width={150} height={18} />
+                            </View>
+                        </View>
+                        <Skeleton width={40} height={40} radius={20} />
+                    </View>
+                </SafeAreaView>
+                <ScrollView scrollEnabled={false} contentContainerStyle={styles.scrollContent}>
+                    <Skeleton height={160} radius={16} style={{ margin: 20 }} />
+                    <View style={styles.section}>
+                        <Skeleton width={190} height={18} style={{ marginBottom: 16 }} />
+                        <View style={styles.appointmentCard}>
+                            <View style={styles.appointmentTopRow}>
+                                <View style={styles.appointLeft}>
+                                    <Skeleton width={52} height={64} radius={12} style={{ marginRight: 14 }} />
+                                    <View style={{ flex: 1, gap: 8 }}>
+                                        <Skeleton width="80%" height={15} />
+                                        <Skeleton width="60%" height={12} />
+                                        <Skeleton width={70} height={18} radius={6} />
+                                    </View>
+                                </View>
+                                <Skeleton width={96} height={32} radius={12} />
+                            </View>
+                            <View style={styles.cardQueueMetricsRow}>
+                                {[0, 1, 2].map((i) => (
+                                    <Skeleton key={i} height={52} radius={12} style={{ flex: 1 }} />
+                                ))}
+                            </View>
+                        </View>
+                    </View>
+                    <View style={styles.section}>
+                        <Skeleton width={130} height={18} style={{ marginBottom: 16 }} />
+                        <View style={styles.actionList}>
+                            {[0, 1, 2, 3].map((i) => (
+                                <View key={i} style={styles.actionCard}>
+                                    <Skeleton width={48} height={48} radius={12} style={{ marginRight: 16 }} />
+                                    <View style={{ flex: 1, gap: 6 }}>
+                                        <Skeleton width="55%" height={14} />
+                                        <Skeleton width="35%" height={11} />
+                                    </View>
+                                </View>
+                            ))}
+                        </View>
+                    </View>
+                </ScrollView>
             </View>
         );
     }
@@ -642,7 +720,12 @@ export default function PatientDashboardScreen() {
                         </View>
                     </View>
 
-                    <TouchableOpacity style={styles.notificationButton} onPress={() => fetchNotifications(true)}>
+                    <TouchableOpacity
+                        style={styles.notificationButton}
+                        onPress={() => fetchNotifications(true)}
+                        accessibilityRole="button"
+                        accessibilityLabel={unreadCount > 0 ? `Notifications, ${unreadCount} unread` : 'Notifications'}
+                    >
                         <Bell size={24} color="#1e293b" />
                         {unreadCount > 0 && (
                             <View style={styles.unreadBadge}>
@@ -653,7 +736,23 @@ export default function PatientDashboardScreen() {
                 </View>
             </SafeAreaView>
 
-            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+            <ScrollView
+                showsVerticalScrollIndicator={false}
+                contentContainerStyle={styles.scrollContent}
+                refreshControl={
+                    <RefreshControl
+                        refreshing={pullRefreshing}
+                        tintColor="#06b6d4"
+                        colors={['#06b6d4']}
+                        onRefresh={async () => {
+                            setPullRefreshing(true);
+                            await Promise.all([fetchDashboardData(), fetchUnreadCount()]);
+                            if (token && user) WidgetService.syncWithServer(token, user._id || user.id);
+                            setPullRefreshing(false);
+                        }}
+                    />
+                }
+            >
                 <View style={styles.heroContainer}>
                     <Image source={bannerImage} style={styles.heroImage} />
                     <LinearGradient colors={['transparent', 'rgba(0,0,0,0.7)']} style={styles.heroOverlay}>
@@ -787,7 +886,7 @@ export default function PatientDashboardScreen() {
                     <View style={styles.modalContent}>
                         <View style={styles.modalHeader}>
                             <Text style={styles.modalTitle}>Live Queue Status</Text>
-                            <TouchableOpacity onPress={() => setQueueVisible(false)}><X size={24} color="#64748b" /></TouchableOpacity>
+                            <TouchableOpacity onPress={() => setQueueVisible(false)} accessibilityRole="button" accessibilityLabel="Close"><X size={24} color="#64748b" /></TouchableOpacity>
                         </View>
                         {queueData ? (
                             <View style={styles.queueContainer}>
@@ -860,7 +959,7 @@ export default function PatientDashboardScreen() {
                                 </>
                                 )}
                             </View>
-                        ) : <ActivityIndicator color="#06b6d4" />}
+                        ) : <SkeletonGrid items={3} columns={3} height={64} style={{ marginVertical: 12 }} />}
                         <TouchableOpacity style={styles.closeButton} onPress={() => setQueueVisible(false)}><Text style={styles.closeButtonText}>Close</Text></TouchableOpacity>
                     </View>
                 </View>
@@ -871,13 +970,13 @@ export default function PatientDashboardScreen() {
         <View style={styles.notifHeader}>
             <Text style={styles.notifTitle}>Notifications</Text>
             <View style={styles.notifHeaderActions}>
-                <TouchableOpacity style={styles.iconButton} onPress={markAllRead}>
+                <TouchableOpacity style={styles.iconButton} onPress={markAllRead} accessibilityRole="button" accessibilityLabel="Mark all as read">
                     <CheckCheck size={20} color="#06b6d4" />
                 </TouchableOpacity>
-                <TouchableOpacity style={styles.iconButton} onPress={clearAllNotifications}>
+                <TouchableOpacity style={styles.iconButton} onPress={clearAllNotifications} accessibilityRole="button" accessibilityLabel="Delete">
                     <Trash2 size={20} color="#ef4444" />
                 </TouchableOpacity>
-                <TouchableOpacity style={styles.closeIconButton} onPress={() => setNotifVisible(false)}>
+                <TouchableOpacity style={styles.closeIconButton} onPress={() => setNotifVisible(false)} accessibilityRole="button" accessibilityLabel="Close">
                     <X size={22} color="#0f172a" />
                 </TouchableOpacity>
             </View>
@@ -891,7 +990,7 @@ export default function PatientDashboardScreen() {
             ListEmptyComponent={() => (
                 <View style={styles.emptyNotifContainer}>
                     <Bell size={48} color="#cbd5e1" />
-                    <Text style={styles.emptyNotifText}>You're all caught up!</Text>
+                    <Text style={styles.emptyNotifText}>You&apos;re all caught up!</Text>
                 </View>
             )}
             renderItem={({ item }) => (
@@ -910,7 +1009,7 @@ export default function PatientDashboardScreen() {
                         </Text>
                     </View>
 
-                    <TouchableOpacity style={styles.notifDeleteBtn} onPress={() => deleteNotification(item._id)}>
+                    <TouchableOpacity style={styles.notifDeleteBtn} onPress={() => deleteNotification(item._id)} accessibilityRole="button" accessibilityLabel="Delete">
                         <Trash2 size={18} color="#cbd5e1" />
                     </TouchableOpacity>
 

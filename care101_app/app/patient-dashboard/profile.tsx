@@ -1,3 +1,6 @@
+import { SkeletonScreen } from '../../components/Skeleton';
+import KeyboardSafe from '../../components/KeyboardSafe';
+import { isValidPhone, PHONE_HINT } from '../../utils/phone';
 import React, { useState, useCallback, useEffect } from 'react';
 import {
     View,
@@ -161,6 +164,10 @@ export default function ProfileScreen() {
 
     // --- 4. UPDATE PROFILE HANDLER ---
     const handleUpdateProfile = async () => {
+        if (formData.mobileNumber && !isValidPhone(formData.mobileNumber)) {
+            Alert.alert("Check the mobile number", PHONE_HINT);
+            return;
+        }
         try {
             const response = await fetch(`${API_URL}/auth/update-profile`, {
                 method: 'PUT',
@@ -218,9 +225,7 @@ export default function ProfileScreen() {
 
     if (loading) {
         return (
-            <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
-                <ActivityIndicator size="large" color="#06b6d4" />
-            </View>
+            <SkeletonScreen variant="detail" />
         );
     }
 
@@ -301,13 +306,14 @@ export default function ProfileScreen() {
                 <SafeAreaView style={styles.modalContainer}>
                     <View style={styles.modalHeader}>
                         <Text style={styles.modalTitle}>Edit Profile</Text>
-                        <TouchableOpacity onPress={() => setEditModalVisible(false)}>
+                        <TouchableOpacity onPress={() => setEditModalVisible(false)} accessibilityRole="button" accessibilityLabel="Close">
                             <Ionicons name="close" size={24} color="#0f172a" />
                         </TouchableOpacity>
                     </View>
-                    <ScrollView contentContainerStyle={{ padding: 20 }}>
+                    <KeyboardSafe inModal scroll={false}>
+                    <ScrollView contentContainerStyle={{ padding: 20 }} keyboardShouldPersistTaps="handled">
                         <View style={{ alignItems: 'center', marginBottom: 20 }}>
-                            <TouchableOpacity onPress={pickImage} style={styles.avatarContainer}>
+                            <TouchableOpacity onPress={pickImage} style={styles.avatarContainer} accessibilityRole="button" accessibilityLabel="Change photo">
                                 {formData.profileImage ? (
                                     <Image source={{ uri: formData.profileImage }} style={styles.avatarImage} />
                                 ) : (
@@ -345,12 +351,13 @@ export default function ProfileScreen() {
                         </TouchableOpacity>
                         <View style={{height: 50}}/>
                     </ScrollView>
+                    </KeyboardSafe>
                 </SafeAreaView>
             </Modal>
 
             {/* --- CHANGE PASSWORD MODAL --- */}
             <Modal visible={isPasswordModalVisible} animationType="slide" transparent>
-                <View style={styles.modalOverlay}>
+                <KeyboardSafe inModal scroll={false} style={styles.modalOverlay}>
                     <View style={styles.popupCard}>
                         <Text style={styles.modalTitle}>Change Password</Text>
                         <TextInput style={styles.input} placeholder="Current Password" secureTextEntry value={passwordData.current} onChangeText={t => setPasswordData({...passwordData, current: t})} />
@@ -366,7 +373,7 @@ export default function ProfileScreen() {
                             </TouchableOpacity>
                         </View>
                     </View>
-                </View>
+                </KeyboardSafe>
             </Modal>
 
             {/* --- NOTIFICATIONS MODAL --- */}
@@ -376,11 +383,11 @@ export default function ProfileScreen() {
                         <Text style={styles.modalTitle}>Notifications</Text>
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
                             {notifications.length > 0 && (
-                                <TouchableOpacity onPress={clearAllNotifications} style={{ padding: 4 }}>
+                                <TouchableOpacity onPress={clearAllNotifications} style={{ padding: 4 }} accessibilityRole="button" accessibilityLabel="Delete">
                                     <Ionicons name="trash-outline" size={22} color="#ef4444" />
                                 </TouchableOpacity>
                             )}
-                            <TouchableOpacity onPress={() => setNotifModalVisible(false)} style={{ padding: 4 }}>
+                            <TouchableOpacity onPress={() => setNotifModalVisible(false)} style={{ padding: 4 }} accessibilityRole="button" accessibilityLabel="Close">
                                 <Ionicons name="close" size={24} color="#0f172a" />
                             </TouchableOpacity>
                         </View>
@@ -416,7 +423,7 @@ export default function ProfileScreen() {
                                         {new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short' })}
                                     </Text>
                                 </View>
-                                <TouchableOpacity onPress={() => deleteNotification(item._id)} style={{ padding: 8, justifyContent: 'center' }}>
+                                <TouchableOpacity onPress={() => deleteNotification(item._id)} style={{ padding: 8, justifyContent: 'center' }} accessibilityRole="button" accessibilityLabel="Delete">
                                     <Ionicons name="trash-outline" size={18} color="#cbd5e1" />
                                 </TouchableOpacity>
                                 {!item.read && <View style={styles.unreadDot} />}

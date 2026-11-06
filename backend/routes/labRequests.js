@@ -1,4 +1,5 @@
 import express from "express";
+import { canSeeAnyPatient } from "../utils/access.js";
 import mongoose from "mongoose";
 import LabRequest from "../models/LabRequest.js";
 import MedicalRecord from "../models/MedicalRecord.js";
@@ -9,7 +10,7 @@ import Appointment from "../models/Appointment.js";
 import Admin from "../models/Admin.js";
 import LabTest from "../models/LabTest.js";
 import { syncPatientDoctorRecordBook } from "./medicalRecords.js";
-import { auth } from "../middleware/auth.js";
+import { auth, authorize, ROLES } from "../middleware/auth.js";
 
 const router = express.Router();
 
@@ -123,7 +124,7 @@ const resolveDoctorName = async (reqDocId, reqDocName, patientId, user) => {
 };
 
 // 1. Doctor, Nurse or Lab Assistant creates a Lab Request
-router.post("/create", auth, async (req, res) => {
+router.post("/create", auth, authorize(["doctor", "nurse", "lab_assistant", "system_admin"]), async (req, res) => {
   try {
     const { patientId, title, description, doctorId, doctorName, type, testIds } = req.body;
     
@@ -211,17 +212,18 @@ router.post("/create", auth, async (req, res) => {
 });
 
 // 2. Get all Pending/Completed Requests (For Lab Assistants or System Admins)
-router.get("/all", auth, async (req, res) => {
+router.get("/all", auth, authorize(ROLES.LAB), async (req, res) => {
   try {
      // Fetch requests and populate patient, doctor, and bill info
-     const requests = await LabRequest.find()
-      .populate("patientId", "patientId fullName nicNumber email mobileNumber gender dateOfBirth")
-      .populate("doctorId", "name fullName nameWithInitials specialization")
-      .populate("billId")
-      .sort({ createdAt: -1 })
-      .lean();
-     
-     const fallbackDoc = await Doctor.findOne().select("name fullName nameWithInitials").lean();
+     const [requests, fallbackDoc] = await Promise.all([
+       LabRequest.find()
+        .populate("patientId", "patientId fullName nicNumber email mobileNumber gender dateOfBirth")
+        .populate("doctorId", "name fullName nameWithInitials specialization")
+        .populate("billId")
+        .sort({ createdAt: -1 })
+        .lean(),
+       Doctor.findOne().select("name fullName nameWithInitials").lean(),
+     ]);
      const fallbackDocName = resolveDoctorDisplay(fallbackDoc) || "Dr. Medical Officer";
 
      const enrichedRequests = await Promise.all(requests.map(async (obj) => {
@@ -273,6 +275,10 @@ router.get("/patient/:patientId", auth, async (req, res) => {
       const p = await Patient.findOne({ patientId: String(targetPatientId).trim().toUpperCase() }).select("_id").lean();
       if (p) targetPatientId = p._id;
     }
+    // Patients only get their own lab requests
+    if (!canSeeAnyPatient(req.user) && String(targetPatientId) !== String(req.user.id)) {
+      return res.json([]);
+    }
     const requests = await LabRequest.find({ patientId: targetPatientId })
       .populate("patientId", "patientId fullName nicNumber email mobileNumber gender dateOfBirth")
       .populate("doctorId", "name fullName nameWithInitials specialization")
@@ -320,7 +326,7 @@ router.get("/patient/:patientId", auth, async (req, res) => {
 });
 
 // 4. Lab Assistant Uploads a Record & Completes Request
-router.post("/upload/:requestId", auth, async (req, res) => {
+router.post("/upload/:requestId", auth, authorize(ROLES.LAB), async (req, res) => {
   try {
     const { fileData, fileType, description } = req.body;
     

@@ -23,4 +23,9 @@ const BillSchema = new mongoose.Schema({
   paidAt: { type: Date }
 });
 
+// Indexes for the dashboard / list queries
+BillSchema.index({ patientId: 1, date: -1 });
+BillSchema.index({ status: 1 });
+BillSchema.index({ date: -1 });
+
 export default mongoose.model("Bill", BillSchema);

@@ -1,3 +1,4 @@
+import { SkeletonList } from '../../components/Skeleton';
 import React, { useState, useCallback, useRef } from 'react';
 import {
   View,
@@ -164,8 +165,7 @@ export default function FinanceScreen() {
           {item.name !== 'Suwasevana' && (
             <TouchableOpacity
               style={styles.iconBtn}
-              onPress={() => handleDelete(item.id)}
-            >
+              onPress={() => handleDelete(item.id)} accessibilityRole="button" accessibilityLabel="Delete">
               <Trash2 size={18} color="#ef4444" />
             </TouchableOpacity>
           )}
@@ -210,7 +210,7 @@ export default function FinanceScreen() {
       </View>
 
       {loading ? (
-        <ActivityIndicator size="large" color="#06B6D4" style={{ marginTop: 50 }} />
+        <SkeletonList rows={5} />
       ) : (
         <FlatList
           data={hospitals}
@@ -240,8 +240,7 @@ export default function FinanceScreen() {
           { bottom: Platform.OS === 'ios' ? insets.bottom + 90 : 100 }
         ]}
         onPress={() => setModalVisible(true)}
-        activeOpacity={0.8}
-      >
+        activeOpacity={0.8} accessibilityRole="button" accessibilityLabel="Add">
         <Plus size={32} color="#fff" />
       </TouchableOpacity>
 
@@ -250,7 +249,7 @@ export default function FinanceScreen() {
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Add Hospital</Text>
-              <TouchableOpacity onPress={() => setModalVisible(false)}><X size={24} color="#64748b" /></TouchableOpacity>
+              <TouchableOpacity onPress={() => setModalVisible(false)} accessibilityRole="button" accessibilityLabel="Close"><X size={24} color="#64748b" /></TouchableOpacity>
             </View>
 
             <View style={styles.inputGroup}>

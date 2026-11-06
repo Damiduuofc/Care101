@@ -1,3 +1,5 @@
+import { SkeletonScreen } from '../../../components/Skeleton';
+import KeyboardSafe from '../../../components/KeyboardSafe';
 import React, { useState, useEffect, useCallback } from 'react';
 import {
     View,
@@ -356,9 +358,7 @@ export default function PatientDetailScreen() {
 
     if (loading) {
         return (
-            <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
-                <ActivityIndicator size="large" color="#06b6d4" />
-            </View>
+            <SkeletonScreen variant="detail" />
         );
     }
 
@@ -377,7 +377,7 @@ export default function PatientDetailScreen() {
             <SafeAreaView style={styles.safeArea}>
                 {/* Header */}
                 <View style={styles.header}>
-                    <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+                    <TouchableOpacity onPress={() => router.back()} style={styles.backButton} accessibilityRole="button" accessibilityLabel="Go back">
                         <ArrowLeft size={24} color="#0f172a" />
                     </TouchableOpacity>
                     <Text style={styles.title}>Patient Details</Text>
@@ -530,16 +530,14 @@ export default function PatientDetailScreen() {
                                     <TouchableOpacity
                                         style={styles.rowIconButton}
                                         onPress={() => openEditRecord(record)}
-                                        hitSlop={8}
-                                    >
+                                        hitSlop={8} accessibilityRole="button" accessibilityLabel="Edit">
                                         <Pencil size={16} color="#06b6d4" />
                                     </TouchableOpacity>
                                     <TouchableOpacity
                                         style={[styles.rowIconButton, { backgroundColor: '#fef2f2' }]}
                                         onPress={() => confirmDeleteRecord(record)}
                                         hitSlop={8}
-                                        disabled={deletingRecord}
-                                    >
+                                        disabled={deletingRecord} accessibilityRole="button" accessibilityLabel="Delete">
                                         <Trash2 size={16} color="#ef4444" />
                                     </TouchableOpacity>
                                 </TouchableOpacity>
@@ -563,7 +561,7 @@ export default function PatientDetailScreen() {
                         <View style={styles.modalContentCard}>
                             <View style={styles.modalHeaderRow}>
                                 <Text style={styles.modalTitle} numberOfLines={1}>{selectedRecordData?.title || 'Record Details'}</Text>
-                                <TouchableOpacity onPress={closeRecordModal}>
+                                <TouchableOpacity onPress={closeRecordModal} accessibilityRole="button" accessibilityLabel="Close">
                                     <X size={24} color="#64748b" />
                                 </TouchableOpacity>
                             </View>
@@ -670,11 +668,11 @@ export default function PatientDetailScreen() {
                     animationType="slide"
                     onRequestClose={() => setRecordFormMode(null)}
                 >
-                    <View style={styles.modalOverlay}>
+                    <KeyboardSafe inModal scroll={false} style={styles.modalOverlay}>
                         <View style={styles.modalContentCard}>
                             <View style={styles.modalHeaderRow}>
                                 <Text style={styles.modalTitle}>{recordFormMode === 'add' ? 'Add Medical Record' : 'Edit Medical Record'}</Text>
-                                <TouchableOpacity onPress={() => setRecordFormMode(null)}>
+                                <TouchableOpacity onPress={() => setRecordFormMode(null)} accessibilityRole="button" accessibilityLabel="Close">
                                     <X size={24} color="#64748b" />
                                 </TouchableOpacity>
                             </View>
@@ -763,7 +761,7 @@ export default function PatientDetailScreen() {
                                 </TouchableOpacity>
                             </View>
                         </View>
-                    </View>
+                    </KeyboardSafe>
                 </Modal>
 
                 {/* Request Lab Modal */}
@@ -773,11 +771,11 @@ export default function PatientDetailScreen() {
                     animationType="slide"
                     onRequestClose={() => setShowLabRequestModal(false)}
                 >
-                    <View style={styles.modalOverlay}>
+                    <KeyboardSafe inModal scroll={false} style={styles.modalOverlay}>
                         <View style={styles.modalContentCard}>
                             <View style={styles.modalHeaderRow}>
                                 <Text style={styles.modalTitle}>Request Lab Report</Text>
-                                <TouchableOpacity onPress={() => setShowLabRequestModal(false)}>
+                                <TouchableOpacity onPress={() => setShowLabRequestModal(false)} accessibilityRole="button" accessibilityLabel="Close">
                                     <X size={24} color="#64748b" />
                                 </TouchableOpacity>
                             </View>
@@ -820,7 +818,7 @@ export default function PatientDetailScreen() {
                                 </TouchableOpacity>
                             </View>
                         </View>
-                    </View>
+                    </KeyboardSafe>
                 </Modal>
 
                 {/* Overlay fetching record indicator */}

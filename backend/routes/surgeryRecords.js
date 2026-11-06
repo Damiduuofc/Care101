@@ -6,7 +6,8 @@ import LabRequest from "../models/LabRequest.js";
 import Patient from "../models/Patient.js";
 import Doctor from "../models/Doctor.js";
 import { syncPatientDoctorRecordBook } from "./medicalRecords.js";
-import { auth } from "../middleware/auth.js";
+import { auth, authorize, ROLES } from "../middleware/auth.js";
+import { recordBelongsToPatient, escapeRegex } from "../utils/access.js";
 
 const router = express.Router();
 
@@ -33,7 +34,7 @@ const findDoctorForRecord = async (doctorId, doctorName) => {
 };
 
 // 1. GET ALL RECORDS (For Doctor or Nurse)
-router.get("/", auth, async (req, res) => {
+router.get("/", auth, authorize(["doctor", "nurse"]), async (req, res) => {
   try {
     let queryDoctorId = req.user.id;
     if (req.user.role === "nurse") {
@@ -58,7 +59,7 @@ router.get("/", auth, async (req, res) => {
 });
 
 // 2. CREATE NEW RECORD
-router.post("/create", auth, async (req, res) => {
+router.post("/create", auth, authorize(["doctor"]), async (req, res) => {
   try {
     const { name, nic, patientId, hospital, surgeryCardImage, doctorId: bodyDoctorId } = req.body;
 
@@ -127,6 +128,14 @@ router.get("/:id", auth, async (req, res) => {
 
     if (!record) return res.status(404).json({ msg: "Record not found" });
 
+    // Owner doctor, hospital staff, or the patient the record is about
+    const { role, id: userId } = req.user;
+    const allowed =
+      ROLES.STAFF.includes(role) ||
+      (role === "doctor" && String(record.doctorId?._id || record.doctorId) === String(userId)) ||
+      (role === "patient" && (await recordBelongsToPatient(userId, record)));
+    if (!allowed) return res.status(404).json({ msg: "Record not found" });
+
     // Resolve patient Mongo _id so frontend/mobile can fetch MedicalRecords & LabRequests reliably
     let patientMongoId = null;
     if (record.patientId) {
@@ -140,7 +149,7 @@ router.get("/:id", auth, async (req, res) => {
       }
     }
     if (!patientMongoId && record.nic) {
-      const pByNic = await Patient.findOne({ nicNumber: new RegExp(`^${record.nic.trim()}$`, "i") }).select("_id patientId");
+      const pByNic = await Patient.findOne({ nicNumber: new RegExp(`^${escapeRegex(record.nic.trim())}$`, "i") }).select("_id patientId");
       if (pByNic) patientMongoId = pByNic._id;
     }
 
@@ -159,9 +168,10 @@ router.get("/:id", auth, async (req, res) => {
 });
 
 // 4. DELETE RECORD
-router.delete("/:id", auth, async (req, res) => {
+router.delete("/:id", auth, authorize(["doctor"]), async (req, res) => {
   try {
-    await SurgeryRecord.findByIdAndDelete(req.params.id);
+    const result = await SurgeryRecord.deleteOne({ _id: req.params.id, doctorId: req.user.id });
+    if (!result.deletedCount) return res.status(404).json({ msg: "Record not found" });
     res.json({ msg: "Record Deleted" });
   } catch (err) {
     res.status(500).json({ msg: "Server Error" });
@@ -169,10 +179,10 @@ router.delete("/:id", auth, async (req, res) => {
 });
 
 // 5. ADD PROGRESS ENTRY
-router.post("/:id/entry", auth, async (req, res) => {
+router.post("/:id/entry", auth, authorize(["doctor"]), async (req, res) => {
   try {
     const { notes, images } = req.body;
-    const record = await SurgeryRecord.findById(req.params.id);
+    const record = await SurgeryRecord.findOne({ _id: req.params.id, doctorId: req.user.id });
 
     if (!record) return res.status(404).json({ msg: "Record not found" });
 
@@ -195,20 +205,22 @@ router.post("/:id/entry", auth, async (req, res) => {
 });
 
 // 6. GET PATIENT'S OWN RECORDS BY PATIENT ID, NIC, OR AUTH TOKEN (For Patient App & Nurse)
-router.get("/patient/my-records", auth, async (req, res) => {
+router.get("/patient/my-records", auth, authorize(["patient", ...ROLES.STAFF]), async (req, res) => {
   try {
     const { nic, patientId } = req.query;
 
     // 1. Resolve the Patient document using query params or logged-in patient token
     let patient = null;
-    if (patientId) {
+    const isPatient = req.user.role === "patient";
+    // A patient can't pass someone else's ID: only staff may look up by query
+    if (!isPatient && patientId) {
       patient = await Patient.findOne({ patientId: String(patientId).trim().toUpperCase() });
       if (!patient && mongoose.Types.ObjectId.isValid(String(patientId))) {
         patient = await Patient.findById(String(patientId));
       }
     }
-    if (!patient && nic) {
-      patient = await Patient.findOne({ nicNumber: { $regex: new RegExp(`^${String(nic).trim()}$`, 'i') } });
+    if (!isPatient && !patient && nic) {
+      patient = await Patient.findOne({ nicNumber: { $regex: new RegExp(`^${escapeRegex(String(nic).trim())}$`, 'i') } });
     }
     if (!patient && req.user?.id && mongoose.Types.ObjectId.isValid(req.user.id)) {
       patient = await Patient.findById(req.user.id);
@@ -220,7 +232,7 @@ router.get("/patient/my-records", auth, async (req, res) => {
         const patCode = (patient.patientId || String(patient._id)).trim().toUpperCase();
         const existingMatchOr = [{ patientId: patCode }, { patientId: String(patient._id) }];
         if (patient.nicNumber) {
-          existingMatchOr.push({ nic: new RegExp(`^${patient.nicNumber.trim()}$`, "i") });
+          existingMatchOr.push({ nic: new RegExp(`^${escapeRegex(patient.nicNumber.trim())}$`, "i") });
         }
 
         const [medRecords, labReqs, existingBooks] = await Promise.all([

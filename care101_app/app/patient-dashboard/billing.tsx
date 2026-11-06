@@ -1,3 +1,4 @@
+import { SkeletonList } from '../../components/Skeleton';
 import React, { useState, useEffect, useMemo } from 'react';
 import {
     View,
@@ -170,7 +171,7 @@ export default function BillingScreen() {
         <View style={styles.container}>
             <SafeAreaView edges={['top']} style={styles.safeArea}>
                 <View style={styles.header}>
-                    <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+                    <TouchableOpacity onPress={() => router.back()} style={styles.backButton} accessibilityRole="button" accessibilityLabel="Go back">
                         <ChevronLeft size={24} color="#1e293b" />
                     </TouchableOpacity>
                     <Text style={styles.headerTitle}>Payments & Bills</Text>
@@ -193,9 +194,7 @@ export default function BillingScreen() {
             </SafeAreaView>
 
             {loading ? (
-                <View style={styles.center}>
-                    <ActivityIndicator size="large" color="#06b6d4" />
-                </View>
+                <SkeletonList rows={5} />
             ) : (
                 <FlatList
                     data={filteredBills}

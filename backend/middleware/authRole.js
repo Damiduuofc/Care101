@@ -35,3 +35,12 @@ export const authorize = (...roles) => {
     next();
   };
 };
+
+// Role groups, so route guards read clearly and stay consistent
+export const ROLES = {
+  STAFF: ["system_admin", "receptionist", "nurse", "lab_assistant"],
+  DESK: ["system_admin", "receptionist", "nurse"], // front desk + ward: bookings, arrivals, billing lookups
+  CLINICAL: ["doctor", "system_admin", "receptionist", "nurse", "lab_assistant"], // anyone who may look up any patient
+  SCHEDULING: ["system_admin", "receptionist"],
+  LAB: ["lab_assistant", "system_admin"],
+};

@@ -3,7 +3,7 @@ import mongoose from "mongoose";
 const StaffSchema = new mongoose.Schema({
   name: { type: String, required: true },
   email: { type: String, required: true, unique: true },
-  password: { type: String, required: true },
+  password: { type: String, required: true, select: false }, // load with "+password"
   
   role: { 
     type: String, 
@@ -15,8 +15,11 @@ const StaffSchema = new mongoose.Schema({
 
   createdAt: { type: Date, default: Date.now },
 
-    resetPasswordToken: String,
-    resetPasswordExpire: Date
+    resetPasswordToken: { type: String, select: false },
+    resetPasswordExpire: { type: Date, select: false }
 });
+
+// Indexes for the dashboard / list queries
+StaffSchema.index({ role: 1 });
 
 export default mongoose.model("Admin", StaffSchema); 

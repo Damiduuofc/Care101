@@ -949,7 +949,8 @@ The Care101 Team`;
 export const sendPasswordResetOtp = async (user, otp) => {
   const hasSmsConfig = isSmsConfigured();
 
-  const textBody = `Your password reset code is: ${otp}\n\nThis code will expire in 10 minutes.`;
+  // Short, with the word "code" right before the digits so iOS/Android offer it as autofill
+  const textBody = `Your Care101 verification code is ${otp}. It expires in 10 minutes. Never share this code with anyone.`;
 
   // Patients have mobileNumber, Doctors have phone
   const phone = user.mobileNumber || user.phone;

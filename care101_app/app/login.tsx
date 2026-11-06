@@ -104,8 +104,7 @@ export default function LoginScreen() {
             {isPassword && (
               <TouchableOpacity
                 onPress={() => setShowPassword(!showPassword)}
-                style={styles.eyeButton}
-              >
+                style={styles.eyeButton} accessibilityRole="button" accessibilityLabel="Show or hide password">
                 <Ionicons
                   name={showPassword ? "eye-off-outline" : "eye-outline"}
                   size={20}

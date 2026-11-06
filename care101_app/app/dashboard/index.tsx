@@ -11,7 +11,8 @@ import {
   ActivityIndicator,
   Modal,
   FlatList,
-  Alert
+  Alert,
+    RefreshControl
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -33,6 +34,7 @@ import {
 } from 'lucide-react-native';
 
 import BottomNavBar from '../../components/BottomNavBar';
+import Skeleton from '../../components/Skeleton';
 import { io } from 'socket.io-client';
 
 const API_URL = `${process.env.EXPO_PUBLIC_API_URL}/doctor`;
@@ -122,7 +124,8 @@ export default function DashboardScreen() {
     useCallback(() => {
       fetchDashboard();
       fetchNotifications();
-      const intervalId = setInterval(fetchNotifications, 10000);
+      // New notifications arrive over the socket; this is only a slow safety net
+      const intervalId = setInterval(fetchNotifications, 60000);
       return () => clearInterval(intervalId);
     }, [])
   );
@@ -147,20 +150,32 @@ export default function DashboardScreen() {
         extraHeaders: {
           'Authorization': `Bearer ${token}`,
           'x-auth-token': token
-        }
+        },
+        // React Native needs the websocket transport; long-polling alone often never connects
+        transports: ['websocket', 'polling']
       });
 
+      // Collapse bursts of events into a single refetch
+      let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+      const scheduleRefresh = () => {
+        if (refreshTimer) return;
+        refreshTimer = setTimeout(() => {
+          refreshTimer = null;
+          fetchDashboard();
+          fetchNotifications();
+        }, 250);
+      };
+
+      let connectedBefore = false;
       socket.on("connect", () => {
         console.log("🔌 Doctor Dashboard Connected to Socket.IO Server");
+        // After a reconnect we may have missed events, so catch up
+        if (connectedBefore) scheduleRefresh();
+        connectedBefore = true;
       });
 
-      socket.on("doctorStatusUpdated", () => {
-        fetchDashboard();
-      });
-
-      socket.on("appointmentUpdated", () => {
-        fetchDashboard();
-      });
+      ["dashboardUpdated", "doctorStatusUpdated", "appointmentUpdated", "queueUpdated", "scheduleUpdated", "newNotification"]
+        .forEach((evt) => socket.on(evt, scheduleRefresh));
 
       socket.on("disconnect", () => {
         console.log("🔌 Doctor Dashboard Disconnected from Socket.IO Server");
@@ -296,8 +311,52 @@ export default function DashboardScreen() {
 
   if (loading) {
     return (
-      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
-        <ActivityIndicator size="large" color="#06b6d4" />
+      <View style={styles.container}>
+        <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent />
+        <SafeAreaView edges={['top']} style={styles.headerSafeArea}>
+          <View style={styles.headerContainer}>
+            <View style={styles.profileSection}>
+              <Skeleton width={48} height={48} radius={24} />
+              <View style={{ flex: 1, gap: 6 }}>
+                <Skeleton width={100} height={12} />
+                <Skeleton width={160} height={18} />
+                <Skeleton width={120} height={12} />
+              </View>
+              <Skeleton width={40} height={40} radius={20} />
+            </View>
+          </View>
+        </SafeAreaView>
+        <ScrollView scrollEnabled={false} contentContainerStyle={styles.scrollContent}>
+          <Skeleton height={180} radius={20} style={{ marginBottom: 8 }} />
+          <View style={styles.section}>
+            <Skeleton width={110} height={18} style={{ marginBottom: 12 }} />
+            <View style={styles.overviewGrid}>
+              {[0, 1].map((i) => (
+                <View key={i} style={styles.overviewCard}>
+                  <Skeleton width={48} height={48} radius={24} />
+                  <View style={{ gap: 6 }}>
+                    <Skeleton width={90} height={16} />
+                    <Skeleton width={110} height={11} />
+                  </View>
+                </View>
+              ))}
+            </View>
+          </View>
+          <View style={styles.section}>
+            <Skeleton width={130} height={18} style={{ marginBottom: 12 }} />
+            <View style={styles.actionList}>
+              {[0, 1, 2, 3, 4].map((i) => (
+                <View key={i} style={styles.actionCard}>
+                  <Skeleton width={48} height={48} radius={14} />
+                  <View style={{ flex: 1, gap: 6, marginLeft: 14 }}>
+                    <Skeleton width="60%" height={14} />
+                    <Skeleton width="85%" height={11} />
+                  </View>
+                </View>
+              ))}
+            </View>
+          </View>
+        </ScrollView>
       </View>
     );
   }
@@ -313,6 +372,8 @@ export default function DashboardScreen() {
             <TouchableOpacity 
                 style={styles.avatarContainer}
                 onPress={() => router.push('/dashboard/profile' as any)}
+                accessibilityRole="button"
+                accessibilityLabel="Open my profile"
             >
               {stats.profileImage ? (
                 <Image source={{ uri: stats.profileImage }} style={styles.avatarImage} />
@@ -330,6 +391,8 @@ export default function DashboardScreen() {
             <TouchableOpacity
               style={styles.notifBtn}
               onPress={() => setShowNotifModal(true)}
+              accessibilityRole="button"
+              accessibilityLabel={unreadCount > 0 ? `Notifications, ${unreadCount} unread` : 'Notifications'}
             >
               <Bell size={24} color="#64748b" />
               {unreadCount > 0 && (
@@ -342,7 +405,22 @@ export default function DashboardScreen() {
         </View>
       </SafeAreaView>
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.scrollContent}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            tintColor="#06b6d4"
+            colors={['#06b6d4']}
+            onRefresh={async () => {
+              setRefreshing(true);
+              await Promise.all([fetchDashboard(), fetchNotifications()]);
+              setRefreshing(false);
+            }}
+          />
+        }
+      >
         {/* HERO BANNER */}
         <View style={styles.heroContainer}>
           <Image source={bannerImage} style={styles.heroImage} />
@@ -416,15 +494,15 @@ export default function DashboardScreen() {
             <View style={styles.notifHeaderActions}>
               {notifications.length > 0 && (
                 <>
-                  <TouchableOpacity style={styles.iconButton} onPress={markAllRead}>
+                  <TouchableOpacity style={styles.iconButton} onPress={markAllRead} accessibilityRole="button" accessibilityLabel="Mark all as read">
                     <CheckCheck size={20} color="#06b6d4" />
                   </TouchableOpacity>
-                  <TouchableOpacity style={styles.iconButton} onPress={clearAllNotifications}>
+                  <TouchableOpacity style={styles.iconButton} onPress={clearAllNotifications} accessibilityRole="button" accessibilityLabel="Delete">
                     <Trash2 size={20} color="#ef4444" />
                   </TouchableOpacity>
                 </>
               )}
-              <TouchableOpacity onPress={() => setShowNotifModal(false)} style={styles.closeBtn}>
+              <TouchableOpacity onPress={() => setShowNotifModal(false)} style={styles.closeBtn} accessibilityRole="button" accessibilityLabel="Close">
                 <X size={24} color="#0f172a" />
               </TouchableOpacity>
             </View>
@@ -448,7 +526,7 @@ export default function DashboardScreen() {
                       <Text style={styles.notifTime}>{new Date(item.timestamp).toLocaleString()}</Text>
                     </View>
                 </TouchableOpacity>
-                <TouchableOpacity style={styles.deleteBtn} onPress={() => deleteNotification(item._id)}>
+                <TouchableOpacity style={styles.deleteBtn} onPress={() => deleteNotification(item._id)} accessibilityRole="button" accessibilityLabel="Delete">
                   <Trash2 size={18} color="#94a3b8" />
                 </TouchableOpacity>
               </View>

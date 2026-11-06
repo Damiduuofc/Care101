@@ -30,7 +30,8 @@ patientId: {
 
   password: { 
     type: String, 
-    required: true 
+    required: true,
+    select: false // only loaded where a query asks for "+password"
   },
 
   // --- DEMOGRAPHICS ---
@@ -74,8 +75,9 @@ patientId: {
     type: Date, 
     default: Date.now 
   },
-  resetPasswordOtp: { type: String },
-  resetPasswordExpire: { type: Date }
+  resetPasswordOtp: { type: String, select: false },
+  resetPasswordExpire: { type: Date, select: false },
+  resetPasswordAttempts: { type: Number, default: 0, select: false }
 });
 
 PatientSchema.pre("validate", async function() {
@@ -108,5 +110,9 @@ PatientSchema.pre("validate", async function() {
     this.username = this.patientId;
   }
 });
+
+// Indexes for the dashboard / list queries
+PatientSchema.index({ mobileNumber: 1 });
+PatientSchema.index({ createdAt: -1 });
 
 export default mongoose.model("Patient", PatientSchema);

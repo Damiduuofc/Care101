@@ -1,19 +1,24 @@
 import express from "express";
+import { isValidPhone, PHONE_HINT } from "../utils/phone.js";
 import mongoose from "mongoose";
 import bcrypt from "bcryptjs"; 
 import Doctor from "../models/Doctor.js";
+import { isArrivedToday, isSessionLive, clearStaleSession } from "../utils/doctorSession.js";
 import HospitalFinance from "../models/Finance.js"; 
 import Appointment from "../models/Appointment.js";
 import SurgeryRecord from "../models/SurgeryRecord.js"; 
 import { createNotification } from "../utils/notificationHelper.js";
-import { auth } from "../middleware/auth.js";
-import { emitAppointmentUpdated, emitNotification } from "../utils/realtime.js";
+import { auth, authorize } from "../middleware/auth.js";
+import { emitAppointmentUpdated, emitNotification, emitDoctorQueueChanged, emitDoctorStatus } from "../utils/realtime.js";
 
 const router = express.Router();
 
+// Every route here acts on the logged-in doctor's own account
+router.use(auth, authorize(["doctor"]));
+
 // HELPER FUNCTION: Calculate Total Income from Finance Records
 const calculateTotalIncome = async (doctorId) => {
-  const hospitals = await HospitalFinance.find({ doctorId });
+  const hospitals = await HospitalFinance.find({ doctorId }).select("records.type records.income records.amount").lean();
   let totalIncome = 0;
   hospitals.forEach(hospital => {
     if (hospital.records && hospital.records.length > 0) {
@@ -33,55 +38,39 @@ router.get("/dashboard-stats", auth, async (req, res) => {
   try {
     const doctorId = req.user.id;
 
-    let doctor = await Doctor.findById(doctorId).select("name fullName specialization channelingTime isArrived channelingStatus currentQueueNumber allocatedRoom");
-    if (!doctor) return res.status(404).json({ msg: "Doctor not found" });
-
-    let channelingTime = doctor.channelingTime;
-    let allocatedRoom = doctor.allocatedRoom;
-
-    if (!channelingTime || !allocatedRoom) {
-      try {
-        const ScheduleRequest = mongoose.model('ScheduleRequest');
-        const startOfDay = new Date();
-        startOfDay.setHours(0, 0, 0, 0);
-        const endOfDay = new Date();
-        endOfDay.setHours(23, 59, 59, 999);
-
-        const todaySchedule = await ScheduleRequest.findOne({
-          doctorId,
-          status: 'approved',
-          date: { $gte: startOfDay, $lte: endOfDay }
-        }).sort({ startTime: 1 });
-
-        if (todaySchedule) {
-          channelingTime = channelingTime || new Date(todaySchedule.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-          allocatedRoom = allocatedRoom || todaySchedule.allocatedRoom;
-        }
-      } catch (err) {
-        console.error("Schedule search failed:", err.message);
-      }
-    }
-
-    const recordCount = await SurgeryRecord.countDocuments({ doctorId }).catch(() => 0);
-    const totalIncome = await calculateTotalIncome(doctorId);
-
     const startOfDay = new Date();
     startOfDay.setHours(0, 0, 0, 0);
     const endOfDay = new Date();
     endOfDay.setHours(23, 59, 59, 999);
+    const today = { $gte: startOfDay, $lte: endOfDay };
 
-    const todayAppointmentsCount = await Appointment.countDocuments({
-      doctorId,
-      date: { $gte: startOfDay, $lte: endOfDay },
-      status: { $ne: "cancelled" }
-    });
+    // Everything below is independent, so fetch it in one parallel round trip
+    const [doctor, todaySchedule, recordCount, totalIncome, todayAppointmentsCount, todayArrivalsCount] = await Promise.all([
+      Doctor.findById(doctorId)
+        .select("name fullName specialization channelingTime isArrived channelingStatus currentQueueNumber allocatedRoom")
+        .lean(),
+      mongoose.model('ScheduleRequest')
+        .findOne({ doctorId, status: 'approved', date: today })
+        .select("startTime allocatedRoom")
+        .sort({ startTime: 1 })
+        .lean()
+        .catch((err) => {
+          console.error("Schedule search failed:", err.message);
+          return null;
+        }),
+      SurgeryRecord.countDocuments({ doctorId }).catch(() => 0),
+      calculateTotalIncome(doctorId),
+      Appointment.countDocuments({ doctorId, date: today, status: { $ne: "cancelled" } }),
+      Appointment.countDocuments({ doctorId, date: today, status: { $ne: "cancelled" }, arrived: true }),
+    ]);
+    if (!doctor) return res.status(404).json({ msg: "Doctor not found" });
 
-    const todayArrivalsCount = await Appointment.countDocuments({
-      doctorId,
-      date: { $gte: startOfDay, $lte: endOfDay },
-      status: { $ne: "cancelled" },
-      arrived: true
-    });
+    let channelingTime = doctor.channelingTime;
+    let allocatedRoom = doctor.allocatedRoom;
+    if (todaySchedule && (!channelingTime || !allocatedRoom)) {
+      channelingTime = channelingTime || new Date(todaySchedule.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      allocatedRoom = allocatedRoom || todaySchedule.allocatedRoom;
+    }
 
     res.json({
       name: doctor.name || doctor.fullName || "Doctor",
@@ -124,16 +113,16 @@ router.get("/today-appointments", auth, async (req, res) => {
       .lean();
 
     const doctor = await Doctor.findById(req.user.id)
-      .select("currentQueueNumber sessionStarted sessionEndedToday isArrived allocatedRoom")
+      .select("currentQueueNumber sessionStarted sessionEndedToday isArrived lastArrivalDate allocatedRoom")
       .lean();
 
     res.json({
       appointments: appointments.filter(a => a.patientId),
       session: {
         currentQueueNumber: doctor?.currentQueueNumber || 0,
-        sessionStarted: Boolean(doctor?.sessionStarted),
+        sessionStarted: isSessionLive(doctor),
         sessionEndedToday: Boolean(doctor?.sessionEndedToday),
-        isArrived: Boolean(doctor?.isArrived),
+        isArrived: isArrivedToday(doctor),
         allocatedRoom: doctor?.allocatedRoom || null
       }
     });
@@ -177,6 +166,9 @@ router.get("/profile", auth, async (req, res) => {
 router.put("/profile", auth, async (req, res) => {
   try {
     const { fullName, nameWithInitials, nic, phone, profileImage, specialization } = req.body;
+    if (phone && !isValidPhone(phone)) {
+      return res.status(400).json({ msg: PHONE_HINT, message: PHONE_HINT });
+    }
 
     // Email and SLMC number are managed by the hospital, not the doctor
     const current = await Doctor.findById(req.user.id).select("email slmcReg");
@@ -212,7 +204,7 @@ router.put("/profile", auth, async (req, res) => {
 router.put("/change-password", auth, async (req, res) => {
   try {
     const { currentPassword, newPassword } = req.body;
-    const doctor = await Doctor.findById(req.user.id);
+    const doctor = await Doctor.findById(req.user.id).select("+password");
 
     const isMatch = await bcrypt.compare(currentPassword, doctor.password);
     if (!isMatch) return res.status(400).json({ msg: "Incorrect current password" });
@@ -276,7 +268,8 @@ router.put("/delay-status", auth, async (req, res) => {
     }
     
     if (req.io) {
-      req.io.emit("doctorStatusUpdated", doctor);
+      emitDoctorStatus(req.io, doctor);
+      emitDoctorQueueChanged(doctor._id);
       req.io.emit("doctorDelayAlert", {
         doctorId: doctor._id,
         doctorName: doctor.name,
@@ -309,6 +302,7 @@ router.put("/arrival-status", auth, async (req, res) => {
     const previousArrived = doctor.isArrived;
     doctor.isArrived = isArrived;
     if (isArrived === true) {
+      clearStaleSession(doctor);
       doctor.lastArrivalDate = new Date();
       if (doctor.channelingStatus && doctor.channelingStatus.toLowerCase() !== "on time") {
         doctor.channelingStatus = "On Time";
@@ -351,7 +345,8 @@ router.put("/arrival-status", auth, async (req, res) => {
     }
     
     if (req.io) {
-      req.io.emit("doctorStatusUpdated", doctor);
+      emitDoctorStatus(req.io, doctor);
+      emitDoctorQueueChanged(doctor._id);
       req.io.emit("doctorArrivalAlert", {
         doctorId: doctor._id,
         doctorName: doctor.name,

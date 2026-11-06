@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { isValidPhone, PHONE_HINT } from '../../../utils/phone';
 import {
   View,
   Text,
@@ -27,7 +28,7 @@ import { useAuth } from '../../../context/auth'; // Import Auth Context
 const formSchema = z.object({
   nicNumber: z.string().min(1, { message: "NIC number is required." }),
   email: z.string().email({ message: "Invalid email address." }),
-  phoneNumber: z.string().min(9, { message: "Valid phone number is required." }),
+  phoneNumber: z.string().refine(isValidPhone, { message: PHONE_HINT }),
   password: z.string().min(8, { message: "Password must be at least 8 characters." }),
   slmcCertificate: z.any().optional(),
 });
@@ -110,7 +111,7 @@ export default function DoctorSignupStep2() {
               autoCapitalize="none"
             />
             {isPassword && (
-              <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={styles.eyeButton}>
+              <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={styles.eyeButton} accessibilityRole="button" accessibilityLabel="Show or hide password">
                 <Ionicons name={showPassword ? "eye-off-outline" : "eye-outline"} size={20} color="#64748b" />
               </TouchableOpacity>
             )}

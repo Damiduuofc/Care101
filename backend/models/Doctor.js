@@ -6,7 +6,7 @@ const DoctorSchema = new mongoose.Schema({
   hospital: { type: String, default: "SUWASEWANA HOSPITAL" },
   fullName: { type: String },
   email: { type: String, required: true, unique: true },
-  password: { type: String, required: true },
+  password: { type: String, required: true, select: false }, // load with "+password"
 
   // --- Admin Approval ---
   isApproved: { type: Boolean, default: false },
@@ -37,9 +37,15 @@ const DoctorSchema = new mongoose.Schema({
   channelingFee: { type: Number },
 
   createdAt: { type: Date, default: Date.now },
-  resetPasswordOtp: { type: String },
-  resetPasswordExpire: { type: Date }
+  resetPasswordOtp: { type: String, select: false },
+  resetPasswordExpire: { type: Date, select: false },
+  resetPasswordAttempts: { type: Number, default: 0, select: false }
 
 });
+
+// Indexes for the dashboard / list queries
+DoctorSchema.index({ allocatedNurse: 1 });
+DoctorSchema.index({ createdAt: -1 });
+DoctorSchema.index({ isApproved: 1 });
 
 export default mongoose.model("Doctor", DoctorSchema);

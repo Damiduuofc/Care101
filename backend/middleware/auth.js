@@ -1,4 +1,4 @@
-import { protect, authorize } from "./authRole.js";
+import { protect, authorize, ROLES } from "./authRole.js";
 
 export const auth = protect;
-export { protect, authorize };
+export { protect, authorize, ROLES };

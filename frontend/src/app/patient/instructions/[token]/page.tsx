@@ -1,5 +1,7 @@
 "use client";
 
+import { Skeleton } from "@/components/ui/skeleton";
+import { TextSkeleton } from "@/components/ui/skeleton-presets";
 import React, { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
 import { 
@@ -118,9 +120,14 @@ export default function PatientInstructionPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex flex-col justify-center items-center bg-slate-50 p-6">
-        <div className="w-12 h-12 border-4 border-cyan-600 border-t-transparent rounded-full animate-spin"></div>
-        <p className="mt-4 text-slate-600 font-medium animate-pulse">Loading care instructions...</p>
+      <div className="min-h-screen bg-slate-50 p-6" aria-busy="true" aria-label="Loading care instructions">
+        <div className="max-w-2xl mx-auto space-y-6">
+          <Skeleton className="h-8 w-2/3" />
+          <Skeleton className="h-4 w-1/2" />
+          <Skeleton className="h-40 w-full rounded-2xl" />
+          <TextSkeleton lines={5} />
+          <TextSkeleton lines={4} />
+        </div>
       </div>
     );
   }

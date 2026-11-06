@@ -1,5 +1,7 @@
 "use client";
 
+import { useLiveRefresh } from "@/lib/useLiveRefresh";
+import { CardGridSkeleton } from "@/components/ui/skeleton-presets";
 import { useEffect, useState } from "react";
 import Sidebar from "@/components/admin/Sidebar";
 import { Button } from "@/components/ui/button";
@@ -29,6 +31,9 @@ export default function DoctorArrivals() {
         }
         fetchDoctors();
     }, [router]);
+
+    // Live: arrivals and session changes from other desks appear immediately
+    useLiveRefresh(() => fetchDoctors());
 
     const fetchDoctors = async () => {
         try {
@@ -118,10 +123,7 @@ export default function DoctorArrivals() {
                 </div>
 
                 {loading ? (
-                    <div className="flex flex-col items-center justify-center h-64 text-slate-400">
-                        <Loader2 className="animate-spin h-8 w-8 mb-2 text-cyan-600" />
-                        <p className="text-sm font-medium">Loading medical staff...</p>
-                    </div>
+                    <CardGridSkeleton cards={6} />
                 ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                         {filteredDoctors.map(doc => (

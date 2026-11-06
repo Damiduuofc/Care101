@@ -1,3 +1,4 @@
+import { SkeletonList } from '../../../components/Skeleton';
 import React, { useState, useCallback } from 'react';
 import { View, FlatList, Text, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
@@ -53,7 +54,7 @@ export default function InstructionsList() {
       </View>
 
       {loading ? (
-        <ActivityIndicator size="large" color="#0891b2" style={{marginTop: 50}} />
+        <SkeletonList rows={6} />
       ) : (
         <FlatList
           data={list}
@@ -83,8 +84,7 @@ export default function InstructionsList() {
       <TouchableOpacity 
         style={styles.fab} 
         onPress={handleAdd}
-        activeOpacity={0.8}
-      >
+        activeOpacity={0.8} accessibilityRole="button" accessibilityLabel="Add">
         <Plus size={24} color="#fff" />
       </TouchableOpacity>
       

@@ -1,3 +1,4 @@
+import { SkeletonScreen } from '../components/Skeleton';
 import { installAppFont, appFonts } from '../utils/fonts';
 installAppFont();
 
@@ -47,9 +48,7 @@ function RootLayoutNav() {
   // Wait for the bundled font so text is never measured with the phone's system font.
   if (isLoading || (!fontsLoaded && !fontError)) {
     return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-        <ActivityIndicator size="large" color="#06b6d4" />
-      </View>
+      <SkeletonScreen />
     );
   }
 

@@ -1,3 +1,4 @@
+import { SkeletonList } from '../../../components/Skeleton';
 import React, { useState, useEffect } from 'react';
 import {
     View,
@@ -346,7 +347,7 @@ export default function PatientRecordsListScreen() {
                 </View>
 
                 {loading ? (
-                    <ActivityIndicator size="large" color="#06b6d4" style={{ marginTop: 50 }} />
+                    <SkeletonList rows={6} />
                 ) : (
                     <FlatList
                         data={filteredRecords}
@@ -378,7 +379,7 @@ export default function PatientRecordsListScreen() {
                                 <Text style={styles.modalTitle} numberOfLines={1}>{selectedRecordData?.title || selectedRecordData?.fileName || 'Document'}</Text>
                                 <Text style={styles.modalSubtitle}>{selectedRecordData?.doctorName || selectedRecordData?.fileType || 'Medical Record'}</Text>
                             </View>
-                            <TouchableOpacity onPress={() => setShowViewRecordModal(false)} style={styles.closeBtn}>
+                            <TouchableOpacity onPress={() => setShowViewRecordModal(false)} style={styles.closeBtn} accessibilityRole="button" accessibilityLabel="Close">
                                 <X size={20} color="#64748b" />
                             </TouchableOpacity>
                         </View>

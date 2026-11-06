@@ -8,7 +8,8 @@ import ConsultationHistory from "../models/ConsultationHistory.js";
 import Notification from "../models/Notification.js";
 import { calculatePrediction, updateDoctorAverageDuration } from "../services/predictionService.js";
 import { countPaidAhead, firstPaidToken, dayRange } from "../utils/queueToken.js";
-import { emitAppointmentUpdated, emitNotification } from "../utils/realtime.js";
+import { isArrivedToday, isSessionLive } from "../utils/doctorSession.js";
+import { emitAppointmentUpdated, emitNotification, emitDoctorQueueChanged, emitDoctorStatus } from "../utils/realtime.js";
 
 const router = express.Router();
 
@@ -61,7 +62,8 @@ router.post("/update", protect, authorize(["doctor", "nurse", "receptionist", "s
     }
 
     if (action === "start") {
-      if (!doctor.isArrived) {
+      // A check-in left over from an earlier day does not count
+      if (!isArrivedToday(doctor)) {
         return res.status(400).json({ msg: "Cannot start session until the doctor has been marked as arrived." });
       }
       // Allowed while the doctor still has a session today that hasn't been ended
@@ -69,14 +71,15 @@ router.post("/update", protect, authorize(["doctor", "nurse", "receptionist", "s
       if (!session) {
         return res.status(400).json({ msg: "All of this doctor's sessions today have been completed." });
       }
+      // Resuming after the doctor was checked out and back in keeps the token being served
+      const resuming = doctor.sessionStarted && doctor.currentQueueNumber > 0;
       doctor.sessionEndedToday = false;
       doctor.sessionStarted = true;
       if (session.allocatedRoom) doctor.allocatedRoom = session.allocatedRoom;
       if (session.allocatedNurse) doctor.allocatedNurse = session.allocatedNurse;
       // Start on this session's first paid token; unpaid tokens are skipped
-      doctor.currentQueueNumber = await firstPaidToken(doctor._id, session._id);
-      if (!doctor.lastArrivalDate) {
-        doctor.lastArrivalDate = new Date();
+      if (!resuming) {
+        doctor.currentQueueNumber = await firstPaidToken(doctor._id, session._id);
       }
     } else if (action === "end") {
       // End only the session in progress; the doctor's later sessions today stay open
@@ -145,7 +148,8 @@ router.post("/update", protect, authorize(["doctor", "nurse", "receptionist", "s
 
     // Emit live updates to connected socket client rooms & globally for widgets
     if (req.io) {
-      req.io.emit("doctorStatusUpdated", doctor);
+      emitDoctorStatus(req.io, doctor);
+      emitDoctorQueueChanged(doctor._id);
       if (action === "end" && releasedNurse) {
         req.io.emit("nurseReleased", {
           doctorId: doctor._id,
@@ -158,8 +162,8 @@ router.post("/update", protect, authorize(["doctor", "nurse", "receptionist", "s
         doctorId: doctor._id,
         currentServingNumber: doctor.currentQueueNumber,
         currentToken: doctor.currentQueueNumber,
-        isArrived: doctor.isArrived,
-        sessionStarted: doctor.sessionStarted,
+        isArrived: isArrivedToday(doctor),
+        sessionStarted: isSessionLive(doctor),
         sessionEndedToday: doctor.sessionEndedToday,
         // Set when a session was just ended, so apps can move patients on to their next booking
         endedSessionId,
@@ -291,8 +295,8 @@ router.get("/patient/:patientId", protect, async (req, res) => {
       paymentStatus: appt.paymentStatus || "pending",
       awaitingPayment,
       appointmentDate: appt.date,
-      isArrived: Boolean(doctor?.isArrived),
-      sessionStarted: Boolean(doctor?.sessionStarted),
+      isArrived: isArrivedToday(doctor),
+      sessionStarted: isSessionLive(doctor),
       queueNumber: myQueueNumber,
       currentServingNumber: currentServing,
       currentToken: currentServing,
@@ -329,7 +333,7 @@ router.get("/doctor/:doctorId/live", protect, async (req, res) => {
       doctorId: doctor._id,
       doctorName: doctor.name,
       currentServingNumber: doctor.currentQueueNumber || 0,
-      sessionStarted: doctor.sessionStarted || false,
+      sessionStarted: isSessionLive(doctor),
       averageConsultationDuration: doctor.averageConsultationDuration || 10,
       activeAppointmentsCount: activeAppts.length
     });

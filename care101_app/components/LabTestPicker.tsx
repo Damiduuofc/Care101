@@ -1,3 +1,4 @@
+import { SkeletonList } from './Skeleton';
 import React, { useEffect, useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, ActivityIndicator, ScrollView, StyleSheet } from 'react-native';
 import { Check } from 'lucide-react-native';
@@ -33,7 +34,7 @@ export default function LabTestPicker({ selectedIds, onChange }: { selectedIds: 
     const filtered = tests.filter(t => t.name?.toLowerCase().includes(search.toLowerCase()));
     const total = tests.filter(t => selectedIds.includes(t._id)).reduce((sum, t) => sum + Number(t.price || 0), 0);
 
-    if (loading) return <ActivityIndicator style={{ marginVertical: 16 }} color="#0891b2" />;
+    if (loading) return <SkeletonList rows={3} style={{ padding: 0, marginVertical: 12 }} />;
 
     if (tests.length === 0) {
         return <Text style={styles.empty}>No lab tests are configured yet. Ask the system administrator to add lab tests and prices.</Text>;

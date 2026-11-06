@@ -1,5 +1,7 @@
 "use client";
 
+import { useLiveRefresh } from "@/lib/useLiveRefresh";
+import { PageSkeleton } from "@/components/ui/skeleton-presets";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -63,6 +65,9 @@ export default function AllDoctorsPage() {
     }
     fetchDoctors();
   }, [router]);
+
+  // Live: new registrations / approvals appear without a reload
+  useLiveRefresh(() => fetchDoctors());
 
   const showToast = (msg: string, type: "success" | "error") => {
     setToast({ msg, type });
@@ -156,9 +161,7 @@ const filtered = doctors.filter((d) => {
 
   if (loading)
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50">
-        <Loader2 className="h-6 w-6 animate-spin text-[#06B6D4]" />
-      </div>
+      <PageSkeleton variant="cards" />
     );
 
   return (

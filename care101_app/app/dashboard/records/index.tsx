@@ -1,3 +1,4 @@
+import { SkeletonList } from '../../../components/Skeleton';
 import React, { useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TextInput, FlatList, TouchableOpacity, StatusBar,
@@ -156,14 +157,14 @@ export default function RecordsScreen() {
             returnKeyType="search"
           />
           {searchQuery.length > 0 && (
-            <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={10}>
+            <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={10} accessibilityRole="button" accessibilityLabel="Close">
               <X size={18} color={COLORS.muted} />
             </TouchableOpacity>
           )}
         </View>
       </View>
 
-      {loading ? <ActivityIndicator size="large" color={COLORS.primary} style={{ marginTop: 50 }} /> : (
+      {loading ? <SkeletonList rows={6} /> : (
         <FlatList
           data={filteredRecords}
           keyExtractor={(item: any) => item._id}
@@ -189,8 +190,7 @@ export default function RecordsScreen() {
       <TouchableOpacity
         style={styles.fab}
         activeOpacity={0.85}
-        onPress={() => router.push('/dashboard/records/create')}
-      >
+        onPress={() => router.push('/dashboard/records/create')} accessibilityRole="button" accessibilityLabel="Add">
         <Plus size={24} color="#fff" />
       </TouchableOpacity>
 

@@ -1,3 +1,4 @@
+import { SkeletonList } from '../../../components/Skeleton';
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, StatusBar, Modal, TextInput,
@@ -106,7 +107,7 @@ export default function HospitalDetailsScreen() {
           <Calendar size={14} color="#64748b" />
           <Text style={styles.dateText}>{new Date(item.date).toDateString()}</Text>
         </View>
-        <TouchableOpacity onPress={() => handleDeleteRecord(item._id)}>
+        <TouchableOpacity onPress={() => handleDeleteRecord(item._id)} accessibilityRole="button" accessibilityLabel="Delete">
           <Trash2 size={16} color="#ef4444" />
         </TouchableOpacity>
       </View>
@@ -128,7 +129,7 @@ export default function HospitalDetailsScreen() {
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#f8fafc" />
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()}><ArrowLeft size={24} color="#0f172a" /></TouchableOpacity>
+        <TouchableOpacity onPress={() => router.back()} accessibilityRole="button" accessibilityLabel="Go back"><ArrowLeft size={24} color="#0f172a" /></TouchableOpacity>
         <Text style={styles.hospitalTitle}>{hospital?.name || "Loading..."}</Text>
       </View>
 
@@ -147,7 +148,7 @@ export default function HospitalDetailsScreen() {
           <Text style={styles.mainAddButtonText}>Add {activeTab === 'channeling' ? 'Session' : 'Record'}</Text>
         </TouchableOpacity>
 
-        {loading ? <ActivityIndicator color="#06B6D4" /> : (
+        {loading ? <SkeletonList rows={5} style={{ paddingHorizontal: 0 }} /> : (
           <FlatList
             data={records}
             keyExtractor={(item: any) => item._id}

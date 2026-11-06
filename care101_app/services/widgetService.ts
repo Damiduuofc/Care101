@@ -259,12 +259,19 @@ export const WidgetService = {
         if (isOurDoc && !lastWidgetPayload.awaitingPayment) {
           const myTokenNum = Number(lastWidgetPayload.myToken) || 0;
           const peopleAhead = Math.max(0, myTokenNum - Number(payload.currentToken));
+          // Only a running session means "queue"; otherwise keep the current state so the
+          // widget (and the alerts based on it) do not flip back and forth before the sync below
+          const state = payload.sessionEndedToday
+            ? 'completed'
+            : payload.sessionStarted === false
+              ? lastWidgetPayload.state
+              : 'queue';
           await WidgetService.updateWidgetData({
             ...lastWidgetPayload,
-            state: payload.sessionEndedToday ? 'completed' : 'queue',
+            state,
             ongoingToken: payload.currentToken,
             peopleAhead,
-            isArrived: true,
+            isArrived: payload.isArrived ?? lastWidgetPayload.isArrived,
             room: payload.allocatedRoom || lastWidgetPayload.room,
           });
         }

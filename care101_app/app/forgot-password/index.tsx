@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import KeyboardSafe from '../../components/KeyboardSafe';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -45,8 +46,9 @@ export default function ForgotPasswordEmailScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
-      <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: '#fff' }}>
+      <KeyboardSafe contentContainerStyle={styles.container}>
+      <TouchableOpacity onPress={() => router.back()} style={styles.backButton} accessibilityRole="button" accessibilityLabel="Go back">
         <Ionicons name="arrow-back" size={24} color="#0f172a" />
       </TouchableOpacity>
       
@@ -67,6 +69,7 @@ export default function ForgotPasswordEmailScreen() {
       <TouchableOpacity style={styles.button} onPress={handleSendOTP} disabled={loading}>
         {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Send OTP</Text>}
       </TouchableOpacity>
+      </KeyboardSafe>
     </SafeAreaView>
   );
 }

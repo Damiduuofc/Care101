@@ -1,5 +1,6 @@
 "use client";
 
+import { TextSkeleton } from "@/components/ui/skeleton-presets";
 import { useCallback, useEffect, useState } from "react";
 import { AlertTriangle, FileText, FlaskConical, HeartPulse, Loader2, RefreshCw, Sparkles, X } from "lucide-react";
 import { getAdminToken } from "@/lib/adminSession";
@@ -93,8 +94,10 @@ export default function PatientSummaryModal({ patientId, patientName, queueNumbe
 
                 <div className="p-4 sm:p-5 overflow-y-auto space-y-4">
                     {loading && (
-                        <div className="flex items-center gap-2 text-sm text-slate-500 py-6 justify-center">
-                            <Loader2 className="h-4 w-4 animate-spin" /> Summarising patient history…
+                        <div className="space-y-4 py-2">
+                            <p className="text-sm text-slate-500">Summarising patient history…</p>
+                            <TextSkeleton lines={4} />
+                            <TextSkeleton lines={3} />
                         </div>
                     )}
 

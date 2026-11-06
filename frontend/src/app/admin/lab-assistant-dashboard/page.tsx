@@ -1,5 +1,6 @@
 "use client";
 
+import { notify } from "@/lib/notify";
 import { useEffect, useState } from "react";
 import { Loader2, Search, FileText, Upload, Trash2, Eye, Download, User2, Activity, Plus } from "lucide-react";
 import Sidebar from "@/components/admin/Sidebar";
@@ -12,6 +13,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { clearAdminSession, getAdminToken, getAdminUser } from "@/lib/adminSession";
 import LabTestPicker from "@/components/admin/LabTestPicker";
+import { Skeleton } from "@/components/ui/skeleton";
+import { useLiveRefresh } from "@/lib/useLiveRefresh";
 
 export default function LabAssistantDashboard() {
   const [loading, setLoading] = useState(true);
@@ -106,6 +109,12 @@ export default function LabAssistantDashboard() {
     fetchRequests();
   }, []);
 
+  // Live updates: new lab requests / patients show up without a reload
+  useLiveRefresh(() => {
+    fetchPatients();
+    fetchRequests();
+  });
+
   useEffect(() => {
     const lower = search.toLowerCase();
     setFilteredPatients(patients.filter(p => 
@@ -194,7 +203,7 @@ export default function LabAssistantDashboard() {
 
   const handleCreateRequest = async () => {
     if (createFormData.testIds.length === 0) {
-      alert("Please select at least one lab test!");
+      notify("Please select at least one lab test!");
       return;
     }
     setCreateLoading(true);
@@ -217,7 +226,7 @@ export default function LabAssistantDashboard() {
 
       if (res.ok) {
         const newReq = await res.json();
-        alert("Report request created successfully!");
+        notify("Report request created successfully!");
         setIsCreateModalOpen(false);
         setCreateFormData({ testIds: [], type: "lab_tests", description: "" });
         
@@ -246,11 +255,11 @@ export default function LabAssistantDashboard() {
         }
       } else {
         const errData = await res.json();
-        alert(`Error: ${errData.msg}`);
+        notify(`Error: ${errData.msg}`);
       }
     } catch (err) {
       console.error("Failed to create request", err);
-      alert("Failed to create report request");
+      notify("Failed to create report request");
     } finally {
       setCreateLoading(false);
     }
@@ -261,7 +270,7 @@ export default function LabAssistantDashboard() {
     if (file) {
       const maxSize = 5 * 1024 * 1024; // 5MB
       if (file.size > maxSize) {
-        alert("File size exceeds 5MB. Please upload a smaller file.");
+        notify("File size exceeds 5MB. Please upload a smaller file.");
         e.target.value = "";
         return;
       }
@@ -279,7 +288,7 @@ export default function LabAssistantDashboard() {
 
   const handleUpload = async () => {
     if (!formData.title || !formData.fileData) {
-      alert("Title and File are required!");
+      notify("Title and File are required!");
       return;
     }
 
@@ -315,7 +324,7 @@ export default function LabAssistantDashboard() {
       });
 
       if (res.ok) {
-        alert("Document uploaded successfully!");
+        notify("Document uploaded successfully!");
         setIsModalOpen(false);
         setFormData({ title: "", type: "lab_tests", description: "", fileData: "", fileType: "" });
         
@@ -326,11 +335,11 @@ export default function LabAssistantDashboard() {
         fetchPatientRecords(selectedPatient._id); // Refresh
       } else {
         const errData = await res.json();
-        alert(`Error: ${errData.msg}`);
+        notify(`Error: ${errData.msg}`);
       }
     } catch (err) {
       console.error("Upload failed", err);
-      alert("Failed to upload document");
+      notify("Failed to upload document");
     } finally {
       setUploadLoading(false);
     }
@@ -354,15 +363,56 @@ export default function LabAssistantDashboard() {
         a.click();
         document.body.removeChild(a);
       } else {
-        alert("Failed to download file");
+        notify("Failed to download file");
       }
     } catch (err) {
       console.error("Download Error:", err);
-      alert("Error downloading file");
+      notify("Error downloading file");
     }
   };
 
-  if (loading) return <div className="p-10 flex justify-center"><Loader2 className="animate-spin text-cyan-500" /></div>;
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-slate-50" aria-busy="true" aria-label="Loading dashboard">
+        <Sidebar />
+        <main className="flex-1 md:ml-64 p-4 lg:p-8">
+          <div className="max-w-7xl mx-auto space-y-6">
+            <div className="space-y-3">
+              <Skeleton className="h-8 w-72" />
+              <Skeleton className="h-4 w-96 max-w-full" />
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div className="space-y-4">
+                <Skeleton className="h-10 w-full" />
+                <div className="flex gap-2">
+                  <Skeleton className="h-10 flex-1" />
+                  <Skeleton className="h-10 flex-1" />
+                </div>
+                {Array.from({ length: 6 }).map((_, i) => (
+                  <div key={i} className="bg-white rounded-xl border border-slate-200 p-4 flex items-center gap-3">
+                    <Skeleton className="h-10 w-10 rounded-full shrink-0" />
+                    <div className="flex-1 space-y-2">
+                      <Skeleton className="h-4 w-2/3" />
+                      <Skeleton className="h-3 w-1/3" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="md:col-span-2 bg-white rounded-xl border border-slate-200 p-6 space-y-4">
+                <Skeleton className="h-6 w-1/3" />
+                <Skeleton className="h-4 w-1/2" />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+                  {Array.from({ length: 4 }).map((_, i) => (
+                    <Skeleton key={i} className="h-28 w-full rounded-xl" />
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        </main>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -665,7 +715,19 @@ export default function LabAssistantDashboard() {
                 </h3>
 
                 {loadingRecords ? (
-                  <div className="p-8 flex justify-center"><Loader2 className="animate-spin text-cyan-500" /></div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4" aria-busy="true">
+                    {Array.from({ length: 4 }).map((_, i) => (
+                      <div key={i} className="bg-white rounded-xl border border-slate-200 p-4 space-y-3">
+                        <div className="flex justify-between">
+                          <Skeleton className="h-5 w-20 rounded-full" />
+                          <Skeleton className="h-3 w-16" />
+                        </div>
+                        <Skeleton className="h-5 w-3/4" />
+                        <Skeleton className="h-3 w-full" />
+                        <Skeleton className="h-8 w-24 ml-auto" />
+                      </div>
+                    ))}
+                  </div>
                 ) : patientRecords.length === 0 ? (
                   <div className="p-8 text-center text-slate-500 bg-white rounded-xl border border-slate-200">
                     No medical records uploaded for this patient yet.

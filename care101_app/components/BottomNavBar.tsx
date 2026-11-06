@@ -27,21 +27,24 @@ export default function BottomNavBar() {
     return pathname === path || pathname.startsWith(path);
   };
 
+  // Tabs behave like tabs: no duplicate screens, and Back always returns to Home
   const handlePress = (path: string) => {
-    // Cast to 'any' to bypass strict route typing for dynamic strings
-    if (path === '/dashboard') {
-        router.replace(path as any);
-    } else {
-        router.push(path as any);
-    }
+      if (pathname === path) return; // already here
+      if (path === '/dashboard') {
+          router.dismissTo(path as any); // back to the Home already in the stack
+      } else if (pathname === '/dashboard') {
+          router.push(path as any); // Home -> tab
+      } else {
+          router.replace(path as any); // tab -> tab: swap instead of stacking
+      }
   };
 
   return (
-    <View style={styles.bottomNav}>
+    <View style={styles.bottomNav} accessibilityRole="tablist">
       <NavItem 
         icon={Home} 
         label="Home" 
-        active={pathname === '/dashboard' || pathname === '/dashboard'}
+        active={pathname === '/dashboard'}
         onPress={() => handlePress('/dashboard')} 
       />
       <NavItem 
@@ -74,7 +77,7 @@ export default function BottomNavBar() {
 
 // Internal Helper Component with Types
 const NavItem: React.FC<NavItemProps> = ({ icon: Icon, label, active, onPress }) => (
-  <TouchableOpacity style={styles.navItem} onPress={onPress} activeOpacity={0.7}>
+  <TouchableOpacity style={styles.navItem} onPress={onPress} activeOpacity={0.7} accessibilityRole="tab" accessibilityLabel={label} accessibilityState={{ selected: active }}>
     <Icon size={24} color={active ? '#06b6d4' : '#94a3b8'} strokeWidth={active ? 2.5 : 2} />
     <Text style={[styles.navLabel, active && styles.navLabelActive]}>{label}</Text>
   </TouchableOpacity>

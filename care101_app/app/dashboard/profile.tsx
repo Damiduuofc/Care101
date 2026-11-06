@@ -1,3 +1,5 @@
+import { SkeletonScreen } from '../../components/Skeleton';
+import { isValidPhone, PHONE_HINT } from '../../utils/phone';
 import React, { useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, Image, TouchableOpacity, ScrollView, ActivityIndicator,
@@ -106,7 +108,8 @@ export default function ProfileScreen() {
     form.phone !== clean(profile.phone) ||
     form.specialization !== (profile.specialization || '') ||
     form.profileImage !== (profile.profileImage || null);
-  const formValid = form.fullName.trim().length > 0;
+  const phoneOk = !form.phone.trim() || isValidPhone(form.phone);
+  const formValid = form.fullName.trim().length > 0 && phoneOk;
 
   const cancelEditing = () => {
     if (!hasChanges) {
@@ -233,7 +236,7 @@ export default function ProfileScreen() {
     ]);
   };
 
-  if (loading) return <ActivityIndicator style={{ marginTop: 50 }} size="large" color={THEME.primary} />;
+  if (loading) return <SkeletonScreen variant="detail" />;
 
   const avatarUri = isEditing ? form.profileImage : profile.profileImage;
   const department = departmentLabel(profile.specialization) || 'General Practitioner';
@@ -249,7 +252,7 @@ export default function ProfileScreen() {
         <StatusBar barStyle="dark-content" backgroundColor="#fff" />
 
         <View style={styles.topBar}>
-          <TouchableOpacity onPress={cancelEditing} style={styles.topBarSide} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+          <TouchableOpacity onPress={cancelEditing} style={styles.topBarSide} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} accessibilityRole="button" accessibilityLabel="Close">
             <X size={24} color={THEME.text} />
           </TouchableOpacity>
           <Text style={styles.topBarTitle}>Edit profile</Text>
@@ -293,6 +296,7 @@ export default function ProfileScreen() {
               onChangeText={(t: string) => setForm(f => ({ ...f, phone: t.replace(/[^0-9+ ]/g, '') }))}
               keyboardType="phone-pad"
             />
+            {!phoneOk && <Text style={{ color: '#dc2626', fontSize: 12, marginTop: -8, marginBottom: 12 }}>{PHONE_HINT}</Text>}
 
             <View style={styles.field}>
               <Text style={styles.fieldLabel}>Department</Text>
@@ -419,7 +423,7 @@ export default function ProfileScreen() {
             <View style={styles.sheetHandle} />
             <View style={styles.sheetHeader}>
               <Text style={styles.sheetTitle}>Change password</Text>
-              <TouchableOpacity onPress={() => setShowPasswords(v => !v)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <TouchableOpacity onPress={() => setShowPasswords(v => !v)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} accessibilityRole="button" accessibilityLabel="Show or hide password">
                 {showPasswords ? <EyeOff size={20} color={THEME.subtext} /> : <Eye size={20} color={THEME.subtext} />}
               </TouchableOpacity>
             </View>

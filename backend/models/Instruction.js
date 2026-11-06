@@ -19,4 +19,7 @@ const InstructionSchema = new mongoose.Schema({
   createdAt: { type: Date, default: Date.now }
 });
 
+// Indexes for the dashboard / list queries
+InstructionSchema.index({ doctor: 1, createdAt: -1 });
+
 export default mongoose.model("Instruction", InstructionSchema);

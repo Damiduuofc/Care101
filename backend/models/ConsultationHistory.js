@@ -11,4 +11,7 @@ const ConsultationHistorySchema = new mongoose.Schema({
   delayMinutes: { type: Number, default: 0 }        // Deviation from scheduled appointment slot
 });
 
+// Indexes for the dashboard / list queries
+ConsultationHistorySchema.index({ doctorId: 1, date: -1 });
+
 export default mongoose.model("ConsultationHistory", ConsultationHistorySchema);

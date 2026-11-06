@@ -1,11 +1,12 @@
 import express from "express";
 import Instruction from "../models/Instruction.js";
-import { auth } from "../middleware/auth.js";
+import { auth, authorize, ROLES } from "../middleware/auth.js";
 import multer from "multer"; 
 import path from "path";     
 import crypto from "crypto";
 import InstructionShare from "../models/InstructionShare.js";
 import Doctor from "../models/Doctor.js";
+import { isSessionLive } from "../utils/doctorSession.js";
 import Admin from "../models/Admin.js";
 import ScheduleRequest from "../models/ScheduleRequest.js";
 import Patient from "../models/Patient.js";
@@ -26,14 +27,28 @@ const storage = multer.diskStorage({
   },
 });
 
-const upload = multer({ storage });
+// Instruction slots that can hold a file
+const INSTRUCTION_TYPES = ["video", "audio", "document"];
+
+// Only media and documents. Uploads are served from this server's own domain,
+// so an .html/.svg/.js upload would otherwise run as a page there.
+const ALLOWED_UPLOAD = /^(video\/|audio\/|image\/(png|jpe?g|webp|heic)$|application\/(pdf|msword|vnd\.openxmlformats-officedocument\.wordprocessingml\.document)$)/;
+const BLOCKED_EXT = /\.(html?|svg|xml|js|mjs|php|exe|sh)$/i;
+const upload = multer({
+  storage,
+  limits: { fileSize: 300 * 1024 * 1024 }, // 300 MB, enough for a phone video
+  fileFilter(req, file, cb) {
+    if (ALLOWED_UPLOAD.test(file.mimetype) && !BLOCKED_EXT.test(file.originalname)) return cb(null, true);
+    cb(new Error("Only video, audio, image, PDF or Word files can be uploaded."));
+  },
+});
 
 // ==========================================
 // 2. ROUTES
 // ==========================================
 
 // GET All Instructions
-router.get("/", auth, async (req, res) => {
+router.get("/", auth, authorize(["doctor"]), async (req, res) => {
   try {
     const list = await Instruction.find({ doctor: req.user.id }).sort({ createdAt: -1 });
     res.json(list);
@@ -41,7 +56,7 @@ router.get("/", auth, async (req, res) => {
 });
 
 // CREATE New Instruction (Limit Removed)
-router.post("/", auth, async (req, res) => {
+router.post("/", auth, authorize(["doctor"]), async (req, res) => {
   try {
     const { surgeryName, description } = req.body;
     const newInstruction = new Instruction({
@@ -65,7 +80,7 @@ const checkNurseDoctorAccess = async (user, doctorId) => {
     return { error: 403, msg: "Only nurses can share surgical instructions." };
   }
 
-  const doctor = await Doctor.findById(doctorId).select("name allocatedNurse sessionStarted");
+  const doctor = await Doctor.findById(doctorId).select("name allocatedNurse sessionStarted isArrived lastArrivalDate");
   if (!doctor) return { error: 404, msg: "Doctor not found." };
 
   if (user.role === "nurse") {
@@ -92,7 +107,7 @@ const checkNurseDoctorAccess = async (user, doctorId) => {
     if (!assigned) {
       return { error: 403, msg: "You are not assigned to this doctor." };
     }
-    if (!doctor.sessionStarted) {
+    if (!isSessionLive(doctor)) {
       return { error: 403, msg: "Surgical instructions are available once the queue session has started." };
     }
   }
@@ -101,7 +116,7 @@ const checkNurseDoctorAccess = async (user, doctorId) => {
 };
 
 // GET a doctor's instructions (nurse view)
-router.get("/doctor/:doctorId", auth, async (req, res) => {
+router.get("/doctor/:doctorId", auth, authorize(["doctor", ...ROLES.STAFF]), async (req, res) => {
   try {
     const access = await checkNurseDoctorAccess(req.user, req.params.doctorId);
     if (access.error) return res.status(access.error).json({ msg: access.msg });
@@ -115,7 +130,7 @@ router.get("/doctor/:doctorId", auth, async (req, res) => {
 });
 
 // NURSE: share selected instruction sections with a patient & save the link to their medical records
-router.post("/nurse-share", auth, async (req, res) => {
+router.post("/nurse-share", auth, authorize(ROLES.STAFF), async (req, res) => {
   try {
     const { instructionId, patientId, section, expiresAt } = req.body;
 
@@ -204,19 +219,22 @@ router.post("/nurse-share", auth, async (req, res) => {
 });
 
 // GET Single Instruction
-router.get("/:id", auth, async (req, res) => {
+router.get("/:id", auth, authorize(["doctor", ...ROLES.STAFF]), async (req, res) => {
   try {
     const item = await Instruction.findById(req.params.id);
-    if (!item) return res.status(404).json({ msg: "Not found" });
+    // Doctors only see their own instructions; staff may read any
+    if (!item || (req.user.role === "doctor" && String(item.doctor) !== String(req.user.id))) {
+      return res.status(404).json({ msg: "Not found" });
+    }
     res.json(item);
   } catch (err) { res.status(500).send("Server Error"); }
 });
 
 // ✅ ADDED: DELETE ENTIRE INSTRUCTION
 // This fixes the "Delete Surgery" button in your app
-router.delete("/:id", auth, async (req, res) => {
+router.delete("/:id", auth, authorize(["doctor"]), async (req, res) => {
   try {
-    const instruction = await Instruction.findById(req.params.id);
+    const instruction = await Instruction.findOne({ _id: req.params.id, doctor: req.user.id });
     if (!instruction) return res.status(404).json({ msg: "Not found" });
 
     // Optional: Add logic here to delete the associated files from 'uploads/' folder using fs.unlink
@@ -230,18 +248,20 @@ router.delete("/:id", auth, async (req, res) => {
 });
 
 // DELETE Specific File (Video/Audio/Doc)
-router.delete("/:id/:section/:type", auth, async (req, res) => {
+router.delete("/:id/:section/:type", auth, authorize(["doctor"]), async (req, res) => {
   try {
     const { id, section, type } = req.params;
-    
+    if (!INSTRUCTION_TYPES.includes(type)) return res.status(400).json({ msg: "Unknown instruction type" });
+
     const updateField = section === "preOp" ? `preOp.${type}` : `postOp.${type}`;
 
-    const updated = await Instruction.findByIdAndUpdate(
-      id,
+    const updated = await Instruction.findOneAndUpdate(
+      { _id: id, doctor: req.user.id },
       { $set: { [updateField]: null } }, 
       { new: true }
     );
 
+    if (!updated) return res.status(404).json({ msg: "Not found" });
     res.json(updated);
   } catch (err) {
     console.error(err);
@@ -250,21 +270,23 @@ router.delete("/:id/:section/:type", auth, async (req, res) => {
 });
 
 // UPDATE: Upload Route
-router.put("/:id/:section/:type", auth, upload.single("file"), async (req, res) => {
+router.put("/:id/:section/:type", auth, authorize(["doctor"]), upload.single("file"), async (req, res) => {
   try {
     const { id, section, type } = req.params;
-    
+    if (!INSTRUCTION_TYPES.includes(type)) return res.status(400).json({ msg: "Unknown instruction type" });
+
     if (!req.file) return res.status(400).send("No file uploaded");
 
     const fileUrl = `${req.protocol}://${req.get("host")}/uploads/${req.file.filename}`;
     const updateField = section === "preOp" ? `preOp.${type}` : `postOp.${type}`;
 
-    const updated = await Instruction.findByIdAndUpdate(
-      id,
+    const updated = await Instruction.findOneAndUpdate(
+      { _id: id, doctor: req.user.id },
       { $set: { [updateField]: fileUrl } },
       { new: true }
     );
 
+    if (!updated) return res.status(404).json({ msg: "Not found" });
     res.json(updated);
   } catch (err) {
     console.error(err);
@@ -273,12 +295,12 @@ router.put("/:id/:section/:type", auth, upload.single("file"), async (req, res) 
 });
 
 // CREATE Share Token for Instruction (Requires Auth)
-router.post("/:id/share", auth, async (req, res) => {
+router.post("/:id/share", auth, authorize(["doctor"]), async (req, res) => {
   try {
     const { id } = req.params;
     const { expireDays, section } = req.body;
     
-    const instruction = await Instruction.findById(id);
+    const instruction = await Instruction.findOne({ _id: id, doctor: req.user.id });
     if (!instruction) {
       return res.status(404).json({ msg: "Instruction not found" });
     }

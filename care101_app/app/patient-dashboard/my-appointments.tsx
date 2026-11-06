@@ -1,3 +1,4 @@
+import { SkeletonList } from '../../components/Skeleton';
 import React, { useState, useCallback, useMemo } from 'react';
 import {
     View,
@@ -308,7 +309,7 @@ export default function MyAppointmentsScreen() {
         <View style={styles.container}>
             <SafeAreaView edges={['top']} style={styles.safeArea}>
                 <View style={styles.header}>
-                    <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+                    <TouchableOpacity onPress={() => router.back()} style={styles.backButton} accessibilityRole="button" accessibilityLabel="Go back">
                         <ChevronLeft size={24} color="#1e293b" />
                     </TouchableOpacity>
                     <Text style={styles.headerTitle}>My Bookings</Text>
@@ -337,7 +338,7 @@ export default function MyAppointmentsScreen() {
             </SafeAreaView>
 
             {loading ? (
-                <ActivityIndicator size="large" color="#06b6d4" style={{ marginTop: 50 }} />
+                <SkeletonList rows={5} />
             ) : (
                 <FlatList
                     data={visible}
@@ -381,7 +382,7 @@ export default function MyAppointmentsScreen() {
                         <Text style={styles.modalSubtitle}>{rescheduleFor?.doctorName}</Text>
 
                         {loadingSessions ? (
-                            <ActivityIndicator color="#06b6d4" style={{ marginVertical: 24 }} />
+                            <SkeletonList rows={3} style={{ paddingHorizontal: 0 }} />
                         ) : sessions.length === 0 ? (
                             <Text style={styles.emptyText}>This doctor has no other open sessions right now.</Text>
                         ) : (

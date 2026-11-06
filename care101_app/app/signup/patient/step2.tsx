@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { isValidPhone, PHONE_HINT } from '../../../utils/phone';
 import {
     View,
     Text,
@@ -32,7 +33,7 @@ const DISTRICTS = [
 
 // --- VALIDATION SCHEMA ---
 const formSchema = z.object({
-    mobileNumber: z.string().min(9, { message: "Valid mobile number is required." }),
+    mobileNumber: z.string().refine(isValidPhone, { message: PHONE_HINT }),
     email: z.string().email({ message: "Valid email address is required." }),
     district: z.string().min(1, { message: "Please select your district." }),
 });

@@ -1,5 +1,10 @@
 "use client";
 
+import { confirmDialog } from "@/lib/confirmDialog";
+import { notify } from "@/lib/notify";
+import { useLiveRefresh } from "@/lib/useLiveRefresh";
+import { Skeleton } from "@/components/ui/skeleton";
+import { TextSkeleton, CardGridSkeleton } from "@/components/ui/skeleton-presets";
 import { useState, useEffect, useRef, useMemo } from "react";
 import Sidebar from "@/components/admin/Sidebar";
 import { Button } from "@/components/ui/button";
@@ -54,6 +59,9 @@ const [doctorSearchQuery, setDoctorSearchQuery] = useState("");
         fetchRequests();
         fetchDoctors();
     }, []);
+
+    // Live: new session requests from doctors appear without a reload
+    useLiveRefresh(() => fetchRequests());
 
     useEffect(() => {
         function handleClickOutside(event: MouseEvent) {
@@ -199,7 +207,7 @@ const [doctorSearchQuery, setDoctorSearchQuery] = useState("");
                 const data = await response.json();
                 const room = data.request?.allocatedRoom;
                 const nurse = data.request?.allocatedNurse;
-                alert(
+                notify(
                     room && nurse
                         ? `Session approved. Room: ${room}, Nurse: ${nurse}.`
                         : "Session approved, but no free room or nurse was found for this time. Please assign one in Room Allocation."
@@ -213,29 +221,51 @@ const [doctorSearchQuery, setDoctorSearchQuery] = useState("");
                 fetchRequests();
             } else {
                 const data = await response.json();
-                alert(data.msg || "Failed to create schedule.");
+                notify(data.msg || "Failed to create schedule.");
             }
         } catch (error) {
             console.error("Submit Error:", error);
-            alert("An error occurred. Please try again.");
+            notify("An error occurred. Please try again.");
         } finally {
             setFormSubmitting(false);
         }
     };
 
+    // Pending requests load in full; the (very long) history loads a page at a time
+    const HISTORY_PAGE = 50;
+    const [pendingList, setPendingList] = useState<any[]>([]);
+    const [historyList, setHistoryList] = useState<any[]>([]);
+    const [historyTotal, setHistoryTotal] = useState(0);
+    const [loadingMoreHistory, setLoadingMoreHistory] = useState(false);
+    const historyLoadedRef = useRef(HISTORY_PAGE);
+    const historyQueryRef = useRef("");
+
+    const requestHeaders = () => {
+        const token = getAdminToken() || "";
+        return { "Authorization": `Bearer ${token}`, "x-auth-token": token, "ngrok-skip-browser-warning": "true" };
+    };
+
+    const fetchHistoryPage = async (skip: number, limit: number) => {
+        const q = encodeURIComponent(historyQueryRef.current);
+        const res = await fetch(`${API_URL}/schedule-requests/all?scope=history&skip=${skip}&limit=${limit}&q=${q}`, { headers: requestHeaders() });
+        if (!res.ok) return null;
+        return res.json() as Promise<{ items: any[]; total: number; hasMore: boolean }>;
+    };
+
+    // Reloads pending + as much history as is already on screen (so live refreshes don't collapse it)
     const fetchRequests = async () => {
         try {
-            const token = getAdminToken() || "";
-            const response = await fetch(`${API_URL}/schedule-requests/all`, {
-                headers: { 
-                    "Authorization": `Bearer ${token}`,
-                    "x-auth-token": token,
-                    "ngrok-skip-browser-warning": "true" 
-                }
-            });
-            if (response.ok) {
-                const data = await response.json();
-                setRequests(Array.isArray(data) ? data : []);
+            const [pendingRes, history] = await Promise.all([
+                fetch(`${API_URL}/schedule-requests/all?scope=pending`, { headers: requestHeaders() }),
+                fetchHistoryPage(0, historyLoadedRef.current),
+            ]);
+            if (pendingRes.ok) {
+                const data = await pendingRes.json();
+                setPendingList(Array.isArray(data) ? data : []);
+            }
+            if (history) {
+                setHistoryList(history.items);
+                setHistoryTotal(history.total);
             }
         } catch (error) {
             console.error("Fetch Error:", error);
@@ -244,9 +274,45 @@ const [doctorSearchQuery, setDoctorSearchQuery] = useState("");
         }
     };
 
+    const loadMoreHistory = async () => {
+        setLoadingMoreHistory(true);
+        try {
+            const page = await fetchHistoryPage(historyList.length, HISTORY_PAGE);
+            if (page) {
+                setHistoryList(prev => [...prev, ...page.items]);
+                setHistoryTotal(page.total);
+                historyLoadedRef.current = historyList.length + page.items.length;
+            }
+        } finally {
+            setLoadingMoreHistory(false);
+        }
+    };
+
+    // Searching history asks the server (only one page is loaded at a time)
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            const q = doctorSearchQuery.trim();
+            if (q === historyQueryRef.current) return;
+            historyQueryRef.current = q;
+            historyLoadedRef.current = HISTORY_PAGE;
+            fetchHistoryPage(0, HISTORY_PAGE).then(page => {
+                if (page) {
+                    setHistoryList(page.items);
+                    setHistoryTotal(page.total);
+                }
+            });
+        }, 300);
+        return () => clearTimeout(timer);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [doctorSearchQuery]);
+
+    useEffect(() => {
+        setRequests([...pendingList, ...historyList]);
+    }, [pendingList, historyList]);
+
     const handleAction = async (id: string, newStatus: "approved" | "rejected" | "cancelled") => {
         if (newStatus === "cancelled") {
-            const confirmed = window.confirm(
+            const confirmed = await confirmDialog(
                 "Are you sure you want to cancel this schedule? Any booked appointments will be cancelled and allocated room/nurse resources will be released."
             );
             if (!confirmed) return;
@@ -269,7 +335,7 @@ const [doctorSearchQuery, setDoctorSearchQuery] = useState("");
                 const data = await response.json();
                 // Room and nurse are auto-assigned by the server on approval
                 if (newStatus === "approved" && (!data.request?.allocatedRoom || !data.request?.allocatedNurse)) {
-                    alert("Approved, but no free room or nurse was found for this time. Please assign one in Room Allocation.");
+                    notify("Approved, but no free room or nurse was found for this time. Please assign one in Room Allocation.");
                 }
                 setRequests(prev => 
                     prev.map(req => req._id === id ? { 
@@ -281,18 +347,18 @@ const [doctorSearchQuery, setDoctorSearchQuery] = useState("");
                 );
             } else {
                 const errData = await response.json();
-                alert(errData.msg || "Failed to update status");
+                notify(errData.msg || "Failed to update status");
             }
         } catch (error) {
             console.error("Action Error:", error);
-            alert("An error occurred. Please try again.");
+            notify("An error occurred. Please try again.");
         } finally {
             setLoadingAction(null);
         }
     };
 
     const handleDelete = async (id: string) => {
-        const confirmed = window.confirm(
+        const confirmed = await confirmDialog(
             "Are you sure you want to permanently delete this schedule request? Any booked appointments will be cancelled and resources will be released."
         );
         if (!confirmed) return;
@@ -312,15 +378,15 @@ const [doctorSearchQuery, setDoctorSearchQuery] = useState("");
                 const data = await response.json();
                 setRequests(prev => prev.filter(req => req._id !== id));
                 if (data.cancelledAppointmentsCount > 0) {
-                    alert(`Schedule deleted successfully. ${data.cancelledAppointmentsCount} associated booked appointment(s) were cancelled.`);
+                    notify(`Schedule deleted successfully. ${data.cancelledAppointmentsCount} associated booked appointment(s) were cancelled.`);
                 }
             } else {
                 const errData = await response.json();
-                alert(errData.msg || "Failed to delete schedule");
+                notify(errData.msg || "Failed to delete schedule");
             }
         } catch (error) {
             console.error("Delete Error:", error);
-            alert("An error occurred. Please try again.");
+            notify("An error occurred. Please try again.");
         } finally {
             setLoadingAction(null);
         }
@@ -438,10 +504,7 @@ const filteredHistoryRequests = historyRequests.filter((req: any) => {
                                                         </div>
                                                         <div className="overflow-y-auto flex-1 py-1 max-h-48">
                                                             {fetchingDoctors ? (
-                                                                <div className="px-3 py-3 text-xs text-slate-400 flex items-center justify-center gap-2">
-                                                                    <Loader2 className="h-3.5 w-3.5 animate-spin text-cyan-500" />
-                                                                    Loading doctors...
-                                                                </div>
+                                                                <TextSkeleton lines={4} className="px-3 py-3" />
                                                             ) : filteredDoctors.length === 0 ? (
                                                                 <div className="px-3 py-3 text-xs text-slate-400 text-center">
                                                                     No doctors found.
@@ -608,8 +671,10 @@ const filteredHistoryRequests = historyRequests.filter((req: any) => {
                                                     {!selectedDoctorId ? "Choose a doctor first." : "Choose a date first."}
                                                 </p>
                                             ) : loadingSlots ? (
-                                                <div className="flex justify-center py-16">
-                                                    <Loader2 className="h-5 w-5 animate-spin text-cyan-600" />
+                                                <div className="grid grid-cols-4 gap-2 py-4">
+                                                    {Array.from({ length: 12 }).map((_, i) => (
+                                                        <Skeleton key={i} className="h-10 rounded-lg" />
+                                                    ))}
                                                 </div>
                                             ) : timelineSlots.length > 0 && timelineSlots.every(s => !s.isAvailable) ? (
                                                 <div className="text-center py-14">
@@ -645,8 +710,12 @@ const filteredHistoryRequests = historyRequests.filter((req: any) => {
                 </header>
 
                 {loading ? (
-                    <div className="flex justify-center items-center h-64">
-                        <Loader2 className="animate-spin text-cyan-500" size={40} />
+                    <div className="space-y-6">
+                        <div className="flex gap-2">
+                            <Skeleton className="h-10 w-32 rounded-lg" />
+                            <Skeleton className="h-10 w-32 rounded-lg" />
+                        </div>
+                        <CardGridSkeleton cards={6} />
                     </div>
                 ) : (
                     <Tabs defaultValue="pending" className="w-full">
@@ -716,6 +785,15 @@ const filteredHistoryRequests = historyRequests.filter((req: any) => {
         formatTime={formatTime}
       />
     ))
+  )}
+
+  {historyList.length < historyTotal && (
+    <div className="flex flex-col items-center gap-2 pt-2">
+      <p className="text-xs text-slate-400">Showing {historyList.length} of {historyTotal}</p>
+      <Button variant="outline" onClick={loadMoreHistory} disabled={loadingMoreHistory} className="h-9 text-sm">
+        {loadingMoreHistory ? "Loading..." : `Load ${Math.min(HISTORY_PAGE, historyTotal - historyList.length)} more`}
+      </Button>
+    </div>
   )}
   
                         </TabsContent>

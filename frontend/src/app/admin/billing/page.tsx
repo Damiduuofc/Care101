@@ -1,5 +1,8 @@
 "use client";
 
+import { confirmDialog } from "@/lib/confirmDialog";
+import { useLiveRefresh } from "@/lib/useLiveRefresh";
+import { ListSkeleton } from "@/components/ui/skeleton-presets";
 import React, { useState, useEffect, useRef } from "react";
 import { loadStripe } from "@stripe/stripe-js";
 import { Elements, CardElement, useStripe, useElements } from "@stripe/react-stripe-js";
@@ -231,7 +234,7 @@ export default function BillingPage() {
     };
 
     const handlePayWithCash = async (bill: any) => {
-        if (!confirm(`Are you sure you want to mark "${bill.title}" as PAID with Cash?`)) {
+        if (!await confirmDialog(`Are you sure you want to mark "${bill.title}" as PAID with Cash?`)) {
             return;
         }
         
@@ -294,7 +297,7 @@ export default function BillingPage() {
     };
 
 const fetchHistoryAndDoctors = async () => {
-        setLoading(true);
+        // `loading` starts true; later (live) refreshes update quietly without the skeleton
         try {
             const token = getAdminToken();
             const headers = {
@@ -341,6 +344,9 @@ fetch(`${API_URL}/admin/doctors`, { headers })
     useEffect(() => {
         fetchHistoryAndDoctors();
     }, []);
+
+    // Live: payments and new bills from other desks appear without a reload
+    useLiveRefresh(() => fetchHistoryAndDoctors());
 
     useEffect(() => {
         if (!formData.doctorId) {
@@ -755,10 +761,7 @@ fetch(`${API_URL}/admin/doctors`, { headers })
 
                     <CardContent className="p-0">
                         {loading ? (
-                            <div className="py-20 text-center flex flex-col items-center gap-3">
-                                <Loader2 className="animate-spin text-[#06b6d4]" size={32} />
-                                <p className="text-sm text-slate-400 font-medium">Loading history...</p>
-                            </div>
+                            <ListSkeleton rows={6} className="p-4" />
                         ) : (
                             <Table>
                                 <TableHeader className="bg-slate-50/50">

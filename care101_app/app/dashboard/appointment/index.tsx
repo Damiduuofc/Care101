@@ -1,3 +1,4 @@
+import { SkeletonGrid, SkeletonList } from '../../../components/Skeleton';
 import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
@@ -258,7 +259,7 @@ export default function AppointmentScreen() {
 
       {/* HEADER */}
       <View style={styles.header}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
+        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()} accessibilityRole="button" accessibilityLabel="Go back">
           <ArrowLeft size={24} color="#0f172a" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>My Sessions</Text>
@@ -330,7 +331,7 @@ export default function AppointmentScreen() {
 
               <View style={styles.card}>
                 {loadingSlots ? (
-                  <ActivityIndicator color={CYAN} style={{ marginVertical: 32 }} />
+                  <SkeletonGrid items={12} columns={4} style={{ marginVertical: 8 }} />
                 ) : slots.length > 0 && freeCount === 0 ? (
                   <View style={styles.emptyDay}>
                     <Text style={styles.emptyDayTitle}>No free hours</Text>
@@ -418,7 +419,7 @@ export default function AppointmentScreen() {
           <Text style={styles.sectionHeading}>My sessions</Text>
           <View style={styles.historyContainer}>
             {loadingHistory ? (
-              <ActivityIndicator color="#06B6D4" style={{ marginVertical: 20 }} />
+              <SkeletonList rows={3} style={{ padding: 0 }} />
             ) : schedules.length === 0 ? (
               <View style={styles.emptyHistory}>
                 <Text style={styles.emptyHistoryText}>No requests found</Text>
@@ -450,8 +451,7 @@ export default function AppointmentScreen() {
                         <TouchableOpacity 
                           onPress={() => handleDeleteRequest(sched._id)}
                           style={styles.deleteIconBtn}
-                          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                        >
+                          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} accessibilityRole="button" accessibilityLabel="Delete">
                           <Trash2 size={16} color="#94a3b8" />
                         </TouchableOpacity>
                       )}

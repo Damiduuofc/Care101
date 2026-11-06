@@ -1,4 +1,5 @@
 import express from "express";
+import { loginLimiter, resetRequestLimiter, otpCheckLimiter } from "../utils/rateLimit.js";
 import { 
   registerDoctor, 
   registerPatient, 
@@ -32,12 +33,12 @@ router.post("/register-doctors-bulk", registerDoctorsBulk);
 router.post("/register-patient", registerPatient);
 
 // 4. Login
-router.post("/login", login);
+router.post("/login", loginLimiter, login);
 
 // 5. Password Reset Flow (OTP)
-router.post("/forgot-password", forgotPassword);
-router.post("/verify-otp", verifyOtp);
-router.post("/reset-password", resetPassword);
+router.post("/forgot-password", resetRequestLimiter, forgotPassword);
+router.post("/verify-otp", otpCheckLimiter, verifyOtp);
+router.post("/reset-password", otpCheckLimiter, resetPassword);
 router.get("/next-patient-id", getNextPatientId);
 
 
