@@ -9,6 +9,7 @@ import { findAutoAllocation, ROOM_DEPARTMENTS, getDoctorDept } from '../utils/au
 import { emitAppointmentUpdated, emitNotification } from '../utils/realtime.js';
 import { describeSession, cancelAppointment } from '../utils/bookingService.js';
 import { dayRange } from '../utils/queueToken.js';
+import { syncDoctorLiveAllocation } from '../utils/liveAllocation.js';
 
 const router = express.Router();
 
@@ -272,51 +273,11 @@ router.put('/:id/status', auth, async (req, res) => {
       if (allocatedRoom !== undefined) request.allocatedRoom = allocatedRoom;
       if (allocatedNurse !== undefined) request.allocatedNurse = allocatedNurse;
 
-      // ✅ SYNC TO DOCTOR MODEL
-      const now = new Date();
-      const isToday = new Date(request.date).toDateString() === now.toDateString();
-      if (isToday) {
-        await Doctor.findByIdAndUpdate(request.doctorId, {
-          $set: {
-            allocatedRoom: allocatedRoom || request.allocatedRoom,
-            allocatedNurse: allocatedNurse || request.allocatedNurse,
-            sessionEndedToday: false
-          }
-        });
-      }
+      // The doctor's live room/nurse is re-derived once the request is saved (below)
     } else {
       // ✅ WHEN REJECTING OR CANCELLING
       request.allocatedRoom = "";
       request.allocatedNurse = "";
-
-      // Release Doctor's live room if no other approved schedule exists for today
-      const now = new Date();
-      const isToday = new Date(request.date).toDateString() === now.toDateString();
-      if (isToday || wasApproved) {
-        const otherApproved = await ScheduleRequest.findOne({
-          _id: { $ne: request._id },
-          doctorId: request.doctorId,
-          status: 'approved',
-          date: request.date
-        });
-
-        if (!otherApproved) {
-          await Doctor.findByIdAndUpdate(request.doctorId, {
-            $set: {
-              allocatedRoom: "",
-              allocatedNurse: "",
-              channelingTime: ""
-            }
-          });
-        } else {
-          await Doctor.findByIdAndUpdate(request.doctorId, {
-            $set: {
-              allocatedRoom: otherApproved.allocatedRoom || "",
-              allocatedNurse: otherApproved.allocatedNurse || ""
-            }
-          });
-        }
-      }
 
       // If this schedule was previously approved, cancel any booked appointments and notify patients
       if (wasApproved) {
@@ -343,6 +304,9 @@ router.put('/:id/status', auth, async (req, res) => {
 
     request.status = status;
     await request.save();
+
+    // ✅ SYNC TO DOCTOR MODEL: the live room/nurse follows today's session in progress (or next)
+    await syncDoctorLiveAllocation(request.doctorId, req.io);
 
     // ✅ NOTIFY DOCTOR
     const actionLabel = status === 'approved' ? 'APPROVED' : status === 'cancelled' ? 'CANCELLED' : 'REJECTED';
@@ -502,18 +466,9 @@ router.put('/:id/allocate', auth, authorize(ROLES.SCHEDULING), async (req, res) 
     request.allocatedNurse = allocatedNurse || "";
     await request.save();
 
-    // Sync to Doctor model if the schedule is today
-    const now = new Date();
-    const isToday = new Date(request.date).toDateString() === now.toDateString();
-    if (isToday) {
-      await Doctor.findByIdAndUpdate(request.doctorId, {
-        $set: {
-          allocatedRoom: allocatedRoom || "",
-          allocatedNurse: allocatedNurse || "",
-          sessionEndedToday: false
-        }
-      });
-    }
+    // Sync to Doctor model. Only changes the live nurse when this is the doctor's current session
+    // today; editing a later session must not take the queue away from the nurse running this one.
+    await syncDoctorLiveAllocation(request.doctorId, req.io);
 
     res.json({ msg: 'Allocation successful', request });
   } catch (err) {
@@ -567,11 +522,7 @@ router.post('/admin/create', auth, async (req, res) => {
 
     const savedRequest = await newRequest.save();
 
-    if (parsedDate.toDateString() === new Date().toDateString()) {
-      await Doctor.findByIdAndUpdate(doctorId, {
-        $set: { allocatedRoom: auto.room, allocatedNurse: auto.nurse, sessionEndedToday: false }
-      });
-    }
+    await syncDoctorLiveAllocation(doctorId, req.io);
 
     // Create a Notification for the doctor
     const doctorNotification = new Notification({
@@ -721,6 +672,11 @@ router.post('/admin/create-daily', auth, async (req, res) => {
     if (newRequests.length) {
       const savedRequests = await ScheduleRequest.insertMany(newRequests);
       result.created.push(...savedRequests);
+      const today = new Date().toDateString();
+      const todayDoctorIds = new Set(savedRequests
+        .filter(r => new Date(r.date).toDateString() === today)
+        .map(r => String(r.doctorId)));
+      for (const id of todayDoctorIds) await syncDoctorLiveAllocation(id, req.io);
       await Notification.insertMany(savedRequests.map(savedRequest => ({
         userId: savedRequest.doctorId,
         type: 'schedule_request',
@@ -771,35 +727,6 @@ router.delete('/:id', auth, async (req, res) => {
 
     const wasApproved = request.status === 'approved';
 
-    // 1. Release doctor's allocatedRoom and allocatedNurse if needed
-    const now = new Date();
-    const isToday = new Date(request.date).toDateString() === now.toDateString();
-    if (isToday || wasApproved) {
-      const otherApproved = await ScheduleRequest.findOne({
-        _id: { $ne: request._id },
-        doctorId: request.doctorId,
-        status: 'approved',
-        date: request.date
-      });
-
-      if (!otherApproved) {
-        await Doctor.findByIdAndUpdate(request.doctorId, {
-          $set: {
-            allocatedRoom: "",
-            allocatedNurse: "",
-            channelingTime: ""
-          }
-        });
-      } else {
-        await Doctor.findByIdAndUpdate(request.doctorId, {
-          $set: {
-            allocatedRoom: otherApproved.allocatedRoom || "",
-            allocatedNurse: otherApproved.allocatedNurse || ""
-          }
-        });
-      }
-    }
-
     // 2. If was approved, cancel associated appointments and notify patients
     let cancelledAppointmentsCount = 0;
     if (wasApproved) {
@@ -826,6 +753,9 @@ router.delete('/:id', auth, async (req, res) => {
 
     // 3. Delete the schedule request completely
     await ScheduleRequest.findByIdAndDelete(req.params.id);
+
+    // Release the doctor's live room/nurse, or hand it to their next session today
+    await syncDoctorLiveAllocation(request.doctorId, req.io);
 
     // 4. Notify doctor if deleted by admin
     if (isAdmin && !isOwner) {

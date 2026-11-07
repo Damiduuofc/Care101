@@ -41,7 +41,7 @@ router.get("/", auth, authorize(["doctor", "nurse"]), async (req, res) => {
       const Admin = (await import("../models/Admin.js")).default;
       const nurse = await Admin.findById(req.user.id);
       if (nurse) {
-        const doctor = await Doctor.findOne({ allocatedNurse: nurse.name });
+        const doctor = await Doctor.findOne({ allocatedNurse: nurse.name }).sort({ sessionStarted: -1, lastArrivalDate: -1 });
         if (doctor) {
           queryDoctorId = doctor._id;
         }
@@ -87,7 +87,7 @@ router.post("/create", auth, authorize(["doctor"]), async (req, res) => {
         const Admin = (await import("../models/Admin.js")).default;
         const nurse = await Admin.findById(req.user.id);
         if (nurse) {
-          const doctor = await Doctor.findOne({ allocatedNurse: nurse.name });
+          const doctor = await Doctor.findOne({ allocatedNurse: nurse.name }).sort({ sessionStarted: -1, lastArrivalDate: -1 });
           if (doctor) {
             doctorId = doctor._id;
           } else {

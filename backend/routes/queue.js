@@ -9,19 +9,10 @@ import Notification from "../models/Notification.js";
 import { calculatePrediction, updateDoctorAverageDuration } from "../services/predictionService.js";
 import { countPaidAhead, firstPaidToken, dayRange } from "../utils/queueToken.js";
 import { isArrivedToday, isSessionLive, isTodayDate } from "../utils/doctorSession.js";
+import { openSessionsToday, pickCurrentSession, applyLiveAllocation } from "../utils/liveAllocation.js";
 import { emitAppointmentUpdated, emitNotification, emitDoctorQueueChanged, emitDoctorStatus } from "../utils/realtime.js";
 
 const router = express.Router();
-
-// Today's approved sessions for a doctor that have not been ended yet, earliest first.
-// Sessions run one after another, so the first one is the session in progress (or next to start).
-const openSessionsToday = (doctorId) =>
-  ScheduleRequest.find({
-    doctorId,
-    status: "approved",
-    sessionEnded: { $ne: true },
-    date: dayRange(new Date())
-  }).sort({ startTime: 1 });
 
 // ==========================================
 // 1. UPDATE QUEUE (POST /api/queue/update)
@@ -37,29 +28,9 @@ router.post("/update", protect, authorize(["doctor", "nurse", "receptionist", "s
     let releasedNurse = "";
     let endedSessionId = null;
 
-    // Ensure doctor's allocated nurse and room are preserved from today's schedule if currently empty and session not ended
-    if ((!doctor.allocatedNurse || !doctor.allocatedRoom) && !doctor.sessionEndedToday) {
-      const startOfDay = new Date();
-      startOfDay.setHours(0, 0, 0, 0);
-      const endOfDay = new Date();
-      endOfDay.setHours(23, 59, 59, 999);
-
-      const activeSched = await ScheduleRequest.findOne({
-        doctorId: doctor._id,
-        status: "approved",
-        sessionEnded: { $ne: true },
-        date: { $gte: startOfDay, $lte: endOfDay }
-      });
-
-      if (activeSched) {
-        if (!doctor.allocatedNurse && activeSched.allocatedNurse) {
-          doctor.allocatedNurse = activeSched.allocatedNurse;
-        }
-        if (!doctor.allocatedRoom && activeSched.allocatedRoom) {
-          doctor.allocatedRoom = activeSched.allocatedRoom;
-        }
-      }
-    }
+    // Today's open sessions, earliest first; the live room/nurse always follows one of them
+    const open = await openSessionsToday(doctor._id);
+    if (!doctor.sessionEndedToday) applyLiveAllocation(doctor, open);
 
     if (action === "start") {
       // A check-in left over from an earlier day does not count
@@ -67,7 +38,7 @@ router.post("/update", protect, authorize(["doctor", "nurse", "receptionist", "s
         return res.status(400).json({ msg: "Cannot start session until the doctor has been marked as arrived." });
       }
       // Allowed while the doctor still has a session today that hasn't been ended
-      const [session] = await openSessionsToday(doctor._id);
+      const session = pickCurrentSession(open, doctor) || open[0];
       if (!session) {
         return res.status(400).json({ msg: "All of this doctor's sessions today have been completed." });
       }
@@ -75,18 +46,21 @@ router.post("/update", protect, authorize(["doctor", "nurse", "receptionist", "s
       const resuming = doctor.sessionStarted && doctor.currentQueueNumber > 0;
       doctor.sessionEndedToday = false;
       doctor.sessionStarted = true;
-      if (session.allocatedRoom) doctor.allocatedRoom = session.allocatedRoom;
-      if (session.allocatedNurse) doctor.allocatedNurse = session.allocatedNurse;
+      doctor.activeScheduleId = session._id;
+      doctor.allocatedRoom = session.allocatedRoom || doctor.allocatedRoom;
+      doctor.allocatedNurse = session.allocatedNurse || "";
       // Start on this session's first paid token; unpaid tokens are skipped
       if (!resuming) {
         doctor.currentQueueNumber = await firstPaidToken(doctor._id, session._id);
       }
     } else if (action === "end") {
       // End only the session in progress; the doctor's later sessions today stay open
-      const [session, ...laterSessions] = await openSessionsToday(doctor._id);
-      const nextSession = laterSessions[0] || null;
+      const session = pickCurrentSession(open, doctor) || open[0] || null;
+      const remaining = open.filter(s => !session || String(s._id) !== String(session._id));
+      const nextSession = remaining.find(s => new Date(s.endTime) > new Date()) || remaining[0] || null;
 
       doctor.sessionStarted = false;
+      doctor.activeScheduleId = null;
       doctor.currentQueueNumber = 0;
       // Only a day with no session left counts as ended (that flag blocks starting again)
       doctor.sessionEndedToday = !nextSession;

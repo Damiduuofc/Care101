@@ -31,6 +31,9 @@ const DoctorSchema = new mongoose.Schema({
   // --- Nurse Dashboard Current Session Info ---
   sessionStarted: { type: Boolean, default: false },
   sessionEndedToday: { type: Boolean, default: false },
+  // The schedule (session) the running queue belongs to, so a doctor with several sessions
+  // in one day keeps the right room/nurse while a session runs past its end time
+  activeScheduleId: { type: mongoose.Schema.Types.ObjectId, ref: "ScheduleRequest", default: null },
   currentQueueNumber: { type: Number, default: 0 },
   averageConsultationDuration: { type: Number, default: 10 },
   // Doctor's channeling fee in LKR (hospital fee is added on top); falls back to DEFAULT_DOCTOR_FEE

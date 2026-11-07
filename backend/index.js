@@ -35,7 +35,8 @@ import Doctor from "./models/Doctor.js";
 import ScheduleRequest from "./models/ScheduleRequest.js";
 import LabTest from "./models/LabTest.js";
 import labTests from "./config/labTests.js";
-import { joinDefaultRooms, dashboardSignalMiddleware } from "./utils/realtime.js";
+import { joinDefaultRooms, dashboardSignalMiddleware, emitDoctorStatus } from "./utils/realtime.js";
+import { openSessionsToday, applyLiveAllocation } from "./utils/liveAllocation.js";
 import { releaseExpiredHolds } from "./utils/bookingService.js";
 
 const app = express();
@@ -241,11 +242,12 @@ const startServer = async () => {
     }, 60 * 1000);
 
     // Automatic Room + Nurse Release Job (runs every 30 seconds)
+    // Re-derives each doctor's live room/nurse from TODAY's sessions only: released once the
+    // doctor's last session today has passed (and the queue isn't running), handed over to the
+    // next session when there is a gap between sessions, and kept while a session runs late.
     setInterval(async () => {
       try {
         const now = new Date();
-        
-        // Find all doctors who have active allocations in their live fields
         const activeDoctors = await Doctor.find({
           $or: [
             { allocatedRoom: { $ne: "" } },
@@ -254,28 +256,12 @@ const startServer = async () => {
         });
 
         for (const doctor of activeDoctors) {
-          // Find any approved schedule requests for this doctor today that have already ended
-          const endedSchedule = await ScheduleRequest.findOne({
-            doctorId: doctor._id,
-            status: "approved",
-            endTime: { $lte: now }
-          }).sort({ endTime: -1 });
-
-          if (endedSchedule) {
-            // Check if they have an active/ongoing schedule right now (to avoid releasing if back-to-back sessions are happening)
-            const currentActive = await ScheduleRequest.findOne({
-              doctorId: doctor._id,
-              status: "approved",
-              startTime: { $lte: now },
-              endTime: { $gt: now }
-            });
-
-            if (!currentActive) {
-              console.log(`[Auto-Release] Session for Dr. ${doctor.name} ended at ${endedSchedule.endTime}. Releasing Room ${doctor.allocatedRoom} and Nurse ${doctor.allocatedNurse}.`);
-              doctor.allocatedRoom = "";
-              doctor.allocatedNurse = "";
-              await doctor.save();
-            }
+          const open = await openSessionsToday(doctor._id, now);
+          const before = `${doctor.allocatedRoom}|${doctor.allocatedNurse}`;
+          if (applyLiveAllocation(doctor, open, now)) {
+            console.log(`[Auto-Release] Dr. ${doctor.name}: ${before} -> ${doctor.allocatedRoom}|${doctor.allocatedNurse}`);
+            await doctor.save();
+            emitDoctorStatus(io, doctor);
           }
         }
       } catch (err) {

@@ -70,7 +70,7 @@ const resolveDoctorName = async (reqDocId, reqDocName, patientId, user) => {
   if (user?.role === "nurse" && user.id) {
     const nurse = await Admin.findById(user.id);
     if (nurse) {
-      const doc = await Doctor.findOne({ allocatedNurse: nurse.name });
+      const doc = await Doctor.findOne({ allocatedNurse: nurse.name }).sort({ sessionStarted: -1, lastArrivalDate: -1 });
       if (doc) {
         return {
           finalDoctorId: doc._id,
