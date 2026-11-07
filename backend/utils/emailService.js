@@ -208,96 +208,68 @@ export const getTransporter = async () => {
 // ---------------------------------------------------------------------------
 const BRAND = {
   name: 'Suwasevana Hospital',
-  tagline: 'Kandy',
-  primary: '#0946f0',
-  primaryDark: '#0a5757',
-  accent: '#e8f6f5',
-  text: '#2b2b2b',
+  location: 'Kandy',
+  ink: '#111827',
+  text: '#374151',
   muted: '#6b7280',
+  subtle: '#9ca3af',
   border: '#e5e7eb',
+  surface: '#f9fafb',
+  link: '#1d4ed8',
   supportEmail: 'support@suwasewana.com',
   supportPhone: '+94 81 222 3223'
 };
 
+const FONT = `-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif`;
+const MONO = `'SF Mono', Menlo, Consolas, 'Courier New', monospace`;
+
+const VISITOR_NOTE = 'Please limit visitors for your safety. Patients may bring one companion to consultations.';
+
 /**
- * Wraps inner HTML content in a consistent, responsive email shell:
- * header banner, white content card, and footer with contact details.
+ * Wraps inner HTML in a minimal, responsive email shell:
+ * wordmark, white content card, and a quiet footer outside the card.
  */
-const renderEmailShell = ({ preheader = '', heading, subheading, bodyHtml, accentColor = BRAND.primary }) => `
+const renderEmailShell = ({ preheader = '', heading, subheading, bodyHtml, footerNote = '' }) => `
 <!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="color-scheme" content="light only" />
 <title>${BRAND.name}</title>
 </head>
-<body style="margin:0; padding:0; background-color:#f3f5f6; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
-  <!-- Preheader (hidden preview text) -->
-  <div style="display:none; max-height:0; overflow:hidden; opacity:0; mso-hide:all;">
-    ${preheader}
-  </div>
+<body style="margin:0; padding:0; background-color:#f4f5f7; font-family:${FONT}; -webkit-font-smoothing:antialiased;">
+  <div style="display:none; max-height:0; overflow:hidden; opacity:0; mso-hide:all;">${preheader}</div>
 
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f3f5f6; padding: 32px 16px;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f4f5f7;">
     <tr>
-      <td align="center">
-        <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px; width:100%; background-color:#ffffff; border-radius:12px; overflow:hidden; box-shadow: 0 1px 4px rgba(16,24,40,0.06);">
+      <td align="center" style="padding:40px 16px;">
+        <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="max-width:560px; width:100%;">
 
-          <!-- Header -->
           <tr>
-            <td style="background: linear-gradient(135deg, ${accentColor} 0%, ${BRAND.primaryDark} 100%); padding: 28px 32px;">
-              <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
-                <tr>
-                  <td>
-                    <div style="font-size:20px; font-weight:700; color:#ffffff; letter-spacing:0.2px;">
-                      ${BRAND.name}
-                    </div>
-                    <div style="font-size:13px; color:#d7f0ee; margin-top:2px;">
-                      ${BRAND.tagline}
-                    </div>
-                  </td>
-                </tr>
-              </table>
+            <td style="padding:0 4px 20px 4px; font-size:14px; color:${BRAND.ink}; font-weight:600; letter-spacing:-0.1px;">
+              ${BRAND.name}<span style="color:${BRAND.subtle}; font-weight:400;">&nbsp;&nbsp;/&nbsp;&nbsp;${BRAND.location}</span>
             </td>
           </tr>
 
-          <!-- Heading -->
           <tr>
-            <td style="padding: 32px 32px 0 32px;">
-              <h1 style="margin:0; font-size:20px; line-height:1.35; color:${BRAND.text}; font-weight:700;">
-                ${heading}
-              </h1>
-              ${subheading ? `<p style="margin:8px 0 0 0; font-size:14px; color:${BRAND.muted};">${subheading}</p>` : ''}
+            <td style="background-color:#ffffff; border:1px solid ${BRAND.border}; border-radius:8px; padding:40px 40px 36px 40px;">
+              <h1 style="margin:0; font-size:22px; line-height:1.3; color:${BRAND.ink}; font-weight:600; letter-spacing:-0.3px;">${heading}</h1>
+              ${subheading ? `<p style="margin:8px 0 0 0; font-size:15px; line-height:1.5; color:${BRAND.muted};">${subheading}</p>` : ''}
+              <div style="height:28px; line-height:28px;">&nbsp;</div>
+              <div style="font-size:15px; line-height:1.6; color:${BRAND.text};">
+                ${bodyHtml}
+              </div>
             </td>
           </tr>
 
-          <!-- Body -->
           <tr>
-            <td style="padding: 20px 32px 8px 32px; font-size:14px; line-height:1.6; color:${BRAND.text};">
-              ${bodyHtml}
-            </td>
-          </tr>
-
-          <!-- Divider -->
-          <tr>
-            <td style="padding: 8px 32px 0 32px;">
-              <div style="border-top:1px solid ${BRAND.border};"></div>
-            </td>
-          </tr>
-
-          <!-- Footer -->
-          <tr>
-            <td style="padding: 20px 32px 28px 32px;">
-              <p style="margin:0 0 4px 0; font-size:13px; color:${BRAND.muted};">
-                Kindly limit visitors to the hospital for your own safety. Patients are advised to bring only one person accompanying them for consultations.
+            <td style="padding:24px 4px 0 4px; font-size:12px; line-height:1.6; color:${BRAND.subtle};">
+              ${footerNote ? `<p style="margin:0 0 12px 0;">${footerNote}</p>` : ''}
+              <p style="margin:0 0 12px 0;">
+                Questions? <a href="mailto:${BRAND.supportEmail}" style="color:${BRAND.muted}; text-decoration:underline;">${BRAND.supportEmail}</a> &middot; ${BRAND.supportPhone}
               </p>
-              <p style="margin:16px 0 0 0; font-size:12px; color:${BRAND.muted};">
-                Need help? Contact us at
-                <a href="mailto:${BRAND.supportEmail}" style="color:${BRAND.primary}; text-decoration:none;">${BRAND.supportEmail}</a>
-                or call ${BRAND.supportPhone}.
-              </p>
-              <p style="margin:12px 0 0 0; font-size:11px; color:#9ca3af;">
-                &copy; ${new Date().getFullYear()} ${BRAND.name}. All rights reserved.
-              </p>
+              <p style="margin:0;">&copy; ${new Date().getFullYear()} ${BRAND.name}</p>
             </td>
           </tr>
 
@@ -309,20 +281,81 @@ const renderEmailShell = ({ preheader = '', heading, subheading, bodyHtml, accen
 </html>
 `;
 
-/** Renders a simple two-column info row for use inside detail cards */
+/** Body paragraph */
+const para = (html, { last = false } = {}) =>
+  `<p style="margin:0 0 ${last ? 0 : 16}px 0;">${html}</p>`;
+
+/** Small uppercase section label */
+const sectionLabel = (text) =>
+  `<p style="margin:28px 0 4px 0; font-size:12px; font-weight:600; letter-spacing:0.6px; text-transform:uppercase; color:${BRAND.muted};">${text}</p>`;
+
+/** Label / value row separated by hairlines */
 const infoRow = (label, value) => `
   <tr>
-    <td style="padding:6px 0; font-size:13px; color:${BRAND.muted}; width:42%; vertical-align:top;">${label}</td>
-    <td style="padding:6px 0; font-size:13px; color:${BRAND.text}; font-weight:600; vertical-align:top;">${value}</td>
+    <td style="padding:12px 0; border-top:1px solid ${BRAND.border}; font-size:14px; color:${BRAND.muted}; vertical-align:top; width:40%;">${label}</td>
+    <td style="padding:12px 0; border-top:1px solid ${BRAND.border}; font-size:14px; color:${BRAND.ink}; text-align:right; vertical-align:top;">${value}</td>
   </tr>
 `;
 
-/** Renders a bordered card container used for reservation/receipt details */
-const detailCard = (rowsHtml) => `
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:${BRAND.accent}; border-radius:8px; padding:16px 18px; margin: 4px 0 16px 0;">
+/** Emphasised closing row, e.g. totals */
+const totalRow = (label, value) => `
+  <tr data-total>
+    <td style="padding:14px 0 0 0; border-top:1px solid ${BRAND.ink}; font-size:14px; color:${BRAND.ink}; font-weight:600;">${label}</td>
+    <td style="padding:14px 0 0 0; border-top:1px solid ${BRAND.ink}; font-size:16px; color:${BRAND.ink}; font-weight:600; text-align:right;">${value}</td>
+  </tr>
+`;
+
+/** Table wrapper for infoRow / totalRow */
+const detailList = (rowsHtml) => `
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 8px 0;${rowsHtml.includes('data-total') ? '' : ` border-bottom:1px solid ${BRAND.border};`}">
     ${rowsHtml}
   </table>
 `;
+
+/** Small status pill. tone: 'success' | 'pending' */
+const statusBadge = (text, tone = 'success') => {
+  const t = tone === 'pending'
+    ? { fg: '#92400e', bg: '#fef3c7' }
+    : { fg: '#065f46', bg: '#d1fae5' };
+  return `<p style="margin:0 0 20px 0;"><span style="display:inline-block; padding:4px 10px; border-radius:999px; background-color:${t.bg}; color:${t.fg}; font-size:12px; font-weight:600; letter-spacing:0.2px;">${text}</span></p>`;
+};
+
+/** Quiet note with a thin left rule */
+const note = (html) => `
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:24px 0 0 0;">
+    <tr>
+      <td style="border-left:2px solid ${BRAND.border}; padding:2px 0 2px 14px; font-size:13px; line-height:1.6; color:${BRAND.muted};">${html}</td>
+    </tr>
+  </table>
+`;
+
+/** Large monospace code, for OTPs and credentials */
+const codeBlock = (value) => `
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:8px 0 24px 0;">
+    <tr>
+      <td align="center" style="background-color:${BRAND.surface}; border:1px solid ${BRAND.border}; border-radius:6px; padding:20px; font-family:${MONO}; font-size:28px; font-weight:600; letter-spacing:8px; color:${BRAND.ink};">${value}</td>
+    </tr>
+  </table>
+`;
+
+/** Inline monospace value */
+const mono = (value) =>
+  `<span style="font-family:${MONO}; font-size:13px;">${value}</span>`;
+
+/** Primary call-to-action button */
+const button = (href, label) => `
+  <table role="presentation" cellpadding="0" cellspacing="0" style="margin:8px 0 24px 0;">
+    <tr>
+      <td style="background-color:${BRAND.ink}; border-radius:6px;">
+        <a href="${href}" style="display:inline-block; padding:12px 22px; font-size:14px; font-weight:600; color:#ffffff; text-decoration:none;">${label}</a>
+      </td>
+    </tr>
+  </table>
+`;
+
+/** Sign-off block */
+const signoff = (team) =>
+  `<p style="margin:28px 0 0 0; color:${BRAND.text};">Regards,<br/><span style="color:${BRAND.ink};">${team}</span></p>`;
 
 /**
  * Sends a booking confirmation email to the patient.
@@ -450,84 +483,46 @@ Time: ${formattedTime}
 
 Kindly limit visitors to the hospital for your own safety. Patients are advised to bring only one person accompanying them for consultations.`;
 
+    const appointmentRows =
+      infoRow('Reference', mono(refNo)) +
+      infoRow('Doctor', `Dr. ${appointment.doctorName}`) +
+      infoRow('Room', doctorRoom || 'TBA') +
+      infoRow('Date', formattedDate) +
+      infoRow('Time', formattedTime);
+
     const bodyHtml = isPaid
       ? `
-        <p style="margin:0 0 16px 0;">Your appointment reservation and payment have been successfully confirmed.</p>
-
-        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#ecfdf5; border:1px solid #a7f3d0; border-radius:8px; padding:14px 16px; margin-bottom:18px;">
-          <tr>
-            <td style="font-size:14px; color:#065f46;">
-              <strong>✅ Status:</strong> PAID & CONFIRMED<br/>
-              <strong>Amount Paid:</strong> LKR ${amountFormatted}
-            </td>
-          </tr>
-        </table>
-
-        <h3 style="margin:0 0 8px 0; font-size:14px; color:${BRAND.text};">Reservation Details</h3>
-        ${detailCard(
-          infoRow('Reference No.', refNo) +
-          infoRow('Doctor', `Dr. ${appointment.doctorName}`) +
-          infoRow('Room No.', doctorRoom || 'TBA') +
-          infoRow('Hospital', 'Suwasevana Hospital - Kandy') +
-          infoRow('Date', formattedDate) +
-          infoRow('Time', formattedTime)
-        )}
-
-        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#0d8a6e; border-radius:8px; padding:14px 16px;">
-          <tr>
-            <td style="font-size:14px; color:#ffffff; font-weight:700;">
-              Payment Status: PAID (LKR ${amountFormatted})
-            </td>
-          </tr>
-        </table>
+        ${statusBadge('Paid', 'success')}
+        ${para('Your appointment is booked and payment has been received.', { last: true })}
+        ${sectionLabel('Appointment')}
+        ${detailList(appointmentRows + infoRow('Location', `${BRAND.name}, ${BRAND.location}`))}
+        ${sectionLabel('Payment')}
+        ${detailList(infoRow('Status', 'Paid') + infoRow('Amount', `LKR ${amountFormatted}`))}
       `
       : `
-        <p style="margin:0 0 16px 0;">Your appointment reservation has been received. Please complete payment before the deadline below to confirm your booking.</p>
-
-        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#fff7ed; border:1px solid #fed7aa; border-radius:8px; padding:14px 16px; margin-bottom:18px;">
-          <tr>
-            <td style="font-size:13px; color:#9a3412;">
-              <strong>⏰ Payment Deadline:</strong> ${deadline}<br/>
-              This reservation will be confirmed <strong>only</strong> upon full payment prior to the deadline.
-            </td>
-          </tr>
-        </table>
-
-        <h3 style="margin:0 0 8px 0; font-size:14px; color:${BRAND.text};">Reservation Details</h3>
-        ${detailCard(
-          infoRow('Reference No.', refNo) +
-          infoRow('Doctor', `Dr. ${appointment.doctorName}`) +
-          infoRow('Room No.', doctorRoom || 'TBA') +
-          infoRow('Hospital', 'Suwasevana Hospital - Kandy') +
-          infoRow('Date', formattedDate) +
-          infoRow('Time', formattedTime)
-        )}
-
-        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:${BRAND.primary}; border-radius:8px; padding:14px 16px;">
-          <tr>
-            <td style="font-size:14px; color:#ffffff; font-weight:700;">
-              Due Payment: LKR ${amountFormatted}
-            </td>
-          </tr>
-        </table>
+        ${statusBadge('Payment pending', 'pending')}
+        ${para(`Your reservation is held until <span style="color:${BRAND.ink}; font-weight:600;">${deadline}</span>. It will be confirmed once full payment is received before then.`, { last: true })}
+        ${sectionLabel('Appointment')}
+        ${detailList(appointmentRows + infoRow('Location', `${BRAND.name}, ${BRAND.location}`))}
+        ${sectionLabel('Payment')}
+        ${detailList(infoRow('Pay before', deadline) + infoRow('Amount due', `LKR ${amountFormatted}`))}
       `;
 
     const html = renderEmailShell({
       preheader: isPaid
-        ? `Your reservation ${refNo} is confirmed and fully paid.`
-        : `Your reservation ${refNo} is pending payment before ${deadline}.`,
-      heading: isPaid ? 'Booking & Payment Confirmed' : 'Reservation Received — Payment Pending',
-      subheading: isPaid ? 'Your appointment details and payment status below.' : 'Please review your appointment details below.',
+        ? `Dr. ${appointment.doctorName} on ${formattedDate} at ${formattedTime}. Payment received.`
+        : `Pay LKR ${amountFormatted} before ${deadline} to confirm your appointment.`,
+      heading: isPaid ? 'Your appointment is confirmed' : 'Reservation received',
       bodyHtml,
-      accentColor: isPaid ? '#0d8a6e' : BRAND.primary
+      footerNote: VISITOR_NOTE
     });
 
     const mailOptions = {
       from: getFromAddress("Suwasevana Hospital"),
       to: email,
       subject: isPaid
-        ? `Suwasevana Hospital - Booking & Payment Confirmation (Ref: ${appointment.queueNumber || appointment._id})`
-        : 'Suwasevana Hospital - Kandy',
+        ? `Appointment confirmed – Ref ${appointment.queueNumber || appointment._id}`
+        : `Reservation received – payment due (Ref ${appointment.queueNumber || appointment._id})`,
       text: textBody,
       html
     };
@@ -629,38 +624,28 @@ Kindly limit visitors to the hospital for your own safety. Patients are advised 
     const transporter = await getTransporter();
 
     const bodyHtml = `
-      <p style="margin:0 0 16px 0;">Dear Patient,</p>
-      <p style="margin:0 0 16px 0;">Thank you for your payment. Your receipt for <strong>${bill.title}</strong> is attached to this email as a PDF.</p>
-
-      <h3 style="margin:0 0 8px 0; font-size:14px; color:${BRAND.text};">Payment Summary</h3>
-      ${detailCard(
-        infoRow('Hospital', 'Suwasevana Hospital - Kandy') +
-        infoRow('Receipt Ref No.', bill._id) +
-        infoRow('Date', dateStr)
+      ${para(`Thank you for your payment for ${bill.title}. A PDF copy of your receipt is attached.`, { last: true })}
+      ${sectionLabel('Receipt')}
+      ${detailList(
+        infoRow('Reference', mono(bill._id)) +
+        infoRow('Description', bill.title) +
+        infoRow('Date', dateStr) +
+        infoRow('Status', 'Paid') +
+        totalRow('Total paid', `LKR ${bill.amount.toLocaleString()}`)
       )}
-
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#ecfdf5; border:1px solid #a7f3d0; border-radius:8px; padding:14px 16px;">
-        <tr>
-          <td style="font-size:14px; color:#065f46;">
-            <strong>Amount Paid:</strong> LKR ${bill.amount.toLocaleString()}<br/>
-            <strong>Status:</strong> ✅ PAID
-          </td>
-        </tr>
-      </table>
     `;
 
     const html = renderEmailShell({
-      preheader: `Your payment of LKR ${bill.amount.toLocaleString()} for ${bill.title} was received.`,
-      heading: 'Payment Received — Thank You',
-      subheading: 'A copy of your receipt is attached to this email.',
+      preheader: `LKR ${bill.amount.toLocaleString()} received for ${bill.title}. Receipt attached.`,
+      heading: 'Payment received',
       bodyHtml,
-      accentColor: '#0d8a6e'
+      footerNote: VISITOR_NOTE
     });
 
     const mailOptions = {
       from: getFromAddress("Suwasevana Hospital"),
       to: email,
-      subject: `Suwasevana Hospital - Payment Receipt (Ref: ${bill._id})`,
+      subject: `Payment receipt – Ref ${bill._id}`,
       text: textBody,
       html,
       attachments: [
@@ -736,43 +721,28 @@ Phone: +94 81 222 3223`;
     const transporter = await getTransporter();
 
     const bodyHtml = `
-      <p style="margin:0 0 16px 0;">Dear Dr. ${doctorName},</p>
-      <p style="margin:0 0 16px 0;">Welcome to <strong>Suwasewana Kandy Hospital</strong>! Your doctor account has been successfully created by the system administrator. You can now access the <strong>Care101 Healthcare Management System</strong> using the credentials below.</p>
-
-      <h3 style="margin:0 0 8px 0; font-size:14px; color:${BRAND.text};">Login Details</h3>
-      ${detailCard(
-        infoRow('SLMC Number', slmcReg || 'N/A') +
+      ${para(`Dear Dr. ${doctorName},`)}
+      ${para('Your account on Care101, the hospital’s healthcare management system, has been created. Sign in to the Care101 app (App Store or Google Play) with the details below.', { last: true })}
+      ${sectionLabel('Sign-in details')}
+      ${detailList(
+        infoRow('SLMC number', mono(slmcReg || 'N/A')) +
         infoRow('Email', email) +
-        infoRow('Temporary Password', `<span style="font-family: 'Courier New', monospace; background:#ffffff; padding:2px 8px; border-radius:4px; border:1px solid ${BRAND.border};">${password}</span>`)
+        infoRow('Temporary password', mono(password))
       )}
-
-      <h3 style="margin:0 0 8px 0; font-size:14px; color:${BRAND.text};">Get Started</h3>
-      <p style="margin:0 0 16px 0;">Download the <strong>Care101</strong> mobile app from the Google Play Store or Apple App Store, then sign in using the credentials above.</p>
-
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#fff7ed; border:1px solid #fed7aa; border-radius:8px; padding:14px 16px; margin-bottom:16px;">
-        <tr>
-          <td style="font-size:13px; color:#9a3412;">
-            🔒 For security reasons, please log in as soon as possible and change your temporary password after your first login.
-          </td>
-        </tr>
-      </table>
-
-      <p style="margin:0;">If you experience any issues accessing your account, please contact the system administrator for assistance.</p>
-      <p style="margin:16px 0 0 0;">Thank you, and welcome aboard. We look forward to working with you.</p>
-      <p style="margin:20px 0 0 0;">Kind regards,<br/><strong>Suwasewana Kandy Hospital Administration Team</strong></p>
+      ${note('This password is temporary. Please change it after your first sign-in. If you have trouble accessing your account, contact the system administrator.')}
+      ${signoff('Administration, Suwasevana Hospital')}
     `;
 
     const html = renderEmailShell({
-      preheader: `Your Care101 doctor account has been created. Login details inside.`,
-      heading: 'Welcome to Suwasewana Kandy Hospital',
-      subheading: 'Your doctor account is ready.',
+      preheader: 'Your Care101 doctor account is ready. Sign-in details inside.',
+      heading: 'Your account is ready',
       bodyHtml
     });
 
     const mailOptions = {
       from: getFromAddress("Suwasevana Hospital"),
       to: email,
-      subject: 'Welcome to Suwasewana Kandy Hospital - Doctor Account Created',
+      subject: 'Your Care101 doctor account is ready',
       text: textBody,
       html
     };
@@ -830,34 +800,23 @@ Phone: +94 81 222 3223`;
     const transporter = await getTransporter();
 
     const bodyHtml = `
-      <p style="margin:0 0 16px 0;">Dear Dr. ${doctorName},</p>
-
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#ecfdf5; border:1px solid #a7f3d0; border-radius:8px; padding:14px 16px; margin-bottom:18px;">
-        <tr>
-          <td style="font-size:14px; color:#065f46;">
-            ✅ Your doctor account on the <strong>Care101 Healthcare Management System</strong> has been approved and activated by the administrator.
-          </td>
-        </tr>
-      </table>
-
-      <p style="margin:0 0 16px 0;">You can now log in to the Care101 mobile application or dashboard using your registered credentials.</p>
-      <p style="margin:0 0 16px 0;">If you experience any issues accessing your account, please contact the system administrator for assistance.</p>
-      <p style="margin:0;">Thank you, and welcome to Suwasewana Kandy Hospital.</p>
-      <p style="margin:20px 0 0 0;">Kind regards,<br/><strong>Suwasewana Kandy Hospital Administration Team</strong></p>
+      ${statusBadge('Active', 'success')}
+      ${para(`Dear Dr. ${doctorName},`)}
+      ${para('Your Care101 account has been approved by the administrator. You can now sign in to the Care101 app or dashboard with your registered credentials.', { last: true })}
+      ${note('If you have trouble accessing your account, contact the system administrator.')}
+      ${signoff('Administration, Suwasevana Hospital')}
     `;
 
     const html = renderEmailShell({
-      preheader: `Your Care101 doctor account has been approved and activated.`,
-      heading: 'Account Approved & Activated',
-      subheading: 'You now have full access to Care101.',
-      bodyHtml,
-      accentColor: '#0d8a6e'
+      preheader: 'Your Care101 doctor account has been approved. You can sign in now.',
+      heading: 'Your account has been approved',
+      bodyHtml
     });
 
     const mailOptions = {
       from: getFromAddress("Suwasevana Hospital"),
       to: email,
-      subject: 'Care101 - Doctor Account Approved & Activated',
+      subject: 'Your Care101 account has been approved',
       text: textBody,
       html
     };
@@ -905,23 +864,20 @@ The Care101 Team`;
     const transporter = await getTransporter();
 
     const bodyHtml = `
-      <p style="margin:0 0 16px 0;">Hello ${patient.fullName},</p>
-      <p style="margin:0 0 16px 0;">Welcome to Care101! Your patient account has been successfully created.</p>
-      
-      <h3 style="margin:0 0 8px 0; font-size:14px; color:${BRAND.text};">Account Information</h3>
-      ${detailCard(
-        infoRow('Patient ID', patient.patientId) +
-        infoRow('Full Name', patient.fullName) +
+      ${para(`Hello ${patient.fullName},`)}
+      ${para('Your Care101 patient account has been created. Use your Patient ID and password to sign in to the Care101 app.', { last: true })}
+      ${sectionLabel('Your Patient ID')}
+      ${codeBlock(patient.patientId)}
+      ${detailList(
+        infoRow('Name', patient.fullName) +
         infoRow('Email', patient.email || 'N/A')
       )}
-      
-      <p style="margin:0 0 16px 0;">You should use this Patient ID (along with your password) to log in to the Care101 mobile application.</p>
+      ${note('Keep your Patient ID safe. You will need it every time you sign in.')}
     `;
 
     const html = renderEmailShell({
-      preheader: `Welcome to Care101 - Your Patient ID Details`,
+      preheader: `Your Patient ID is ${patient.patientId}.`,
       heading: 'Welcome to Care101',
-      subheading: 'Your patient account is ready.',
       bodyHtml
     });
 
@@ -972,31 +928,22 @@ export const sendPasswordResetOtp = async (user, otp) => {
     const transporter = await getTransporter();
 
     const bodyHtml = `
-      <p style="margin:0 0 16px 0;">Dear User,</p>
-      <p style="margin:0 0 16px 0;">You requested a password reset. Please use the verification code below to reset your password:</p>
-      
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#fef08a; border:1px solid #fef08a; border-radius:8px; padding:14px 16px; margin-bottom:16px;">
-        <tr>
-          <td style="font-size:18px; font-weight:700; text-align:center; color:#854d0e; letter-spacing:2px;">
-            ${otp}
-          </td>
-        </tr>
-      </table>
-      
-      <p style="margin:0 0 16px 0;">This code will expire in 10 minutes. If you did not request this, please ignore this email.</p>
+      ${para('Use this code to reset your Care101 password. It expires in 10 minutes.')}
+      ${codeBlock(otp)}
+      ${para('If you didn’t request a password reset, you can ignore this email. Your password will not change.', { last: true })}
+      ${note('Care101 staff will never ask you for this code.')}
     `;
 
     const html = renderEmailShell({
-      preheader: `Your Password Reset Code`,
-      heading: 'Password Reset Request',
-      subheading: 'Verification code details.',
+      preheader: `Your verification code is ${otp}. It expires in 10 minutes.`,
+      heading: 'Reset your password',
       bodyHtml
     });
 
     const mailOptions = {
       from: getFromAddress("Care101"),
       to: user.email,
-      subject: "Your Password Reset Code",
+      subject: `${otp} is your Care101 verification code`,
       text: textBody,
       html
     };
@@ -1026,27 +973,22 @@ export const sendAdminPasswordReset = async (admin, resetUrl) => {
     const transporter = await getTransporter();
 
     const bodyHtml = `
-      <p style="margin:0 0 16px 0;">Dear Administrator,</p>
-      <p style="margin:0 0 16px 0;">You requested a password reset. Please click the button below to reset your password:</p>
-      
-      <p style="margin:20px 0; text-align:center;">
-        <a href="${resetUrl}" style="background-color:${BRAND.primary}; color:#ffffff; padding:12px 24px; text-decoration:none; border-radius:6px; font-weight:bold; display:inline-block;">Reset Password</a>
-      </p>
-      
-      <p style="margin:0 0 16px 0;">This link will expire in 15 minutes. If you did not request this, please ignore this email.</p>
+      ${para('We received a request to reset the password for your Care101 administrator account. This link expires in 15 minutes.')}
+      ${button(resetUrl, 'Reset password')}
+      ${para('If you didn’t request this, you can ignore this email.', { last: true })}
+      ${note(`Button not working? Paste this link into your browser:<br/><a href="${resetUrl}" style="color:${BRAND.link}; word-break:break-all;">${resetUrl}</a>`)}
     `;
 
     const html = renderEmailShell({
-      preheader: `Admin Password Reset Request`,
-      heading: 'Admin Password Reset Request',
-      subheading: 'Reset your administrator password.',
+      preheader: 'Reset your Care101 administrator password. The link expires in 15 minutes.',
+      heading: 'Reset your password',
       bodyHtml
     });
 
     const mailOptions = {
       from: getFromAddress("Care101 Administration"),
       to: admin.email,
-      subject: "Admin Password Reset Request",
+      subject: "Reset your Care101 admin password",
       text: textBody,
       html
     };
@@ -1086,27 +1028,26 @@ export const sendWalkinPatientCredentials = async (patient, plainPassword) => {
       const transporter = await getTransporter();
 
       const bodyHtml = `
-        <p style="margin:0 0 16px 0;">Hello ${patient.fullName},</p>
-        <p style="margin:0 0 16px 0;">Welcome to Care101! Your patient account has been created successfully from the hospital receptionist side.</p>
-        
-        <h3 style="margin:0 0 8px 0; font-size:14px; color:${BRAND.text};">Account Details</h3>
-        <p style="margin:0 0 8px 0;"><strong>Patient ID:</strong> ${patient.patientId}</p>
-        <p style="margin:0 0 16px 0;"><strong>Password:</strong> ${plainPassword}</p>
-
-        <p style="margin:0 0 16px 0;">Please use these credentials to log in to the Care101 mobile application.</p>
+        ${para(`Hello ${patient.fullName},`)}
+        ${para('Our front desk has created a Care101 patient account for you. Use the details below to sign in to the Care101 app.', { last: true })}
+        ${sectionLabel('Sign-in details')}
+        ${detailList(
+          infoRow('Patient ID', mono(patient.patientId)) +
+          infoRow('Password', mono(plainPassword))
+        )}
+        ${note('For your security, please change your password after you first sign in.')}
       `;
 
       const html = renderEmailShell({
-        preheader: `Welcome to Care101!`,
-        heading: 'Welcome to Care101!',
-        subheading: 'Your patient account credentials.',
+        preheader: `Your Care101 Patient ID is ${patient.patientId}.`,
+        heading: 'Welcome to Care101',
         bodyHtml
       });
 
       const mailOptions = {
         from: getFromAddress("Care101"),
         to: patient.email,
-        subject: "Welcome to Care101 - Patient Credentials",
+        subject: "Your Care101 sign-in details",
         text: textBody,
         html
       };

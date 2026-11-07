@@ -2,42 +2,55 @@ import PDFDocument from 'pdfkit';
 import mongoose from 'mongoose';
 
 // ---------------------------------------------------------------------------
-// Brand palette
+// Palette — kept in sync with the email templates (utils/emailService.js)
 // ---------------------------------------------------------------------------
 const COLORS = {
-  navy: '#1A365D',
-  navyDark: '#122745',
-  teal: '#0D6E6E',
-  slate: '#2D3748',
-  muted: '#718096',
-  faint: '#A0AEC0',
-  border: '#E2E8F0',
-  panelBg: '#F7FAFC',
-  rowAlt: '#F9FBFC',
-  success: '#22A06B',
-  successBg: '#E6F7EF',
-  white: '#FFFFFF'
+  ink: '#111827',
+  text: '#374151',
+  muted: '#6B7280',
+  subtle: '#9CA3AF',
+  border: '#E5E7EB',
+  success: '#065F46',
+  successBg: '#D1FAE5'
+};
+
+const HOSPITAL = {
+  name: 'Suwasevana Hospital',
+  location: 'Kandy, Sri Lanka',
+  email: 'support@suwasewana.com',
+  phone: '+94 81 222 3223'
 };
 
 const PAGE = { width: 595.28, height: 841.89 };
-const MARGIN = 50;
-const CONTENT_WIDTH = PAGE.width - MARGIN * 2; // 495.28
+const MARGIN = 56;
+const CONTENT_WIDTH = PAGE.width - MARGIN * 2;
+const RIGHT = PAGE.width - MARGIN;
 
-/** Draws a filled rounded-rectangle "pill" with centered text. Returns nothing. */
-function drawPill(doc, { text, x, y, width, height, bg, color, fontSize = 9, bold = true }) {
-  doc.save();
-  doc.roundedRect(x, y, width, height, height / 2).fill(bg);
-  doc
-    .fillColor(color)
-    .font(bold ? 'Helvetica-Bold' : 'Helvetica')
-    .fontSize(fontSize)
-    .text(text, x, y + (height - fontSize) / 2 + 1, { width, align: 'center' });
-  doc.restore();
+/** Horizontal rule across the content width (or a custom span). */
+function hr(doc, y, { color = COLORS.border, width = 0.75, x1 = MARGIN, x2 = RIGHT } = {}) {
+  doc.save().strokeColor(color).lineWidth(width).moveTo(x1, y).lineTo(x2, y).stroke().restore();
 }
 
-/** Draws a horizontal divider line spanning the content width at the given y. */
-function hr(doc, y, color = COLORS.border, x1 = MARGIN, x2 = PAGE.width - MARGIN) {
-  doc.save().strokeColor(color).lineWidth(1).moveTo(x1, y).lineTo(x2, y).stroke().restore();
+/** Small uppercase label. */
+function label(doc, text, x, y, opts = {}) {
+  doc.fillColor(COLORS.muted).font('Helvetica-Bold').fontSize(7.5)
+    .text(text.toUpperCase(), x, y, { characterSpacing: 0.8, lineBreak: false, ...opts });
+}
+
+/** Label/value pair stacked in a column. Returns next y. */
+function field(doc, name, value, x, y, width) {
+  doc.fillColor(COLORS.muted).font('Helvetica').fontSize(9).text(name, x, y, { width: 90, lineBreak: false });
+  doc.fillColor(COLORS.ink).font('Helvetica').fontSize(9.5).text(String(value), x + 90, y, { width: width - 90 });
+  return y + 17;
+}
+
+/** Small rounded status pill. */
+function pill(doc, text, x, y) {
+  doc.font('Helvetica-Bold').fontSize(8);
+  const w = doc.widthOfString(text) + 16;
+  doc.save().roundedRect(x, y, w, 16, 8).fill(COLORS.successBg).restore();
+  doc.fillColor(COLORS.success).font('Helvetica-Bold').fontSize(8)
+    .text(text, x, y + 4.5, { width: w, align: 'center', lineBreak: false });
 }
 
 /**
@@ -97,197 +110,103 @@ export const generateReceiptPdf = (bill, appointment, doctor, patient) => {
       const amountFmt = amount.toLocaleString('en-US', { minimumFractionDigits: 2 });
 
       // -----------------------------------------------------------------
-      // Header band
+      // Letterhead
       // -----------------------------------------------------------------
-      const headerHeight = 118;
-      const gradient = doc.linearGradient(0, 0, PAGE.width, headerHeight);
-      gradient.stop(0, COLORS.teal).stop(1, COLORS.navyDark);
-      doc.rect(0, 0, PAGE.width, headerHeight).fill(gradient);
+      let y = MARGIN;
+      doc.fillColor(COLORS.ink).font('Helvetica-Bold').fontSize(12).text(HOSPITAL.name, MARGIN, y, { lineBreak: false });
+      doc.fillColor(COLORS.muted).font('Helvetica').fontSize(9).text(HOSPITAL.location, MARGIN, y + 17, { lineBreak: false });
 
-      doc
-        .fillColor(COLORS.white)
-        .font('Helvetica-Bold')
-        .fontSize(22)
-        .text('SUWASEVANA HOSPITAL', MARGIN, 36);
+      doc.fillColor(COLORS.muted).font('Helvetica').fontSize(9)
+        .text(HOSPITAL.phone, MARGIN, y + 2, { width: CONTENT_WIDTH, align: 'right' })
+        .text(HOSPITAL.email, MARGIN, y + 17, { width: CONTENT_WIDTH, align: 'right' });
 
-      doc
-        .fillColor('#D7F0EE')
-        .font('Helvetica')
-        .fontSize(10)
-        .text('Kandy, Sri Lanka  |  Tel: +94 81 222 2222  |  info@suwasevana.com', MARGIN, 64);
-
-      // Small "receipt" tag in the header, right-aligned
-      drawPill(doc, {
-        text: 'PAYMENT RECEIPT',
-        x: PAGE.width - MARGIN - 160,
-        y: 40,
-        width: 160,
-        height: 24,
-        bg: COLORS.navyDark,
-        color: COLORS.white,
-        fontSize: 9
-      });
-
-      let cursorY = headerHeight + 30;
+      y += 46;
+      hr(doc, y);
+      y += 40;
 
       // -----------------------------------------------------------------
-      // Title row: big title + receipt number badge
+      // Title
       // -----------------------------------------------------------------
-      doc
-        .fillColor(COLORS.navy)
-        .font('Helvetica-Bold')
-        .fontSize(18)
-        .text('Receipt Summary', MARGIN, cursorY);
+      doc.fillColor(COLORS.ink).font('Helvetica-Bold').fontSize(22).text('Receipt', MARGIN, y, { lineBreak: false });
+      pill(doc, 'PAID', MARGIN + doc.widthOfString('Receipt') + 12, y + 5);
+      doc.fillColor(COLORS.muted).font('Helvetica').fontSize(9)
+        .text(`No. ${receiptNo}`, MARGIN, y + 30, { lineBreak: false });
 
-      doc
-        .fillColor(COLORS.muted)
-        .font('Helvetica')
-        .fontSize(9)
-        .text(`Ref No. ${receiptNo}`, MARGIN, cursorY + 24);
-
-      cursorY += 55;
+      y += 70;
 
       // -----------------------------------------------------------------
-      // Info panel: Patient details (left) / Receipt details (right)
+      // Billed to / Details
       // -----------------------------------------------------------------
-      const panelY = cursorY;
-      const panelHeight = 118;
-      doc
-        .save()
-        .roundedRect(MARGIN, panelY, CONTENT_WIDTH, panelHeight, 8)
-        .fill(COLORS.panelBg)
-        .restore();
+      const colW = (CONTENT_WIDTH - 32) / 2;
+      const leftX = MARGIN;
+      const rightX = MARGIN + colW + 32;
 
-      const leftColX = MARGIN + 20;
-      const rightColX = MARGIN + CONTENT_WIDTH / 2 + 10;
-      const dividerX = MARGIN + CONTENT_WIDTH / 2;
+      label(doc, 'Billed to', leftX, y);
+      label(doc, 'Details', rightX, y);
+      let ly = y + 18;
+      let ry = y + 18;
 
-      doc.save().strokeColor(COLORS.border).lineWidth(1)
-        .moveTo(dividerX, panelY + 16)
-        .lineTo(dividerX, panelY + panelHeight - 16)
-        .stroke()
-        .restore();
+      ly = field(doc, 'Name', patient?.fullName || 'N/A', leftX, ly, colW);
+      ly = field(doc, 'Patient ID', patient?.patientId || 'N/A', leftX, ly, colW);
+      ly = field(doc, 'NIC', patient?.nicNumber || 'N/A', leftX, ly, colW);
+      ly = field(doc, 'Mobile', patient?.mobileNumber || 'N/A', leftX, ly, colW);
 
-      // Left column — patient details
-      let ly = panelY + 18;
-      doc.fillColor(COLORS.teal).font('Helvetica-Bold').fontSize(9)
-        .text('BILLED TO', leftColX, ly, { characterSpacing: 0.5 });
-      ly += 16;
-      const patientLines = [
-        ['Patient ID', patient?.patientId || 'N/A'],
-        ['Name', patient?.fullName || 'N/A'],
-        ['NIC', patient?.nicNumber || 'N/A'],
-        ['Mobile', patient?.mobileNumber || 'N/A']
-      ];
-      patientLines.forEach(([label, value]) => {
-        doc.font('Helvetica').fontSize(9).fillColor(COLORS.muted).text(`${label}`, leftColX, ly, { continued: false });
-        doc.font('Helvetica-Bold').fontSize(9.5).fillColor(COLORS.slate).text(value, leftColX + 70, ly);
-        ly += 16;
-      });
+      ry = field(doc, 'Receipt no.', receiptNo, rightX, ry, colW);
+      ry = field(doc, 'Date issued', dateStr, rightX, ry, colW);
+      ry = field(doc, 'Status', 'Paid', rightX, ry, colW);
 
-      // Right column — receipt details
-      let ry = panelY + 18;
-      doc.fillColor(COLORS.teal).font('Helvetica-Bold').fontSize(9)
-        .text('RECEIPT DETAILS', rightColX, ry, { characterSpacing: 0.5 });
-      ry += 16;
-
-      doc.font('Helvetica').fontSize(9).fillColor(COLORS.muted).text('Receipt Ref No.', rightColX, ry);
-      doc.font('Helvetica-Bold').fontSize(9.5).fillColor(COLORS.slate).text(String(receiptNo), rightColX + 95, ry, { width: 140 });
-      ry += 16;
-
-      doc.font('Helvetica').fontSize(9).fillColor(COLORS.muted).text('Date of Issue', rightColX, ry);
-      doc.font('Helvetica-Bold').fontSize(9.5).fillColor(COLORS.slate).text(dateStr, rightColX + 95, ry, { width: 140 });
-      ry += 20;
-
-      doc.font('Helvetica').fontSize(9).fillColor(COLORS.muted).text('Payment Status', rightColX, ry);
-      drawPill(doc, {
-        text: 'PAID',
-        x: rightColX + 95,
-        y: ry - 4,
-        width: 60,
-        height: 18,
-        bg: COLORS.successBg,
-        color: COLORS.success,
-        fontSize: 8.5
-      });
-
-      cursorY = panelY + panelHeight + 35;
+      y = Math.max(ly, ry) + 36;
 
       // -----------------------------------------------------------------
-      // Itemized table
+      // Line items
       // -----------------------------------------------------------------
-      const tableX = MARGIN;
-      const tableWidth = CONTENT_WIDTH;
-      const colDesc = tableX + 12;
-      const colDoctor = tableX + 235;
-      const colRoom = tableX + 355;
-      const colAmountX = tableX + tableWidth - 12 - 90;
-      const colAmountWidth = 90;
+      const cDesc = MARGIN;
+      const cDoctor = MARGIN + 200;
+      const cRoom = MARGIN + 340;
+      const amtW = 100;
+      const cAmt = RIGHT - amtW;
 
-      // Table header
-      const headerRowH = 28;
-      doc.save().roundedRect(tableX, cursorY, tableWidth, headerRowH, 6).fill(COLORS.navy).restore();
-      // square off the bottom corners of the rounded header so it reads as a flat bar
-      doc.save().rect(tableX, cursorY + headerRowH / 2, tableWidth, headerRowH / 2).fill(COLORS.navy).restore();
+      label(doc, 'Description', cDesc, y);
+      label(doc, 'Doctor', cDoctor, y);
+      label(doc, 'Room', cRoom, y);
+      label(doc, 'Amount (LKR)', cAmt, y, { width: amtW, align: 'right' });
+      y += 16;
+      hr(doc, y, { color: COLORS.ink });
+      y += 14;
 
-      doc.fillColor(COLORS.white).font('Helvetica-Bold').fontSize(9);
-      doc.text('DESCRIPTION', colDesc, cursorY + 9);
-      doc.text('DOCTOR', colDoctor, cursorY + 9);
-      doc.text('ROOM', colRoom, cursorY + 9);
-      doc.text('AMOUNT (LKR)', colAmountX, cursorY + 9, { width: colAmountWidth, align: 'right' });
-
-      cursorY += headerRowH;
-
-      // Single itemized row (alternating-row style kept for future multi-row use)
-      const rowH = 34;
-      doc.save().rect(tableX, cursorY, tableWidth, rowH).fill(COLORS.rowAlt).restore();
-      doc.save().strokeColor(COLORS.border).lineWidth(1)
-        .rect(tableX, cursorY, tableWidth, rowH).stroke().restore();
-
-      doc.fillColor(COLORS.slate).font('Helvetica').fontSize(9.5);
-      doc.text(desc, colDesc, cursorY + 11, { width: colDoctor - colDesc - 10 });
-      doc.text(`Dr. ${docName}`, colDoctor, cursorY + 11, { width: colRoom - colDoctor - 10 });
-      doc.text(room, colRoom, cursorY + 11, { width: colAmountX - colRoom - 10 });
-      doc.font('Helvetica-Bold').text(amountFmt, colAmountX, cursorY + 11, { width: colAmountWidth, align: 'right' });
-
-      cursorY += rowH + 4;
-
-      hr(doc, cursorY, COLORS.border);
-      cursorY += 18;
+      doc.fillColor(COLORS.ink).font('Helvetica').fontSize(10);
+      const rowStart = y;
+      doc.text(desc, cDesc, rowStart, { width: cDoctor - cDesc - 16 });
+      const descBottom = doc.y;
+      doc.text(`Dr. ${docName}`, cDoctor, rowStart, { width: cRoom - cDoctor - 16 });
+      const docBottom = doc.y;
+      doc.text(String(room), cRoom, rowStart, { width: cAmt - cRoom - 16 });
+      doc.text(amountFmt, cAmt, rowStart, { width: amtW, align: 'right' });
+      y = Math.max(descBottom, docBottom, rowStart + 12) + 14;
+      hr(doc, y);
 
       // -----------------------------------------------------------------
-      // Total section
+      // Totals
       // -----------------------------------------------------------------
-      const totalBoxWidth = 220;
-      const totalBoxX = tableX + tableWidth - totalBoxWidth;
-      const totalBoxHeight = 44;
-      doc.save().roundedRect(totalBoxX, cursorY, totalBoxWidth, totalBoxHeight, 8).fill(COLORS.teal).restore();
-
-      doc
-        .fillColor('#D7F0EE')
-        .font('Helvetica')
-        .fontSize(9)
-        .text('TOTAL PAID', totalBoxX + 18, cursorY + 10);
-      doc
-        .fillColor(COLORS.white)
-        .font('Helvetica-Bold')
-        .fontSize(16)
-        .text(`LKR ${amountFmt}`, totalBoxX + 18, cursorY + 21, { width: totalBoxWidth - 36, align: 'right' });
+      const totX = RIGHT - 220;
+      y += 18;
+      doc.fillColor(COLORS.muted).font('Helvetica').fontSize(9.5).text('Subtotal', totX, y, { lineBreak: false });
+      doc.fillColor(COLORS.ink).text(amountFmt, totX, y, { width: 220, align: 'right' });
+      y += 22;
+      hr(doc, y, { color: COLORS.ink, x1: totX });
+      y += 12;
+      doc.fillColor(COLORS.ink).font('Helvetica-Bold').fontSize(10).text('Total paid', totX, y + 3, { lineBreak: false });
+      doc.fontSize(14).text(`LKR ${amountFmt}`, totX, y, { width: 220, align: 'right' });
 
       // -----------------------------------------------------------------
-      // Footer (pinned near the bottom, but never overlapping content above)
+      // Footer
       // -----------------------------------------------------------------
-      const footerY = Math.max(cursorY + 60, PAGE.height - MARGIN - 55);
+      const footerY = Math.max(y + 80, PAGE.height - MARGIN - 34);
       hr(doc, footerY);
-      doc
-        .fillColor(COLORS.muted)
-        .font('Helvetica')
-        .fontSize(9)
-        .text('Thank you for choosing Suwasevana Hospital.', MARGIN, footerY + 14, { width: CONTENT_WIDTH, align: 'center' });
-      doc
-        .fillColor(COLORS.faint)
-        .fontSize(8)
-        .text('This is a computer-generated document and does not require a physical signature.', MARGIN, footerY + 29, { width: CONTENT_WIDTH, align: 'center' });
+      doc.fillColor(COLORS.muted).font('Helvetica').fontSize(8.5)
+        .text(`Thank you for choosing ${HOSPITAL.name}.`, MARGIN, footerY + 12, { lineBreak: false });
+      doc.fillColor(COLORS.subtle).fontSize(8)
+        .text('Computer-generated receipt. No signature required.', MARGIN, footerY + 12, { width: CONTENT_WIDTH, align: 'right' });
 
       doc.end();
     } catch (err) {
