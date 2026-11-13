@@ -3,6 +3,7 @@
 import { useLiveRefresh } from "@/lib/useLiveRefresh";
 import { PageSkeleton } from "@/components/ui/skeleton-presets";
 import { useEffect, useState } from "react";
+import { Pagination, paginate, usePagination } from "@/components/ui/pagination";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -158,6 +159,9 @@ const filtered = doctors.filter((d) => {
   if (filterStatus === "approved") return matchesSearch && d.isApproved;
   return matchesSearch;
 });
+  // The doctor list is small enough to load whole; it is paged on screen
+  const doctorPaging = usePagination(filtered.length, { pageSize: 12, resetOn: [searchTerm, filterStatus] });
+  const pageDoctors = paginate(filtered, doctorPaging.page, doctorPaging.pageSize);
 
   if (loading)
     return (
@@ -234,7 +238,7 @@ const filtered = doctors.filter((d) => {
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {filtered.map((doc) => (
+            {pageDoctors.map((doc) => (
               <DoctorCard 
                 key={doc._id} 
                 doc={doc} 
@@ -244,6 +248,18 @@ const filtered = doctors.filter((d) => {
               />
             ))}
           </div>
+        )}
+        {filtered.length > 0 && (
+          <Pagination
+            className="border-t-0 px-0"
+            page={doctorPaging.page}
+            pageSize={doctorPaging.pageSize}
+            total={filtered.length}
+            onPageChange={doctorPaging.setPage}
+            onPageSizeChange={doctorPaging.setPageSize}
+            pageSizeOptions={[12, 24, 48, 96]}
+            itemLabel="doctors"
+          />
         )}
 
         {/* View/Approve Modal */}

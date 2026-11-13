@@ -5,6 +5,7 @@ import { notify } from "@/lib/notify";
 import { useLiveRefresh } from "@/lib/useLiveRefresh";
 import { ListSkeleton } from "@/components/ui/skeleton-presets";
 import { useEffect, useState } from "react";
+import { Pagination, paginate, usePagination } from "@/components/ui/pagination";
 import { FlaskConical, Loader2, Pencil, Plus, Search, Trash2 } from "lucide-react";
 import Sidebar from "@/components/admin/Sidebar";
 import { Button } from "@/components/ui/button";
@@ -131,6 +132,9 @@ export default function LabTestsManagement() {
     const lower = search.toLowerCase();
     return t.name?.toLowerCase().includes(lower) || t.code?.toLowerCase().includes(lower);
   });
+  // The test catalogue loads whole (the pickers need it all); the table is paged on screen
+  const testPaging = usePagination(filtered.length, { pageSize: 20, resetOn: [search] });
+  const pageTests = paginate(filtered, testPaging.page, testPaging.pageSize);
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -173,7 +177,7 @@ export default function LabTestsManagement() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {filtered.map(test => (
+                    {pageTests.map(test => (
                       <tr key={test._id}>
                         <td className="p-3">
                           <p className="font-semibold text-slate-800">{test.name}</p>
@@ -200,6 +204,14 @@ export default function LabTestsManagement() {
                     ))}
                   </tbody>
                 </table>
+                <Pagination
+                  page={testPaging.page}
+                  pageSize={testPaging.pageSize}
+                  total={filtered.length}
+                  onPageChange={testPaging.setPage}
+                  onPageSizeChange={testPaging.setPageSize}
+                  itemLabel="tests"
+                />
               </CardContent>
             </Card>
           )}

@@ -1,5 +1,6 @@
 import express from "express";
-import { canSeeAnyPatient } from "../utils/access.js";
+import { canSeeAnyPatient, escapeRegex } from "../utils/access.js";
+import { parsePagination, pageResponse } from "../utils/pagination.js";
 import mongoose from "mongoose";
 import LabRequest from "../models/LabRequest.js";
 import MedicalRecord from "../models/MedicalRecord.js";
@@ -212,18 +213,9 @@ router.post("/create", auth, authorize(["doctor", "nurse", "lab_assistant", "sys
 });
 
 // 2. Get all Pending/Completed Requests (For Lab Assistants or System Admins)
-router.get("/all", auth, authorize(ROLES.LAB), async (req, res) => {
-  try {
-     // Fetch requests and populate patient, doctor, and bill info
-     const [requests, fallbackDoc] = await Promise.all([
-       LabRequest.find()
-        .populate("patientId", "patientId fullName nicNumber email mobileNumber gender dateOfBirth")
-        .populate("doctorId", "name fullName nameWithInitials specialization")
-        .populate("billId")
-        .sort({ createdAt: -1 })
-        .lean(),
-       Doctor.findOne().select("name fullName nameWithInitials").lean(),
-     ]);
+// Fills in a readable doctor name on each request (and heals the stored value)
+const enrichDoctorNames = async (requests) => {
+     const fallbackDoc = await Doctor.findOne().select("name fullName nameWithInitials").lean();
      const fallbackDocName = resolveDoctorDisplay(fallbackDoc) || "Dr. Medical Officer";
 
      const enrichedRequests = await Promise.all(requests.map(async (obj) => {
@@ -259,8 +251,39 @@ router.get("/all", auth, authorize(ROLES.LAB), async (req, res) => {
        obj.doctorName = docName;
        return obj;
      }));
+     return enrichedRequests;
+};
 
-     res.json(enrichedRequests);
+const LAB_REQUEST_POPULATE = [
+  { path: "patientId", select: "patientId fullName nicNumber email mobileNumber gender dateOfBirth" },
+  { path: "doctorId", select: "name fullName nameWithInitials specialization" },
+  { path: "billId" },
+];
+
+// Without page/limit: every request (older clients). With them:
+// ?page=1&limit=20&status=pending&q=<patient name/id, title or doctor>
+// -> { items, total, page, limit, totalPages }
+router.get("/all", auth, authorize(ROLES.LAB), async (req, res) => {
+  try {
+     const paging = parsePagination(req.query, { defaultLimit: 20, maxLimit: 200 });
+     if (!paging) {
+       const requests = await LabRequest.find().populate(LAB_REQUEST_POPULATE).sort({ createdAt: -1 }).lean();
+       return res.json(await enrichDoctorNames(requests));
+     }
+
+     const filter = {};
+     if (req.query.status) filter.status = String(req.query.status);
+     const q = String(req.query.q || "").trim();
+     if (q) {
+       const rx = { $regex: escapeRegex(q), $options: "i" };
+       const patientIds = await Patient.find({ $or: [{ fullName: rx }, { patientId: rx }] }).distinct("_id");
+       filter.$or = [{ patientId: { $in: patientIds } }, { title: rx }, { doctorName: rx }];
+     }
+     const [requests, total] = await Promise.all([
+       LabRequest.find(filter).populate(LAB_REQUEST_POPULATE).sort({ createdAt: -1, _id: -1 }).skip(paging.skip).limit(paging.limit).lean(),
+       LabRequest.countDocuments(filter),
+     ]);
+     res.json(pageResponse(await enrichDoctorNames(requests), total, paging));
   } catch (err) {
     console.error(err.message);
     res.status(500).send("Server Error");

@@ -1,6 +1,7 @@
 import express from "express";
 import { isValidPhone, PHONE_HINT } from "../utils/phone.js";
 import { canSeeAnyPatient, escapeRegex } from "../utils/access.js";
+import { parsePagination, pageResponse } from "../utils/pagination.js";
 import mongoose from "mongoose";
 import bcrypt from "bcryptjs";
 import Patient from "../models/Patient.js";
@@ -127,8 +128,23 @@ router.post("/add-patient", auth, authorize(ROLES.CLINICAL), async (req, res) =>
 // ==========================================
 router.get("/all-patients", auth, authorize(ROLES.CLINICAL), async (req, res) => {
     try {
+        const fields = "patientId username fullName nicNumber mobileNumber email dateOfBirth gender createdAt";
+        // With page/limit (and optional q = name, patient ID or NIC): one page of the whole directory
+        const paging = parsePagination(req.query, { defaultLimit: 20, maxLimit: 200 });
+        if (paging) {
+            const q = String(req.query.q || "").trim();
+            const rx = { $regex: escapeRegex(q), $options: "i" };
+            const filter = q ? { $or: [{ fullName: rx }, { patientId: rx }, { nicNumber: rx }] } : {};
+            const [items, total] = await Promise.all([
+                Patient.find(filter).select(fields).sort({ createdAt: -1, _id: -1 }).skip(paging.skip).limit(paging.limit).lean(),
+                Patient.countDocuments(filter),
+            ]);
+            return res.json(pageResponse(items, total, paging));
+        }
+
+        // Without: the latest 100, as before (doctor app)
         const patients = await Patient.find()
-            .select("patientId username fullName nicNumber mobileNumber email dateOfBirth gender createdAt")
+            .select(fields)
             .sort({ createdAt: -1 })
             .limit(100)
             .lean();

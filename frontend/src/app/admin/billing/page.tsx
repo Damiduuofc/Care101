@@ -3,6 +3,7 @@
 import { confirmDialog } from "@/lib/confirmDialog";
 import { useLiveRefresh } from "@/lib/useLiveRefresh";
 import { ListSkeleton } from "@/components/ui/skeleton-presets";
+import { Pagination, usePagination } from "@/components/ui/pagination";
 import React, { useState, useEffect, useRef } from "react";
 import { loadStripe } from "@stripe/stripe-js";
 import { Elements, CardElement, useStripe, useElements } from "@stripe/react-stripe-js";
@@ -196,16 +197,19 @@ export default function BillingPage() {
     const [pendingBill, setPendingBill] = useState<any>(null);
     const [billingSearchQuery, setBillingSearchQuery] = useState("");
 
-    const filteredHistory = history.filter((inv) => {
-  const query = billingSearchQuery.toLowerCase().trim();
-  const patientId = inv.patientId?.patientId || inv.patientId || '';
-  const fullName = inv.patientId?.fullName || '';
-
-  return (
-    patientId.toLowerCase().includes(query) ||
-    fullName.toLowerCase().includes(query)
-  );
-});
+    // Billing history is paged, searched and totalled on the server
+    const [debouncedBillingSearch, setDebouncedBillingSearch] = useState("");
+    useEffect(() => {
+        const t = setTimeout(() => setDebouncedBillingSearch(billingSearchQuery.trim()), 300);
+        return () => clearTimeout(t);
+    }, [billingSearchQuery]);
+    const [historyTotal, setHistoryTotal] = useState(0);
+    const [totalRevenue, setTotalRevenue] = useState(0);
+    const { page, setPage, pageSize, setPageSize } = usePagination(historyTotal, {
+        pageSize: 20,
+        resetOn: [debouncedBillingSearch],
+    });
+    const filteredHistory = history;
 
     // Search State
     const [searchPatientId, setSearchPatientId] = useState("");
@@ -253,6 +257,7 @@ export default function BillingPage() {
                 const data = await res.json();
                 toast({ title: "Success", description: "Payment recorded successfully" });
                 setHistory(prev => prev.map(b => b._id === bill._id ? data.bill : b));
+                fetchHistory();
             } else {
                 const errData = await res.json();
                 toast({ title: "Failed", description: errData.msg || "Failed to record payment", variant: "destructive" });
@@ -296,6 +301,29 @@ export default function BillingPage() {
         printWindow.document.close();
     };
 
+    const historySeq = useRef(0);
+    const fetchHistory = async () => {
+        const seq = ++historySeq.current;
+        try {
+            const token = getAdminToken();
+            const params = new URLSearchParams({ page: String(page), limit: String(pageSize) });
+            if (debouncedBillingSearch) params.set("q", debouncedBillingSearch);
+            const res = await fetch(`${API_URL}/admin/bills/all?${params}`, {
+                headers: { "x-auth-token": token || "", "ngrok-skip-browser-warning": "true" }
+            });
+            if (!res.ok || seq !== historySeq.current) return;
+            const data = await res.json();
+            if (seq !== historySeq.current) return;
+            setHistory(Array.isArray(data.items) ? data.items : []);
+            setHistoryTotal(data.total || 0);
+            setTotalRevenue(data.summary?.revenue || 0);
+        } catch (e) {
+            console.error("Fetch Error:", e);
+        } finally {
+            if (seq === historySeq.current) setLoading(false);
+        }
+    };
+
 const fetchHistoryAndDoctors = async () => {
         // `loading` starts true; later (live) refreshes update quietly without the skeleton
         try {
@@ -305,15 +333,10 @@ const fetchHistoryAndDoctors = async () => {
                 "ngrok-skip-browser-warning": "true"
             };
 
-            const [historyRes, doctorsRes] = await Promise.all([
-                fetch(`${API_URL}/admin/bills/all`, { headers }),
-fetch(`${API_URL}/admin/doctors`, { headers })
+            const [, doctorsRes] = await Promise.all([
+                fetchHistory(),
+                fetch(`${API_URL}/admin/doctors`, { headers })
             ]);
-
-            if (historyRes.ok) {
-                const historyData = await historyRes.json();
-                setHistory(historyData);
-            }
             
             if (doctorsRes.ok) {
                 const doctorsData = await doctorsRes.json();
@@ -344,6 +367,17 @@ fetch(`${API_URL}/admin/doctors`, { headers })
     useEffect(() => {
         fetchHistoryAndDoctors();
     }, []);
+
+    // Page or search changed: reload just the history page
+    const historyParamsReady = useRef(false);
+    useEffect(() => {
+        if (!historyParamsReady.current) {
+            historyParamsReady.current = true;
+            return;
+        }
+        fetchHistory();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [page, pageSize, debouncedBillingSearch]);
 
     // Live: payments and new bills from other desks appear without a reload
     useLiveRefresh(() => fetchHistoryAndDoctors());
@@ -453,7 +487,7 @@ fetch(`${API_URL}/admin/doctors`, { headers })
                 setFormData({ title: "", type: "Appointment", amount: "", paymentMethod: "App", doctorId: "" });
                 setSelectedPatient(null);
                 setSearchPatientId("");
-                setHistory([data.bill, ...history]);
+                fetchHistory();
 
                 // Automatically show print dialog for the new bill
                 setSelectedBill(data.bill);
@@ -714,17 +748,7 @@ fetch(`${API_URL}/admin/doctors`, { headers })
                             <div>
                                 <p className="text-sm font-bold text-slate-500 uppercase tracking-tight">Total Revenue</p>
                                 <h3 className="text-2xl font-bold text-slate-900 mt-1">
-                                    LKR {history.reduce((acc, curr) => {
-                                        const isPaid = curr.status?.toLowerCase() === "paid" || curr.paymentStatus?.toLowerCase() === "paid";
-                                        
-                                        if (isPaid) {
-                                            // If it's a Surgery, the hospital only keeps 25%. Otherwise, 100%.
-                                            const hospitalShare = curr.type === "Surgery" ? (curr.amount * 0.25) : curr.amount;
-                                            return acc + (hospitalShare || 0);
-                                        }
-                                        
-                                        return acc;
-                                    }, 0).toLocaleString()}
+                                    LKR {totalRevenue.toLocaleString()}
                                 </h3>
                             </div>
                             <div className="h-10 w-10 bg-cyan-50 rounded-lg flex items-center justify-center text-[#06b6d4]">
@@ -848,6 +872,14 @@ fetch(`${API_URL}/admin/doctors`, { headers })
                                 </TableBody>
                             </Table>
                         )}
+                        <Pagination
+                            page={page}
+                            pageSize={pageSize}
+                            total={historyTotal}
+                            onPageChange={setPage}
+                            onPageSizeChange={setPageSize}
+                            itemLabel="bills"
+                        />
                     </CardContent>
                 </Card>
 
@@ -904,18 +936,15 @@ fetch(`${API_URL}/admin/doctors`, { headers })
                                             // Update record in history list or add if new
                                             if (history.some(b => b._id === updatedBill._id)) {
                                                 setHistory(history.map(b => b._id === updatedBill._id ? updatedBill : b));
-                                            } else {
-                                                setHistory([updatedBill, ...history]);
                                             }
+                                            fetchHistory();
                                             setSelectedBill(updatedBill);
                                             setShowPrintDialog(true);
                                         }}
                                         onCancel={() => {
                                             setStripeModalOpen(false);
-                                            // Check if it already exists in history. If not (meaning it was just created), add it as Pending.
-                                            if (!history.some(b => b._id === pendingBill._id)) {
-                                                setHistory([pendingBill, ...history]);
-                                            }
+                                            // A just-created bill shows up as Pending after the refresh
+                                            fetchHistory();
                                             setPendingBill(null);
                                             toast({ title: "Payment Postponed", description: "Bill remains in Pending status." });
                                         }}

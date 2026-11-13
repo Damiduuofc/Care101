@@ -18,6 +18,7 @@ import { Elements, CardElement, useStripe, useElements } from "@stripe/react-str
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { toast } from "@/hooks/use-toast";
 import { DatePicker } from "@/components/ui/date-picker";
+import { Pagination, usePagination } from "@/components/ui/pagination";
 
 const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY || "");
 
@@ -57,6 +58,19 @@ const [generatedPatientId, setGeneratedPatientId] = useState("Loading...");
   // Sorting State
   const [sortField, setSortField] = useState<"patient" | "date" | "doctor" | "arrived">("date");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
+
+  // Pagination (filters, search and sort run on the server)
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(searchTerm.trim()), 300);
+    return () => clearTimeout(t);
+  }, [searchTerm]);
+  const [totalAppointments, setTotalAppointments] = useState(0);
+  const [dateCounts, setDateCounts] = useState<Record<"today" | "upcoming" | "past" | "all", number>>({ today: 0, upcoming: 0, past: 0, all: 0 });
+  const { page, setPage, pageSize, setPageSize } = usePagination(totalAppointments, {
+    pageSize: 20,
+    resetOn: [dateFilter, statusFilter, debouncedSearch, sortField, sortOrder],
+  });
 
   // Details Preview Modal State
   const [selectedAppointment, setSelectedAppointment] = useState<any | null>(null);
@@ -262,11 +276,22 @@ const fetchNextPatientId = async () => {
 };
 
 
-  // 1. Fetch Appointments
+  // 1. Fetch Appointments: one server-side page with the current filters, search and sort
+  const fetchSeq = useRef(0);
   const fetchAppointments = async () => {
+    const seq = ++fetchSeq.current;
     try {
       const token = getAdminToken();
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/admin/appointments`, {
+      const params = new URLSearchParams({
+        page: String(page),
+        limit: String(pageSize),
+        range: dateFilter,
+        status: statusFilter,
+        sort: sortField,
+        order: sortOrder,
+      });
+      if (debouncedSearch) params.set("q", debouncedSearch);
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/admin/appointments?${params}`, {
         headers: {
           "x-auth-token": token || "",
           "ngrok-skip-browser-warning": "true"
@@ -279,19 +304,23 @@ const fetchNextPatientId = async () => {
       if (!contentType || !contentType.includes("application/json")) return;
 
       const data = await res.json();
-      setAppointments(data);
+      if (seq !== fetchSeq.current) return; // a newer request (page/filter change) superseded this one
+      setAppointments(Array.isArray(data.items) ? data.items : []);
+      setTotalAppointments(data.total || 0);
+      if (data.counts) setDateCounts(data.counts);
     } catch (err) {
       console.error("Failed to fetch appointments", err);
     } finally {
-      setLoading(false);
+      if (seq === fetchSeq.current) setLoading(false);
     }
   };
 
   useEffect(() => {
     fetchAppointments();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page, pageSize, dateFilter, statusFilter, debouncedSearch, sortField, sortOrder]);
 
-  // Live: new bookings, payments and status changes appear without a reload
+  // Live: new bookings, payments and status changes appear without a reload (refetches the current page)
   useLiveRefresh(() => fetchAppointments());
 
   // Fetch Doctors for the Booking Form
@@ -539,7 +568,7 @@ const fetchNextPatientId = async () => {
           "ngrok-skip-browser-warning": "true"
         }
       });
-      setAppointments(appointments.filter(a => a._id !== id));
+      fetchAppointments();
     } catch (err) {
       console.error("Delete failed", err);
     }
@@ -565,70 +594,11 @@ const fetchNextPatientId = async () => {
     );
   };
 
-  const startOfToday = new Date();
-  startOfToday.setHours(0, 0, 0, 0);
-  const startOfTomorrow = new Date(startOfToday);
-  startOfTomorrow.setDate(startOfTomorrow.getDate() + 1);
-  const matchesDate = (appt: any) => {
-    if (dateFilter === "all") return true;
-    const d = new Date(appt.date);
-    if (Number.isNaN(d.getTime())) return false;
-    if (dateFilter === "today") return d >= startOfToday && d < startOfTomorrow;
-    if (dateFilter === "upcoming") return d >= startOfToday;
-    return d < startOfToday; // past
-  };
-  const matchesStatus = (appt: any) =>
-    statusFilter === "all" || String(appt.status || "").toLowerCase() === statusFilter;
-  // How many bookings each date tab would show (with the current status filter)
-  const countFor = (key: typeof dateFilter) => {
-    return appointments.filter((a) => {
-      if (!matchesStatus(a)) return false;
-      if (key === "all") return true;
-      const d = new Date(a.date);
-      if (Number.isNaN(d.getTime())) return false;
-      if (key === "today") return d >= startOfToday && d < startOfTomorrow;
-      if (key === "upcoming") return d >= startOfToday;
-      return d < startOfToday;
-    }).length;
-  };
+  // How many bookings each date tab would show (with the current status filter), from the server
+  const countFor = (key: typeof dateFilter) => dateCounts[key] ?? 0;
 
-  const filteredAppointments = appointments
-    .filter((appt) => matchesDate(appt) && matchesStatus(appt))
-    .filter((appt) => {
-      const query = searchTerm.toLowerCase();
-      const patientName = appt.patientId?.fullName?.toLowerCase() || "";
-      const patientId = appt.patientId?.patientId?.toLowerCase() || appt.patientId?._id?.toLowerCase() || "";
-      const doctorName = appt.doctorName?.toLowerCase() || "";
-      return patientName.includes(query) || patientId.includes(query) || doctorName.includes(query);
-    })
-    .sort((a, b) => {
-      let comparison = 0;
-      if (sortField === "patient") {
-        const nameA = (a.patientId?.fullName || "").toLowerCase();
-        const nameB = (b.patientId?.fullName || "").toLowerCase();
-        comparison = nameA.localeCompare(nameB);
-      } else if (sortField === "doctor") {
-        const docA = (a.doctorName || "").toLowerCase();
-        const docB = (b.doctorName || "").toLowerCase();
-        comparison = docA.localeCompare(docB);
-      } else if (sortField === "arrived") {
-        const arrA = a.arrived ? 1 : 0;
-        const arrB = b.arrived ? 1 : 0;
-        comparison = arrA - arrB;
-      } else {
-        // Default / Date & Creation sort (latest booking on top when desc)
-        const dateA = new Date(a.date).getTime();
-        const dateB = new Date(b.date).getTime();
-        if (dateA !== dateB) {
-          comparison = dateA - dateB;
-        } else {
-          const createdA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-          const createdB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-          comparison = createdA - createdB;
-        }
-      }
-      return sortOrder === "asc" ? comparison : -comparison;
-    });
+  // The server already filtered, searched, sorted and paged these
+  const filteredAppointments = appointments;
 
   // Derive unique departments from fetched doctors
   const departments = Array.from(new Set(doctors.map(d => d.specialization || "General")));
@@ -713,7 +683,7 @@ const fetchNextPatientId = async () => {
           <Card className="border-slate-200 shadow-sm overflow-hidden">
             <CardHeader className="bg-slate-50 border-b border-slate-100 py-4">
               <CardTitle className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                Bookings ({filteredAppointments.length})
+                Bookings ({totalAppointments})
               </CardTitle>
             </CardHeader>
             <CardContent className="p-0">
@@ -876,6 +846,14 @@ const fetchNextPatientId = async () => {
                   </tbody>
                 </table>
               </div>
+              <Pagination
+                page={page}
+                pageSize={pageSize}
+                total={totalAppointments}
+                onPageChange={setPage}
+                onPageSizeChange={setPageSize}
+                itemLabel="bookings"
+              />
             </CardContent>
           </Card>
         </div>

@@ -5,6 +5,7 @@ import { notify } from "@/lib/notify";
 import { useLiveRefresh } from "@/lib/useLiveRefresh";
 import { PageSkeleton } from "@/components/ui/skeleton-presets";
 import { useEffect, useState } from "react";
+import { Pagination, paginate, usePagination } from "@/components/ui/pagination";
 import {
  Eye, EyeOff, UserPlus, Trash2, Mail, Lock, Building, Briefcase, Loader2, Key, Copy, CheckCircle2, Search
 } from "lucide-react";
@@ -53,6 +54,8 @@ const [showPassword, setShowPassword] = useState(false);
     
     return matchesSearch && matchesRole;
   });
+  const staffPaging = usePagination(filteredAndSortedStaff.length, { pageSize: 12, resetOn: [searchQuery, selectedRole] });
+  const pageStaff = paginate(filteredAndSortedStaff, staffPaging.page, staffPaging.pageSize);
 
 
   // 1. Fetch Staff List
@@ -352,7 +355,7 @@ const [showPassword, setShowPassword] = useState(false);
           {/* Staff List Grid */}
           {filteredAndSortedStaff.length > 0 ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {filteredAndSortedStaff.map((staff) => (
+              {pageStaff.map((staff) => (
                 <Card key={staff._id} className="hover:shadow-md hover:border-cyan-500 transition-all border-slate-200">
                   <CardHeader className="flex flex-row items-center justify-between pb-2">
                     <Badge className={`uppercase ${staff.role === 'system_admin' ? 'bg-purple-100 text-purple-700 hover:bg-purple-100' :
@@ -409,6 +412,18 @@ const [showPassword, setShowPassword] = useState(false);
                 </Card>
               ))}
             </div>
+          ) : null}
+          {filteredAndSortedStaff.length > 0 ? (
+            <Pagination
+              className="border-t-0 px-0"
+              page={staffPaging.page}
+              pageSize={staffPaging.pageSize}
+              total={filteredAndSortedStaff.length}
+              onPageChange={staffPaging.setPage}
+              onPageSizeChange={staffPaging.setPageSize}
+              pageSizeOptions={[12, 24, 48, 96]}
+              itemLabel="staff"
+            />
           ) : (
             <div className="text-center py-12 bg-white rounded-xl border border-slate-200 shadow-sm">
               <p className="text-slate-500">No staff members found matching your criteria.</p>

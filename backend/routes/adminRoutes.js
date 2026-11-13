@@ -16,7 +16,8 @@ import HospitalFinance from "../models/Finance.js";
 import Notification from "../models/Notification.js";
 import ScheduleRequest from "../models/ScheduleRequest.js";
 import { protect, authorize, ROLES } from "../middleware/authRole.js";
-import { assignQueueToken, countPaidAhead } from "../utils/queueToken.js";
+import { assignQueueToken, countPaidAhead, dayRange } from "../utils/queueToken.js";
+import { parsePagination, pageResponse } from "../utils/pagination.js";
 import { emitAppointmentUpdated, emitNotification, emitDoctorQueueChanged, getLastWriteAt, emitDoctorStatus } from "../utils/realtime.js";
 import { applyLiveAllocation, openSessionsToday, pickCurrentSession, syncDoctorLiveAllocation } from "../utils/liveAllocation.js";
 import { getOrCreateBillIntent, verifyIntentForBill, markBillPaid } from "../utils/paymentService.js";
@@ -173,8 +174,91 @@ router.put("/status", protect, authorize(["system_admin"]), async (req, res) => 
 // ==========================================
 // 4. APPOINTMENT MANAGEMENT
 // ==========================================
+// Payment pending but status set to confirmed is shown (and filtered) as pending
+const APPT_STATUS_FILTERS = {
+  pending: { $or: [{ status: "pending" }, { status: "confirmed", paymentStatus: { $ne: "paid" } }] },
+  confirmed: { status: "confirmed", paymentStatus: "paid" },
+  completed: { status: "completed" },
+  cancelled: { status: "cancelled" },
+};
+
+const appointmentDateFilter = (range) => {
+  const today = dayRange(new Date());
+  if (range === "today") return { date: today };
+  if (range === "upcoming") return { date: { $gte: today.$gte } };
+  if (range === "past") return { date: { $lt: today.$gte } };
+  return {};
+};
+
+const APPT_POPULATE = [
+  { path: "patientId", select: "fullName phone mobileNumber patientId nicNumber email dateOfBirth" },
+  { path: "doctorId", select: "name department" },
+];
+
+// Paginated list for the appointments page:
+// ?page=1&limit=20&range=today|upcoming|past|all&status=<s>&q=<patient name/id or doctor>&sort=date|patient|doctor|arrived&order=asc|desc
+// Returns { items, total, page, limit, totalPages, counts: { today, upcoming, past, all } }
+const listAppointmentsPage = async (query, paging) => {
+  const range = ["today", "upcoming", "past"].includes(query.range) ? query.range : "all";
+  const statusFilter = APPT_STATUS_FILTERS[String(query.status || "").toLowerCase()] || {};
+  const q = String(query.q || "").trim();
+  const dir = query.order === "asc" ? 1 : -1;
+  const sort = ["patient", "doctor", "arrived"].includes(query.sort) ? query.sort : "date";
+
+  const and = [statusFilter];
+  if (q) {
+    const rx = { $regex: escapeRegex(q), $options: "i" };
+    const patientIds = await Patient.find({ $or: [{ fullName: rx }, { patientId: rx }] }).distinct("_id");
+    and.push({ $or: [{ patientId: { $in: patientIds } }, { doctorName: rx }] });
+  }
+  const filter = { $and: [...and, appointmentDateFilter(range)] };
+
+  const countWith = (r) => Appointment.countDocuments({ $and: [statusFilter, appointmentDateFilter(r)] });
+
+  let itemsPromise;
+  if (sort === "patient") {
+    itemsPromise = Appointment.aggregate([
+      { $match: filter },
+      { $lookup: { from: Patient.collection.name, localField: "patientId", foreignField: "_id", as: "_p" } },
+      { $addFields: { _pname: { $toLower: { $ifNull: [{ $arrayElemAt: ["$_p.fullName", 0] }, ""] } } } },
+      { $sort: { _pname: dir, _id: 1 } },
+      { $skip: paging.skip },
+      { $limit: paging.limit },
+      { $project: { _p: 0, _pname: 0 } },
+    ]).then((docs) => Appointment.populate(docs, APPT_POPULATE));
+  } else {
+    const sortSpec =
+      sort === "doctor" ? { doctorName: dir, date: -1, _id: 1 }
+      : sort === "arrived" ? { arrived: dir, date: -1, _id: 1 }
+      : { date: dir, createdAt: dir, _id: dir };
+    itemsPromise = Appointment.find(filter).populate(APPT_POPULATE).sort(sortSpec).skip(paging.skip).limit(paging.limit).lean();
+  }
+
+  const [items, total, today, upcoming, past] = await Promise.all([
+    itemsPromise,
+    Appointment.countDocuments(filter),
+    countWith("today"),
+    countWith("upcoming"),
+    countWith("past"),
+  ]);
+  return pageResponse(items.map(sanitizeAppointmentStatus), total, paging, {
+    counts: { today, upcoming, past, all: upcoming + past },
+  });
+};
+
+const sanitizeAppointmentStatus = (appt) => {
+  if (appt.paymentStatus?.toLowerCase() !== "paid" && appt.status?.toLowerCase() === "confirmed") {
+    appt.status = "pending";
+  }
+  return appt;
+};
+
 router.get("/appointments", protect, authorize(ROLES.STAFF), async (req, res) => {
   try {
+    // With page/limit: one filtered page. Without: the full list (nurse queue screens, older clients)
+    const paging = parsePagination(req.query, { defaultLimit: 20, maxLimit: 200 });
+    if (paging) return res.json(await listAppointmentsPage(req.query, paging));
+
     const appointments = await Appointment.find()
       .populate("patientId", "fullName phone mobileNumber patientId nicNumber email dateOfBirth")
       .populate("doctorId", "name department")
@@ -508,8 +592,70 @@ router.get("/patients/search/mobile/:mobileNumber", protect, authorize(ROLES.DES
   }
 });
 
+// Bills + appointment fees that have no bill of their own, as one list (aggregation stages)
+const combinedBillsPipeline = (billed) => [
+  { $project: { patientId: 1, title: 1, type: 1, amount: 1, status: 1, date: 1, appointmentId: 1, paymentIntentId: 1, paidAt: 1 } },
+  {
+    $unionWith: {
+      coll: Appointment.collection.name,
+      pipeline: [
+        { $match: { amount: { $gt: 0 }, _id: { $nin: billed } } },
+        {
+          $project: {
+            patientId: 1,
+            title: { $concat: ["Appointment Fee - ", { $ifNull: ["$status", ""] }] },
+            type: { $literal: "Appointment" },
+            amount: 1,
+            status: { $ifNull: ["$paymentStatus", "Pending"] },
+            date: 1,
+          },
+        },
+      ],
+    },
+  },
+];
+
+// Paginated: ?page=1&limit=20&q=<patient name or id>
+// -> { items, total, page, limit, totalPages, summary: { revenue } } (revenue over all bills, like before)
+const listBillsPage = async (query, paging) => {
+  const billed = await appointmentIdsWithBills();
+  const q = String(query.q || "").trim();
+  const match = {};
+  if (q) {
+    const rx = { $regex: escapeRegex(q), $options: "i" };
+    match.patientId = { $in: await Patient.find({ $or: [{ fullName: rx }, { patientId: rx }] }).distinct("_id") };
+  }
+
+  const [facet] = await Bill.aggregate([
+    ...combinedBillsPipeline(billed),
+    { $match: match },
+    {
+      $facet: {
+        items: [{ $sort: { date: -1, _id: -1 } }, { $skip: paging.skip }, { $limit: paging.limit }],
+        total: [{ $count: "n" }],
+      },
+    },
+  ]);
+  const [revenueRow] = await Bill.aggregate([
+    ...combinedBillsPipeline(billed),
+    { $match: { status: { $regex: "^paid$", $options: "i" } } },
+    {
+      $group: {
+        _id: null,
+        revenue: { $sum: { $cond: [{ $eq: ["$type", "Surgery"] }, { $multiply: ["$amount", 0.25] }, { $ifNull: ["$amount", 0] }] } },
+      },
+    },
+  ]);
+
+  const items = await Bill.populate(facet?.items || [], { path: "patientId", select: "fullName nicNumber patientId" });
+  return pageResponse(items, facet?.total?.[0]?.n || 0, paging, { summary: { revenue: revenueRow?.revenue || 0 } });
+};
+
 router.get("/bills/all", protect, authorize(["system_admin", "receptionist"]), async (req, res) => {
   try {
+    const paging = parsePagination(req.query, { defaultLimit: 20, maxLimit: 200 });
+    if (paging) return res.json(await listBillsPage(req.query, paging));
+
     const billed = await appointmentIdsWithBills();
     const [manualBills, appointments] = await Promise.all([
       Bill.find().populate("patientId", "fullName nicNumber patientId").lean(),

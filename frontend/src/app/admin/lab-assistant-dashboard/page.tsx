@@ -1,7 +1,7 @@
 "use client";
 
 import { notify } from "@/lib/notify";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Loader2, Search, FileText, Upload, Trash2, Eye, Download, User2, Activity, Plus } from "lucide-react";
 import Sidebar from "@/components/admin/Sidebar";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -15,6 +15,7 @@ import { clearAdminSession, getAdminToken, getAdminUser } from "@/lib/adminSessi
 import LabTestPicker from "@/components/admin/LabTestPicker";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useLiveRefresh } from "@/lib/useLiveRefresh";
+import { Pagination, usePagination } from "@/components/ui/pagination";
 
 export default function LabAssistantDashboard() {
   const [loading, setLoading] = useState(true);
@@ -51,10 +52,33 @@ export default function LabAssistantDashboard() {
     description: ""
   });
 
+  // Both side lists are paged and searched on the server
+  const LIST_PAGE_SIZE = 20;
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search.trim()), 300);
+    return () => clearTimeout(t);
+  }, [search]);
+  const [patientsTotal, setPatientsTotal] = useState(0);
+  const [requestsTotal, setRequestsTotal] = useState(0);
+  const patientPaging = usePagination(patientsTotal, { pageSize: LIST_PAGE_SIZE, resetOn: [debouncedSearch] });
+  const requestPaging = usePagination(requestsTotal, { pageSize: LIST_PAGE_SIZE, resetOn: [debouncedSearch] });
+  const patientsSeq = useRef(0);
+  const requestsSeq = useRef(0);
+
+  const requestsUrl = (page: number) => {
+    const params = new URLSearchParams({ status: "pending", page: String(page), limit: String(requestPaging.pageSize) });
+    if (debouncedSearch) params.set("q", debouncedSearch);
+    return `${process.env.NEXT_PUBLIC_API_URL}/lab-requests/all?${params}`;
+  };
+
   const fetchPatients = async () => {
+    const seq = ++patientsSeq.current;
     try {
       const token = getAdminToken();
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/patients/all-patients`, {
+      const params = new URLSearchParams({ page: String(patientPaging.page), limit: String(patientPaging.pageSize) });
+      if (debouncedSearch) params.set("q", debouncedSearch);
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/patients/all-patients?${params}`, {
         headers: {
           "Authorization": `Bearer ${token}`,
           "ngrok-skip-browser-warning": "true"
@@ -62,8 +86,11 @@ export default function LabAssistantDashboard() {
       });
       if (res.ok) {
         const data = await res.json();
-        setPatients(data);
-        setFilteredPatients(data);
+        if (seq !== patientsSeq.current) return;
+        const items = Array.isArray(data.items) ? data.items : [];
+        setPatients(items);
+        setFilteredPatients(items);
+        setPatientsTotal(data.total || 0);
       }
     } catch (err) {
       console.error("Failed to fetch patients", err);
@@ -73,9 +100,10 @@ export default function LabAssistantDashboard() {
   };
 
   const fetchRequests = async () => {
+    const seq = ++requestsSeq.current;
     try {
       const token = getAdminToken();
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/lab-requests/all`, {
+      const res = await fetch(requestsUrl(requestPaging.page), {
         headers: {
           "Authorization": `Bearer ${token}`,
           "x-auth-token": token || "",
@@ -83,8 +111,11 @@ export default function LabAssistantDashboard() {
         }
       });
       if (res.ok) {
-        const data = await res.json();
+        const page = await res.json();
+        if (seq !== requestsSeq.current) return;
+        const data = Array.isArray(page.items) ? page.items : [];
         setRequests(data);
+        setRequestsTotal(page.total || 0);
         
         // UX Bugfix: Sync active selectedRequest with fresh database status
         setSelectedRequest((current: any) => {
@@ -115,14 +146,25 @@ export default function LabAssistantDashboard() {
     fetchRequests();
   });
 
+  // Page or search changed: reload that list (the first load happens above)
+  const listsReady = useRef(false);
   useEffect(() => {
-    const lower = search.toLowerCase();
-    setFilteredPatients(patients.filter(p => 
-      (p.fullName && p.fullName.toLowerCase().includes(lower)) || 
-      (p.patientId && p.patientId.toLowerCase().includes(lower)) ||
-      (p.nicNumber && p.nicNumber.toLowerCase().includes(lower))
-    ));
-  }, [search, patients]);
+    if (!listsReady.current) {
+      listsReady.current = true;
+      return;
+    }
+    fetchPatients();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [patientPaging.page, debouncedSearch]);
+  const requestsReady = useRef(false);
+  useEffect(() => {
+    if (!requestsReady.current) {
+      requestsReady.current = true;
+      return;
+    }
+    fetchRequests();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [requestPaging.page, debouncedSearch]);
 
   const fetchPatientRecords = async (patientId: string) => {
     setLoadingRecords(true);
@@ -231,7 +273,8 @@ export default function LabAssistantDashboard() {
         setCreateFormData({ testIds: [], type: "lab_tests", description: "" });
         
         // Fetch requests and select the new one
-        const fetchRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/lab-requests/all`, {
+        requestPaging.setPage(1);
+        const fetchRes = await fetch(requestsUrl(1), {
           headers: {
             "Authorization": `Bearer ${token}`,
             "x-auth-token": token || "",
@@ -239,8 +282,10 @@ export default function LabAssistantDashboard() {
           }
         });
         if (fetchRes.ok) {
-          const data = await fetchRes.json();
+          const page = await fetchRes.json();
+          const data: any[] = Array.isArray(page.items) ? page.items : [];
           setRequests(data);
+          setRequestsTotal(page.total || 0);
           const matched = data.find((r: any) => r._id === newReq._id);
           if (matched) {
             setSelectedRequest(matched);
@@ -445,7 +490,7 @@ export default function LabAssistantDashboard() {
                 className={`flex-1 ${activeTab === "requests" ? "bg-cyan-600 hover:bg-cyan-700" : ""}`}
                 onClick={() => setActiveTab("requests")}
               >
-                Requests ({requests.filter(r => r.status === 'pending').length})
+                Requests ({requestsTotal})
               </Button>
               <Button 
                 variant={activeTab === "directory" ? "default" : "outline"} 
@@ -482,16 +527,8 @@ export default function LabAssistantDashboard() {
                   )
                 ) : (
                   (() => {
-                    const pending = requests.filter(r => r.status === 'pending');
-                    const filtered = pending.filter(req => {
-                      if (!search.trim()) return true;
-                      const lower = search.toLowerCase();
-                      const pName = req.patientId?.fullName?.toLowerCase() || "";
-                      const pId = req.patientId?.patientId?.toLowerCase() || "";
-                      const title = req.title?.toLowerCase() || "";
-                      const doc = (req.doctorName || "").toLowerCase();
-                      return pName.includes(lower) || pId.includes(lower) || title.includes(lower) || doc.includes(lower);
-                    });
+                    // Pending only, already searched on the server
+                    const filtered = requests.filter(r => r.status === 'pending');
 
                     if (filtered.length === 0) {
                       return <p className="text-center text-slate-400 mt-4 text-sm">No pending requests</p>;
@@ -531,6 +568,25 @@ export default function LabAssistantDashboard() {
                   })()
                 )}
               </div>
+              {activeTab === "directory" ? (
+                <Pagination
+                  compact
+                  page={patientPaging.page}
+                  pageSize={patientPaging.pageSize}
+                  total={patientsTotal}
+                  onPageChange={patientPaging.setPage}
+                  itemLabel="patients"
+                />
+              ) : (
+                <Pagination
+                  compact
+                  page={requestPaging.page}
+                  pageSize={requestPaging.pageSize}
+                  total={requestsTotal}
+                  onPageChange={requestPaging.setPage}
+                  itemLabel="requests"
+                />
+              )}
             </div>
           </div>
 
