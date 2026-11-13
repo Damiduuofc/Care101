@@ -4,6 +4,7 @@ import { notify } from "@/lib/notify";
 import { useEffect, useRef, useState } from "react";
 import { Loader2, Search, FileText, Upload, Trash2, Eye, Download, User2, Activity, Plus } from "lucide-react";
 import Sidebar from "@/components/admin/Sidebar";
+import { DashboardRoleHeader } from "@/components/admin/RoleBadge";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -129,6 +130,7 @@ export default function LabAssistantDashboard() {
     }
   };
 
+  const [labUserName, setLabUserName] = useState<string | undefined>();
   useEffect(() => {
     const user = getAdminUser();
     if (!user || user.role !== "lab_assistant") {
@@ -136,6 +138,7 @@ export default function LabAssistantDashboard() {
       window.location.href = "/admin/login";
       return;
     }
+    setLabUserName(user.name);
     fetchPatients();
     fetchRequests();
   }, []);
@@ -464,12 +467,11 @@ export default function LabAssistantDashboard() {
       <Sidebar />
       <main className="flex-1 md:ml-64 p-4 lg:p-8 overflow-y-auto">
         <div className="max-w-7xl mx-auto space-y-6">
-          <div className="flex flex-col md:flex-row justify-between items-center gap-4">
-            <div>
-              <h1 className="text-3xl font-bold text-slate-900">Upload Medical Records</h1>
-              <p className="text-slate-500">Search for a patient and upload lab reports, scan results, or prescriptions.</p>
-            </div>
-          </div>
+          <DashboardRoleHeader
+            role="lab_assistant"
+            userName={labUserName}
+            subtitle="Search for a patient and upload lab reports, scan results, or prescriptions."
+          />
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           {/* LEFT: PATIENT SEARCH */}

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Sidebar from "@/components/admin/Sidebar";
+import { DashboardRoleHeader } from "@/components/admin/RoleBadge";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { UserCheck, CalendarRange, Building, Clock, ChevronRight, Activity } from "lucide-react";
@@ -103,20 +104,11 @@ export default function ReceptionistDashboard() {
             <Sidebar />
 
             {/* Header */}
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
-                <div>
-                    <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">Receptionist Dashboard</h1>
-                    <p className="text-slate-500 mt-2 text-lg">
-                        Welcome back, <span className="font-semibold text-cyan-700">{user?.name || 'Receptionist'}</span>! Manage daily desk tasks here.
-                    </p>
-                </div>
-                <div className="flex items-center gap-2 bg-cyan-50 px-5 py-2.5 rounded-xl border border-cyan-100 shadow-inner">
-                    <Activity className="h-5 w-5 text-cyan-600 animate-pulse" />
-                    <span className="text-sm font-semibold text-cyan-800 tracking-wide uppercase">
-                        Reception Desk Active
-                    </span>
-                </div>
-            </div>
+            <DashboardRoleHeader
+                role={user?.role || "receptionist"}
+                userName={user?.name}
+                subtitle={<>Welcome back, <span className="font-medium text-slate-700">{user?.name || "Receptionist"}</span>! Manage daily desk tasks here.</>}
+            />
 
             {/* Action Cards Grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

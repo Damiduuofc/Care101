@@ -8,6 +8,7 @@ import { LogOut, ChevronLeft, ChevronRight, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { clearAdminSession, getAdminUser } from "@/lib/adminSession";
 import { useSidebar } from "./SidebarContext";
+import { getRoleMeta } from "./RoleBadge";
 
 export default function Sidebar() {
   const pathname = usePathname();
@@ -90,8 +91,8 @@ export default function Sidebar() {
                 >
                   Care101
                 </Link>
-                <p className="text-[10px] text-slate-400 uppercase tracking-widest truncate">
-                  {role.replace("_", " ")}
+                <p className={`text-[10px] font-semibold uppercase tracking-widest truncate text-cyan-400`}>
+                  {getRoleMeta(role).label}
                 </p>
               </div>
             )}
@@ -164,7 +165,7 @@ export default function Sidebar() {
             <div className="flex flex-col items-center gap-2 py-2">
               <div
                 className="h-8 w-8 rounded-full bg-cyan-600/20 border border-cyan-500/40 text-cyan-400 flex items-center justify-center text-xs font-bold"
-                title={`${userName} (${role.replace("_", " ")})`}
+                title={`${userName} (${getRoleMeta(role).label})`}
               >
                 {userName.charAt(0)}
               </div>
@@ -183,7 +184,7 @@ export default function Sidebar() {
                 {userName}
               </p>
               <p className="text-[10px] text-slate-400 mb-2.5 truncate">
-                Logged in as {role.replace("_", " ")}
+                Logged in as <span className={`font-semibold text-cyan-400`}>{getRoleMeta(role).label}</span>
               </p>
 
               <button

@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import Sidebar from "@/components/admin/Sidebar";
 import NurseTodayAssignments from "@/components/admin/NurseTodayAssignments";
+import { DashboardRoleHeader } from "@/components/admin/RoleBadge";
 
 import { useRouter } from "next/navigation";
 import { clearAdminSession, getAdminToken, getAdminUser } from "@/lib/adminSession";
@@ -142,15 +143,7 @@ export default function Dashboard() {
       <main className="flex-1 md:ml-64 p-4 lg:p-8 overflow-y-auto">
         <div className="max-w-7xl mx-auto space-y-8">
           {/* Header */}
-          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-            <div>
-              <h1 className="text-3xl font-bold text-slate-900">Dashboard</h1>
-              <p className="text-slate-500 mt-1">System Overview for <span className="font-semibold text-cyan-700">{user?.name}</span></p>
-            </div>
-            <div className="bg-white px-4 py-2 rounded-xl border border-slate-200 shadow-sm text-sm font-medium text-slate-600 capitalize">
-              {user?.role?.replace('_', ' ')} Panel
-            </div>
-          </div>
+          <DashboardRoleHeader role={user?.role} userName={user?.name} />
 
           {/* Stats Grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
