@@ -6,7 +6,7 @@ import { useLiveRefresh } from "@/lib/useLiveRefresh";
 import { ListSkeleton } from "@/components/ui/skeleton-presets";
 import { useEffect, useState } from "react";
 import { Pagination, paginate, usePagination } from "@/components/ui/pagination";
-import { FlaskConical, Loader2, Pencil, Plus, Search, Trash2 } from "lucide-react";
+import { ArrowDownAZ, ArrowUpDown, ArrowUpZA, FlaskConical, Loader2, Pencil, Plus, Search, Trash2 } from "lucide-react";
 import Sidebar from "@/components/admin/Sidebar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -22,6 +22,9 @@ export default function LabTestsManagement() {
   const [tests, setTests] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  // Sort by code: none → A–Z → Z–A → none
+  const [codeSort, setCodeSort] = useState<"none" | "asc" | "desc">("none");
+  const cycleCodeSort = () => setCodeSort(s => (s === "none" ? "asc" : s === "asc" ? "desc" : "none"));
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formData, setFormData] = useState(emptyForm);
@@ -132,8 +135,19 @@ export default function LabTestsManagement() {
     const lower = search.toLowerCase();
     return t.name?.toLowerCase().includes(lower) || t.code?.toLowerCase().includes(lower);
   });
+  if (codeSort !== "none") {
+    // Natural order (CBC2 before CBC10); tests without a code always go last
+    filtered.sort((a, b) => {
+      const ca = (a.code || "").trim();
+      const cb = (b.code || "").trim();
+      if (!ca || !cb) return ca ? -1 : cb ? 1 : 0;
+      const cmp = ca.localeCompare(cb, undefined, { numeric: true, sensitivity: "base" });
+      return codeSort === "asc" ? cmp : -cmp;
+    });
+  }
+  const SortIcon = codeSort === "asc" ? ArrowDownAZ : codeSort === "desc" ? ArrowUpZA : ArrowUpDown;
   // The test catalogue loads whole (the pickers need it all); the table is paged on screen
-  const testPaging = usePagination(filtered.length, { pageSize: 20, resetOn: [search] });
+  const testPaging = usePagination(filtered.length, { pageSize: 20, resetOn: [search, codeSort] });
   const pageTests = paginate(filtered, testPaging.page, testPaging.pageSize);
 
   return (
@@ -151,9 +165,21 @@ export default function LabTestsManagement() {
             </Button>
           </div>
 
-          <div className="relative max-w-sm">
-            <Search className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
-            <Input className="pl-9 bg-white" placeholder="Search by name or code..." value={search} onChange={(e) => setSearch(e.target.value)} />
+          <div className="flex flex-col sm:flex-row gap-3 sm:items-center">
+            <div className="relative w-full sm:max-w-sm">
+              <Search className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
+              <Input className="pl-9 bg-white" placeholder="Search by name or code..." value={search} onChange={(e) => setSearch(e.target.value)} />
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={cycleCodeSort}
+              aria-label={`Sort by code: ${codeSort === "asc" ? "A to Z" : codeSort === "desc" ? "Z to A" : "off"}`}
+              className={`bg-white shrink-0 ${codeSort !== "none" ? "border-cyan-500 text-cyan-700 hover:text-cyan-800" : "text-slate-600"}`}
+            >
+              <SortIcon className="mr-2 h-4 w-4" />
+              {codeSort === "asc" ? "Code: A → Z" : codeSort === "desc" ? "Code: Z → A" : "Sort by code"}
+            </Button>
           </div>
 
           {loading ? (
@@ -170,7 +196,11 @@ export default function LabTestsManagement() {
                   <thead className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider">
                     <tr>
                       <th className="text-left p-3">Test</th>
-                      <th className="text-left p-3">Code</th>
+                      <th className="text-left p-3" aria-sort={codeSort === "asc" ? "ascending" : codeSort === "desc" ? "descending" : "none"}>
+                        <button type="button" onClick={cycleCodeSort} className="inline-flex items-center gap-1 uppercase tracking-wider hover:text-cyan-700">
+                          Code <SortIcon className="h-3.5 w-3.5" />
+                        </button>
+                      </th>
                       <th className="text-right p-3">Price (LKR)</th>
                       <th className="text-left p-3">Status</th>
                       <th className="p-3" />

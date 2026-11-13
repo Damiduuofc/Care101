@@ -1,5 +1,6 @@
 import { SkeletonRow, SkeletonGrid } from '../../components/Skeleton';
 import KeyboardSafe from '../../components/KeyboardSafe';
+import SessionDatePicker from '../../components/SessionDatePicker';
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
     View,
@@ -551,39 +552,20 @@ export default function BookAppointmentScreen() {
                     </View>
                 ) : (
                     <>
-                        <ScrollView
-                            horizontal
-                            showsHorizontalScrollIndicator={false}
-                            contentContainerStyle={styles.dateList}
-                            nestedScrollEnabled
-                        >
-                            {availableDates.map((date, index) => {
-                                const isSelected =
-                                    selectedDate?.toDateString() === date.toDateString();
-                                const full = isDayFull(date);
-                                return (
-                                    <TouchableOpacity
-                                        key={index}
-                                        style={[
-                                            styles.dateCard,
-                                            isSelected && styles.selectedDateCard,
-                                            full && !isSelected && styles.fullDateCard
-                                        ]}
-                                        onPress={() => selectDate(date)}
-                                    >
-                                        <Text style={[styles.dateMonth, isSelected && styles.selectedDateText]}>
-                                            {date.toLocaleString('default', { month: 'short' }).toUpperCase()}
-                                        </Text>
-                                        <Text style={[styles.dateNum, isSelected && styles.selectedDateText]}>
-                                            {date.getDate()}
-                                        </Text>
-                                        <Text style={[styles.dateDay, isSelected && styles.selectedDateText]}>
-                                            {full ? 'Full' : date.toLocaleString('default', { weekday: 'short' })}
-                                        </Text>
-                                    </TouchableOpacity>
-                                );
-                            })}
-                        </ScrollView>
+                        <SessionDatePicker
+                            key={selectedDoctor._id}
+                            sessionDates={availableDates}
+                            isDayFull={isDayFull}
+                            selectedDate={selectedDate}
+                            onSelect={selectDate}
+                            doctorName={selectedDoctor.name}
+                        />
+
+                        {selectedDate && (
+                            <Text style={styles.sessionsHeading}>
+                                Sessions on {selectedDate.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })}
+                            </Text>
+                        )}
 
                         {/* SESSIONS ON THE SELECTED DAY, WITH PLACES LEFT */}
                         {selectedDate && sessionsForDay.map(session => {
@@ -937,28 +919,7 @@ const styles = StyleSheet.create({
     },
 
     // Date
-    dateList: { flexDirection: 'row', marginBottom: 24 },
-    dateCard: {
-        width: 64,
-        height: 82,
-        backgroundColor: '#fff',
-        borderRadius: 12,
-        alignItems: 'center',
-        justifyContent: 'center',
-        borderWidth: 1,
-        borderColor: '#e2e8f0',
-        marginRight: 10
-    },
-    selectedDateCard: { backgroundColor: '#06b6d4', borderColor: '#06b6d4' },
-    fullDateCard: { backgroundColor: '#f8fafc', opacity: 0.6 },
-    dateMonth: { fontSize: 11, fontWeight: '700', color: '#06b6d4', marginBottom: 2 },
-    dateDay: {
-        fontSize: 11,
-        color: '#64748b',
-        marginTop: 2,
-        textTransform: 'uppercase'
-    },
-    dateNum: { fontSize: 18, fontWeight: '700', color: '#0f172a' },
+    sessionsHeading: { fontSize: 13, fontWeight: '700', color: '#475569', marginBottom: 8 },
     selectedDateText: { color: '#fff' },
 
     // Form

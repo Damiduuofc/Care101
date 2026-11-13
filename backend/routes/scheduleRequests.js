@@ -23,33 +23,27 @@ const formatHour = (h) => {
   return `${displayH}:00 ${period}`;
 };
 
-// Build an hour-by-hour timeline for a date in a doctor's department.
-// An hour is blocked only when every room in that department is already used
-// (or the hour is in the past). No doctor names or room counts are exposed.
-const buildDeptTimeline = async (dateInput, specialization) => {
-  const dept = getDoctorDept(specialization || 'General Medicine');
-  const totalDeptRooms = Object.values(ROOM_DEPARTMENTS).filter(d => d === dept).length;
-
-  const dateOnlyStr = String(dateInput).split('T')[0];
-  const [year, month, day] = dateOnlyStr.split('-').map(Number);
-  const startOfDay = new Date(year, month - 1, day, 0, 0, 0, 0);
-  const endOfDay = new Date(year, month - 1, day, 23, 59, 59, 999);
-
+// Approved, still-running sessions in `dept` that overlap [from, to).
+const fetchDeptSchedules = async (dept, from, to) => {
   const approvedSchedules = await ScheduleRequest.find({
     status: 'approved',
     sessionEnded: { $ne: true },
-    startTime: { $lt: endOfDay },
-    endTime: { $gt: startOfDay }
+    startTime: { $lt: to },
+    endTime: { $gt: from }
   }).populate('doctorId', 'specialization');
 
-  const deptSchedules = approvedSchedules.filter(s => {
+  return approvedSchedules.filter(s => {
     if (s.allocatedRoom && ROOM_DEPARTMENTS[s.allocatedRoom]) {
       return ROOM_DEPARTMENTS[s.allocatedRoom] === dept;
     }
     return getDoctorDept(s.doctorId?.specialization) === dept;
   });
+};
 
-  const now = new Date();
+const countDeptRooms = (dept) => Object.values(ROOM_DEPARTMENTS).filter(d => d === dept).length;
+
+// Hour-by-hour slots for one calendar day, given the department's sessions.
+const computeDayTimeline = (year, month, day, deptSchedules, totalDeptRooms, now = new Date()) => {
   const timeline = [];
   for (let hour = DAY_START_HOUR; hour < DAY_END_HOUR; hour++) {
     const slotStart = new Date(year, month - 1, day, hour, 0, 0, 0);
@@ -68,6 +62,23 @@ const buildDeptTimeline = async (dateInput, specialization) => {
       isPast
     });
   }
+  return timeline;
+};
+
+// Build an hour-by-hour timeline for a date in a doctor's department.
+// An hour is blocked only when every room in that department is already used
+// (or the hour is in the past). No doctor names or room counts are exposed.
+const buildDeptTimeline = async (dateInput, specialization) => {
+  const dept = getDoctorDept(specialization || 'General Medicine');
+  const totalDeptRooms = countDeptRooms(dept);
+
+  const dateOnlyStr = String(dateInput).split('T')[0];
+  const [year, month, day] = dateOnlyStr.split('-').map(Number);
+  const startOfDay = new Date(year, month - 1, day, 0, 0, 0, 0);
+  const endOfDay = new Date(year, month - 1, day, 23, 59, 59, 999);
+
+  const deptSchedules = await fetchDeptSchedules(dept, startOfDay, endOfDay);
+  const timeline = computeDayTimeline(year, month, day, deptSchedules, totalDeptRooms);
 
   return { dept, dateOnlyStr, year, month, day, timeline };
 };
@@ -92,19 +103,65 @@ const validateRangeAgainstTimeline = async (dateInput, specialization, start, en
   return null;
 };
 
+const resolveSpecialization = async (req) => {
+  const targetDoctorId = req.query.doctorId || req.user?.id;
+  let specialization = req.query.specialization;
+  if (!specialization && targetDoctorId) {
+    const doc = await Doctor.findById(targetDoctorId).select('specialization').catch(() => null);
+    if (doc) specialization = doc.specialization;
+  }
+  return specialization;
+};
+
+// 0a. AVAILABILITY CALENDAR: free-hour count per day, so the doctor can see
+// which days are open before picking one. ?from=YYYY-MM-DD&days=N (max 90)
+router.get('/availability/summary', auth, authorize(["doctor", ...ROLES.SCHEDULING]), async (req, res) => {
+  try {
+    const now = new Date();
+    const fromStr = String(req.query.from || '').split('T')[0];
+    const [fy, fm, fd] = /^\d{4}-\d{2}-\d{2}$/.test(fromStr)
+      ? fromStr.split('-').map(Number)
+      : [now.getFullYear(), now.getMonth() + 1, now.getDate()];
+    const days = Math.min(Math.max(parseInt(req.query.days, 10) || 60, 1), 90);
+
+    const specialization = await resolveSpecialization(req);
+    const dept = getDoctorDept(specialization || 'General Medicine');
+    const totalDeptRooms = countDeptRooms(dept);
+
+    const rangeStart = new Date(fy, fm - 1, fd, 0, 0, 0, 0);
+    const rangeEnd = new Date(fy, fm - 1, fd + days, 0, 0, 0, 0);
+    const deptSchedules = await fetchDeptSchedules(dept, rangeStart, rangeEnd);
+
+    const totalHours = DAY_END_HOUR - DAY_START_HOUR;
+    const result = [];
+    for (let i = 0; i < days; i++) {
+      const d = new Date(fy, fm - 1, fd + i);
+      const y = d.getFullYear(), m = d.getMonth() + 1, day = d.getDate();
+      const dayStart = new Date(y, m - 1, day, 0, 0, 0, 0);
+      const dayEnd = new Date(y, m - 1, day + 1, 0, 0, 0, 0);
+      const daySchedules = deptSchedules.filter(s => new Date(s.startTime) < dayEnd && new Date(s.endTime) > dayStart);
+      const timeline = computeDayTimeline(y, m, day, daySchedules, totalDeptRooms, now);
+      result.push({
+        date: `${y}-${String(m).padStart(2, '0')}-${String(day).padStart(2, '0')}`,
+        freeHours: timeline.filter(t => t.isAvailable).length,
+        totalHours,
+      });
+    }
+
+    res.json({ department: dept, days: result });
+  } catch (err) {
+    console.error('Availability Summary Error:', err);
+    res.status(500).json({ msg: 'Server error fetching availability summary' });
+  }
+});
+
 // 0. AVAILABILITY: hour-by-hour timeline for a date (doctor = self, receptionist passes doctorId)
 router.get('/availability', auth, authorize(["doctor", ...ROLES.SCHEDULING]), async (req, res) => {
   try {
     const { date } = req.query;
     if (!date) return res.status(400).json({ msg: 'Date parameter is required' });
 
-    const targetDoctorId = req.query.doctorId || req.user?.id;
-    let specialization = req.query.specialization;
-    if (!specialization && targetDoctorId) {
-      const doc = await Doctor.findById(targetDoctorId).select('specialization').catch(() => null);
-      if (doc) specialization = doc.specialization;
-    }
-
+    const specialization = await resolveSpecialization(req);
     const { dept, dateOnlyStr, timeline } = await buildDeptTimeline(date, specialization);
     res.json({ date: dateOnlyStr, department: dept, timeline });
   } catch (err) {
@@ -116,7 +173,7 @@ router.get('/availability', auth, authorize(["doctor", ...ROLES.SCHEDULING]), as
 // 1. DOCTOR: Send a schedule request
 router.post('/request', auth, authorize(["doctor"]), async (req, res) => {
   try {
-    const { date, startTime, endTime, isUnlimited, queueLimit } = req.body;
+    const { date, startTime, endTime, isUnlimited, queueLimit, contactHospital, note } = req.body;
     if (!date || !startTime || !endTime) {
       return res.status(400).json({ msg: 'Date, start time, and end time are required' });
     }
@@ -133,8 +190,35 @@ router.post('/request', auth, authorize(["doctor"]), async (req, res) => {
       return res.status(400).json({ msg: 'Queue limit must be at least 1, or choose unlimited.' });
     }
 
-    const rangeError = await validateRangeAgainstTimeline(date, doctor.specialization, pStart, pEnd);
-    if (rangeError) return res.status(400).json({ msg: rangeError });
+    if (contactHospital) {
+      // Department is full: skip the department check, reception will find a room
+      // in any department. Only hospital hours and "not in the past" apply here.
+      const dateOnlyStr = String(date).split('T')[0];
+      const [y, m, d] = dateOnlyStr.split('-').map(Number);
+      const dayStart = new Date(y, m - 1, d, DAY_START_HOUR, 0, 0, 0);
+      const dayEnd = new Date(y, m - 1, d, DAY_END_HOUR, 0, 0, 0);
+      if (pStart < dayStart || pEnd > dayEnd) {
+        return res.status(400).json({ msg: `Sessions must be between ${formatHour(DAY_START_HOUR)} and ${formatHour(DAY_END_HOUR)}.` });
+      }
+      if (pStart < new Date()) {
+        return res.status(400).json({ msg: 'Start time has already passed.' });
+      }
+    } else {
+      const rangeError = await validateRangeAgainstTimeline(date, doctor.specialization, pStart, pEnd);
+      if (rangeError) return res.status(400).json({ msg: rangeError });
+    }
+
+    // A doctor can't run two sessions at once
+    const ownOverlap = await ScheduleRequest.findOne({
+      doctorId: req.user.id,
+      status: { $in: ['pending', 'approved'] },
+      sessionEnded: { $ne: true },
+      startTime: { $lt: pEnd },
+      endTime: { $gt: pStart }
+    });
+    if (ownOverlap) {
+      return res.status(400).json({ msg: 'You already have a session or request at this time.' });
+    }
 
     const newRequest = new ScheduleRequest({
       doctorId: req.user.id,
@@ -143,10 +227,14 @@ router.post('/request', auth, authorize(["doctor"]), async (req, res) => {
       startTime: pStart,
       endTime: pEnd,
       isUnlimited,
-      queueLimit: isUnlimited ? null : queueLimit
+      queueLimit: isUnlimited ? null : queueLimit,
+      requestType: contactHospital ? 'hospital_contact' : 'normal',
+      note: typeof note === 'string' ? note.trim().slice(0, 500) : ''
     });
 
     const savedRequest = await newRequest.save();
+    // Reception screens refresh on this event
+    if (req.io) req.io.emit("scheduleUpdated", savedRequest);
     res.status(201).json({ msg: 'Schedule request sent successfully', request: savedRequest });
   } catch (err) {
     console.error('Doctor Schedule Request Error:', err);
@@ -411,6 +499,67 @@ router.get('/approved/today', auth, authorize(ROLES.STAFF), async (req, res) => 
   }
 });
 
+// Rooms (every department) and nurses, each marked free/busy for [start, end).
+const computeFreeResources = async (start, end, specialization, excludeId) => {
+  const overlapping = await ScheduleRequest.find({
+    ...(excludeId ? { _id: { $ne: excludeId } } : {}),
+    status: 'approved',
+    sessionEnded: { $ne: true },
+    startTime: { $lt: end },
+    endTime: { $gt: start }
+  }).select('allocatedRoom allocatedNurse');
+  const busyRooms = new Set(overlapping.map(s => s.allocatedRoom).filter(Boolean));
+  const busyNurses = new Set(overlapping.map(s => s.allocatedNurse).filter(Boolean));
+
+  const doctorDept = getDoctorDept(specialization);
+  const rooms = Object.entries(ROOM_DEPARTMENTS).map(([room, department]) => ({
+    room,
+    department,
+    isDoctorDept: department === doctorDept,
+    free: !busyRooms.has(room)
+  }));
+  const nurseDocs = await Admin.find({ role: 'nurse' }).select('name');
+  const nurses = nurseDocs
+    .map(n => n.name)
+    .filter(Boolean)
+    .map(name => ({ name, free: !busyNurses.has(name) }));
+
+  return { doctorDept, rooms, nurses };
+};
+
+// Free rooms/nurses for a time the receptionist is about to schedule.
+// ?doctorId=&startTime=ISO&endTime=ISO
+router.get('/free-resources', auth, authorize(ROLES.SCHEDULING), async (req, res) => {
+  try {
+    const start = new Date(req.query.startTime);
+    const end = new Date(req.query.endTime);
+    if (isNaN(start) || isNaN(end) || end <= start) {
+      return res.status(400).json({ msg: 'Valid startTime and endTime are required.' });
+    }
+    const doctor = req.query.doctorId
+      ? await Doctor.findById(req.query.doctorId).select('specialization').catch(() => null)
+      : null;
+    res.json(await computeFreeResources(start, end, doctor?.specialization));
+  } catch (err) {
+    console.error('Free Resources Error:', err.message);
+    res.status(500).json({ msg: 'Server error' });
+  }
+});
+
+// Free rooms (every department) and nurses for an existing request's time slot.
+// Used by reception to place a "contact hospital" request outside the doctor's department.
+router.get('/:id/free-resources', auth, authorize(ROLES.SCHEDULING), async (req, res) => {
+  try {
+    const request = await ScheduleRequest.findById(req.params.id);
+    if (!request) return res.status(404).json({ msg: 'Request not found' });
+    const doctor = await Doctor.findById(request.doctorId).select('specialization');
+    res.json(await computeFreeResources(request.startTime, request.endTime, doctor?.specialization, request._id));
+  } catch (err) {
+    console.error('Free Resources Error:', err.message);
+    res.status(500).json({ msg: 'Server error' });
+  }
+});
+
 // 7.0 RECEPTIONIST: Suggest an available room and nurse for a request
 router.get('/:id/auto-allocation', auth, authorize(ROLES.SCHEDULING), async (req, res) => {
   try {
@@ -482,7 +631,7 @@ router.put('/:id/allocate', auth, authorize(ROLES.SCHEDULING), async (req, res) 
 // 8. RECEPTIONIST/ADMIN: Create a schedule on behalf of a doctor
 router.post('/admin/create', auth, async (req, res) => {
   try {
-    const { doctorId, date, startTime, endTime, isUnlimited, queueLimit } = req.body;
+    const { doctorId, date, startTime, endTime, isUnlimited, queueLimit, anyDepartment, allocatedRoom, allocatedNurse } = req.body;
 
     // Check authorization (Only receptionist or system_admin)
     if (!['receptionist', 'system_admin'].includes(req.user?.role)) {
@@ -504,8 +653,47 @@ router.post('/admin/create', auth, async (req, res) => {
       return res.status(400).json({ msg: 'End time must be after start time.' });
     }
 
-    const rangeError = await validateRangeAgainstTimeline(date, doctor.specialization, parsedStartTime, parsedEndTime);
-    if (rangeError) return res.status(400).json({ msg: rangeError });
+    if (anyDepartment) {
+      // Doctor's department is full: reception places the session in a room of any
+      // department. Only hospital hours, "not in the past" and room/nurse clashes apply.
+      if (!allocatedRoom || !ROOM_DEPARTMENTS[allocatedRoom] || !allocatedNurse) {
+        return res.status(400).json({ msg: 'Choose a room and a nurse for this session.' });
+      }
+      const [y, m, d] = String(date).split('T')[0].split('-').map(Number);
+      const dayStart = new Date(y, m - 1, d, DAY_START_HOUR, 0, 0, 0);
+      const dayEnd = new Date(y, m - 1, d, DAY_END_HOUR, 0, 0, 0);
+      if (parsedStartTime < dayStart || parsedEndTime > dayEnd) {
+        return res.status(400).json({ msg: `Sessions must be between ${formatHour(DAY_START_HOUR)} and ${formatHour(DAY_END_HOUR)}.` });
+      }
+      if (parsedStartTime < new Date()) {
+        return res.status(400).json({ msg: 'Start time has already passed.' });
+      }
+      const clash = await ScheduleRequest.findOne({
+        status: 'approved',
+        sessionEnded: { $ne: true },
+        $or: [{ allocatedRoom }, { allocatedNurse }],
+        startTime: { $lt: parsedEndTime },
+        endTime: { $gt: parsedStartTime }
+      });
+      if (clash) {
+        const type = clash.allocatedRoom === allocatedRoom ? 'Room' : 'Nurse';
+        return res.status(409).json({ msg: `Conflict: ${type} is already booked by ${clash.doctorName} at this time.` });
+      }
+    } else {
+      const rangeError = await validateRangeAgainstTimeline(date, doctor.specialization, parsedStartTime, parsedEndTime);
+      if (rangeError) return res.status(400).json({ msg: rangeError });
+    }
+
+    const doctorOverlap = await ScheduleRequest.findOne({
+      doctorId,
+      status: { $in: ['pending', 'approved'] },
+      sessionEnded: { $ne: true },
+      startTime: { $lt: parsedEndTime },
+      endTime: { $gt: parsedStartTime }
+    });
+    if (doctorOverlap) {
+      return res.status(400).json({ msg: 'This doctor already has a session or request at this time.' });
+    }
 
     const newRequest = new ScheduleRequest({
       doctorId,
@@ -515,12 +703,18 @@ router.post('/admin/create', auth, async (req, res) => {
       endTime: parsedEndTime,
       isUnlimited,
       queueLimit: isUnlimited ? null : queueLimit,
-      status: 'approved' // Automatically approved
+      status: 'approved', // Automatically approved
+      requestType: anyDepartment ? 'hospital_contact' : 'normal'
     });
 
-    const auto = await findAutoAllocation(newRequest, doctor.specialization);
-    newRequest.allocatedRoom = auto.room;
-    newRequest.allocatedNurse = auto.nurse;
+    if (anyDepartment) {
+      newRequest.allocatedRoom = allocatedRoom;
+      newRequest.allocatedNurse = allocatedNurse;
+    } else {
+      const auto = await findAutoAllocation(newRequest, doctor.specialization);
+      newRequest.allocatedRoom = auto.room;
+      newRequest.allocatedNurse = auto.nurse;
+    }
 
     const savedRequest = await newRequest.save();
 

@@ -16,6 +16,10 @@ const ScheduleRequestSchema = new mongoose.Schema({
     enum: ['pending', 'approved', 'rejected', 'cancelled'],
     default: 'pending'
   },
+  // 'hospital_contact' = sent while the doctor's department was fully booked;
+  // reception assigns any free room (any department) and nurse by hand
+  requestType: { type: String, enum: ['normal', 'hospital_contact'], default: 'normal' },
+  note: { type: String, default: "", maxlength: 500 },
   allocatedRoom: { type: String, default: "" },
   allocatedNurse: { type: String, default: "" },
   sessionEnded: { type: Boolean, default: false },

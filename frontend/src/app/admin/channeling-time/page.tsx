@@ -13,7 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { 
-    Loader2, Clock, CalendarDays, Check, User, ChevronDown, Search, X, AlertTriangle, Trash2 
+    Loader2, Clock, CalendarDays, Check, User, ChevronDown, Search, X, AlertTriangle, Trash2, Building2 
 } from "lucide-react";
 import { getAdminToken } from "@/lib/adminSession";
 import HourTimeline, { TimelineSlot, HourRange } from "@/components/admin/HourTimeline";
@@ -28,6 +28,9 @@ import {
 import { DatePicker } from "@/components/ui/date-picker";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL;
+
+const toDateKey = (d: Date) =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
 export default function ChannelingRequestPage() {
     const [requests, setRequests] = useState<any[]>([]);
@@ -50,6 +53,19 @@ const [doctorSearchQuery, setDoctorSearchQuery] = useState("");
     const [queueLimit, setQueueLimit] = useState("20");
     const [formSubmitting, setFormSubmitting] = useState(false);
     const [isDialogOpen, setIsDialogOpen] = useState(false);
+
+    // Free hours per day for the chosen doctor's department (shown on the date chips)
+    const [daySummary, setDaySummary] = useState<Record<string, { freeHours: number; totalHours: number }>>({});
+    const [summaryDept, setSummaryDept] = useState("");
+    const [loadingSummary, setLoadingSummary] = useState(false);
+    const [summaryVersion, setSummaryVersion] = useState(0);
+
+    // Department full → schedule in a room of any department, picked by hand
+    const [outsideMode, setOutsideMode] = useState(false);
+    const [outRoom, setOutRoom] = useState("");
+    const [outNurse, setOutNurse] = useState("");
+    const [freeRes, setFreeRes] = useState<{ rooms: FreeRoom[]; nurses: FreeNurse[] }>({ rooms: [], nurses: [] });
+    const [loadingRes, setLoadingRes] = useState(false);
 
     // Searchable dropdown states and refs
     const [searchQuery, setSearchQuery] = useState("");
@@ -87,6 +103,7 @@ const [doctorSearchQuery, setDoctorSearchQuery] = useState("");
     useEffect(() => {
         setSessionRange(null);
         setTimelineSlots([]);
+        setOutsideMode(false);
         if (!selectedDoctorId || !scheduleDate) return;
 
         let cancelled = false;
@@ -118,6 +135,53 @@ const [doctorSearchQuery, setDoctorSearchQuery] = useState("");
         return () => { cancelled = true; };
     }, [selectedDoctorId, scheduleDate]);
 
+    // Free-hour count per day for the next 30 days, once a doctor is chosen
+    useEffect(() => {
+        setDaySummary({});
+        setSummaryDept("");
+        if (!selectedDoctorId) return;
+        let cancelled = false;
+        setLoadingSummary(true);
+        const token = getAdminToken() || "";
+        fetch(`${API_URL}/schedule-requests/availability/summary?from=${toDateKey(new Date())}&days=30&doctorId=${selectedDoctorId}`, {
+            headers: { "Authorization": `Bearer ${token}`, "x-auth-token": token, "ngrok-skip-browser-warning": "true" },
+        })
+            .then(r => (r.ok ? r.json() : null))
+            .then(data => {
+                if (cancelled || !data) return;
+                const map: Record<string, { freeHours: number; totalHours: number }> = {};
+                (data.days || []).forEach((d: any) => { map[d.date] = d; });
+                setDaySummary(map);
+                setSummaryDept(data.department || "");
+            })
+            .catch(err => console.error("Fetch Summary Error:", err))
+            .finally(() => { if (!cancelled) setLoadingSummary(false); });
+        return () => { cancelled = true; };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [selectedDoctorId, summaryVersion]);
+
+    // Outside-department mode: load rooms (all departments) and nurses free for the chosen hours
+    useEffect(() => {
+        setOutRoom("");
+        setOutNurse("");
+        setFreeRes({ rooms: [], nurses: [] });
+        if (!outsideMode || !sessionRange || !scheduleDate) return;
+        let cancelled = false;
+        const base = new Date(`${scheduleDate}T00:00:00`);
+        const start = new Date(base); start.setHours(sessionRange.start, 0, 0, 0);
+        const end = new Date(base); end.setHours(sessionRange.end + 1, 0, 0, 0);
+        setLoadingRes(true);
+        const token = getAdminToken() || "";
+        fetch(`${API_URL}/schedule-requests/free-resources?doctorId=${selectedDoctorId}&startTime=${encodeURIComponent(start.toISOString())}&endTime=${encodeURIComponent(end.toISOString())}`, {
+            headers: { "Authorization": `Bearer ${token}`, "x-auth-token": token, "ngrok-skip-browser-warning": "true" },
+        })
+            .then(r => (r.ok ? r.json() : Promise.reject(r)))
+            .then(data => { if (!cancelled) setFreeRes({ rooms: data.rooms || [], nurses: data.nurses || [] }); })
+            .catch(() => { if (!cancelled) notify("Could not load free rooms and nurses."); })
+            .finally(() => { if (!cancelled) setLoadingRes(false); });
+        return () => { cancelled = true; };
+    }, [outsideMode, sessionRange, scheduleDate, selectedDoctorId]);
+
     const scheduleDates = useMemo(() => {
         const today = new Date();
         today.setHours(0, 0, 0, 0);
@@ -128,8 +192,6 @@ const [doctorSearchQuery, setDoctorSearchQuery] = useState("");
         });
     }, []);
 
-    const toDateKey = (d: Date) =>
-        `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
     const hourLabel = (h: number) => {
         const period = h >= 12 && h < 24 ? "PM" : "AM";
@@ -139,10 +201,14 @@ const [doctorSearchQuery, setDoctorSearchQuery] = useState("");
 
     const queueNumber = parseInt(queueLimit, 10);
     const queueValid = isUnlimited || (Number.isFinite(queueNumber) && queueNumber >= 1);
-    const rangeValid = !!sessionRange && timelineSlots
+    const dayIsFull = timelineSlots.length > 0 && timelineSlots.every(s => !s.isAvailable);
+    // Outside-department mode: any hour that hasn't passed can be scheduled
+    const activeSlots = outsideMode ? timelineSlots.map(s => ({ ...s, isAvailable: !s.isPast })) : timelineSlots;
+    const rangeValid = !!sessionRange && activeSlots
         .filter(s => s.hour >= sessionRange.start && s.hour <= sessionRange.end)
         .every(s => s.isAvailable);
-    const canCreate = !!selectedDoctorId && !!scheduleDate && rangeValid && queueValid && !formSubmitting;
+    const resourcesValid = !outsideMode || (!!outRoom && !!outNurse);
+    const canCreate = !!selectedDoctorId && !!scheduleDate && rangeValid && queueValid && resourcesValid && !formSubmitting;
     const createLabel = !selectedDoctorId
         ? "Choose a doctor"
         : !scheduleDate
@@ -151,7 +217,9 @@ const [doctorSearchQuery, setDoctorSearchQuery] = useState("");
                 ? "Choose the hours"
                 : !queueValid
                     ? "Set patient limit"
-                    : "Create & approve session";
+                    : !resourcesValid
+                        ? "Choose a room and nurse"
+                        : "Create & approve session";
 
     const fetchDoctors = async () => {
         try {
@@ -200,12 +268,15 @@ const [doctorSearchQuery, setDoctorSearchQuery] = useState("");
                     startTime: startDateTime.toISOString(),
                     endTime: endDateTime.toISOString(),
                     isUnlimited,
-                    queueLimit: isUnlimited ? null : queueNumber
+                    queueLimit: isUnlimited ? null : queueNumber,
+                    ...(outsideMode ? { anyDepartment: true, allocatedRoom: outRoom, allocatedNurse: outNurse } : {})
                 })
             });
 
             if (response.ok) {
                 const data = await response.json();
+                setOutsideMode(false);
+                setSummaryVersion(v => v + 1);
                 const room = data.request?.allocatedRoom;
                 const nurse = data.request?.allocatedNurse;
                 notify(
@@ -311,7 +382,11 @@ const [doctorSearchQuery, setDoctorSearchQuery] = useState("");
         setRequests([...pendingList, ...historyList]);
     }, [pendingList, historyList]);
 
-    const handleAction = async (id: string, newStatus: "approved" | "rejected" | "cancelled") => {
+    const handleAction = async (
+        id: string,
+        newStatus: "approved" | "rejected" | "cancelled",
+        allocation?: { allocatedRoom: string; allocatedNurse: string }
+    ) => {
         if (newStatus === "cancelled") {
             const confirmed = await confirmDialog(
                 "Are you sure you want to cancel this schedule? Any booked appointments will be cancelled and allocated room/nurse resources will be released."
@@ -329,7 +404,7 @@ const [doctorSearchQuery, setDoctorSearchQuery] = useState("");
                     "Authorization": `Bearer ${token}`,
                     "x-auth-token": token
                 },
-                body: JSON.stringify({ status: newStatus }) 
+                body: JSON.stringify({ status: newStatus, ...(allocation || {}) }) 
             });
             
             if (response.ok) {
@@ -346,6 +421,7 @@ const [doctorSearchQuery, setDoctorSearchQuery] = useState("");
                         allocatedNurse: data.request?.allocatedNurse ?? ""
                     } : req)
                 );
+                return true;
             } else {
                 const errData = await response.json();
                 notify(errData.msg || "Failed to update status");
@@ -356,6 +432,7 @@ const [doctorSearchQuery, setDoctorSearchQuery] = useState("");
         } finally {
             setLoadingAction(null);
         }
+        return false;
     };
 
     const handleDelete = async (id: string) => {
@@ -562,6 +639,20 @@ const filteredHistoryRequests = historyRequests.filter((req: any) => {
                                                 {scheduleDates.map((d) => {
                                                     const key = toDateKey(d);
                                                     const selected = key === scheduleDate;
+                                                    const info = daySummary[key];
+                                                    const level = !info ? "unknown" : info.freeHours === 0 ? "full" : info.freeHours <= 4 ? "limited" : "free";
+                                                    const levelClass = {
+                                                        free: "bg-emerald-50 border-emerald-200",
+                                                        limited: "bg-amber-50 border-amber-200",
+                                                        full: "bg-rose-50 border-rose-200",
+                                                        unknown: "bg-white border-slate-200",
+                                                    }[level];
+                                                    const subClass = {
+                                                        free: "text-emerald-600",
+                                                        limited: "text-amber-600",
+                                                        full: "text-rose-600",
+                                                        unknown: "text-slate-400",
+                                                    }[level];
                                                     return (
                                                         <button
                                                             type="button"
@@ -569,10 +660,11 @@ const filteredHistoryRequests = historyRequests.filter((req: any) => {
                                                             ref={selected ? (el) => el?.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "smooth" }) : undefined}
                                                             onClick={() => setScheduleDate(key)}
                                                             aria-pressed={selected}
+                                                            title={info ? (info.freeHours === 0 ? "Fully booked" : `${info.freeHours} free hours`) : undefined}
                                                             className={`shrink-0 w-14 py-2 rounded-xl border text-center transition-colors ${
                                                                 selected
                                                                     ? "bg-cyan-600 border-cyan-600 text-white"
-                                                                    : "bg-white border-slate-200 text-slate-800 hover:border-cyan-400"
+                                                                    : `${levelClass} text-slate-800 hover:border-cyan-400`
                                                             }`}
                                                         >
                                                             <span className={`block text-[10px] font-semibold ${selected ? "text-white" : "text-slate-500"}`}>
@@ -582,10 +674,23 @@ const filteredHistoryRequests = historyRequests.filter((req: any) => {
                                                             <span className={`block text-[9px] font-semibold ${selected ? "text-white" : "text-slate-400"}`}>
                                                                 {d.toLocaleDateString("en-US", { month: "short" })}
                                                             </span>
+                                                            {selectedDoctorId && (
+                                                                <span className={`block text-[10px] font-bold mt-0.5 ${selected ? "text-white" : subClass}`}>
+                                                                    {info ? (info.freeHours === 0 ? "Full" : `${info.freeHours}h`) : loadingSummary ? "·" : ""}
+                                                                </span>
+                                                            )}
                                                         </button>
                                                     );
                                                 })}
                                             </div>
+                                            {selectedDoctorId && (
+                                                <div className="flex flex-wrap items-center gap-3 mt-1 text-[11px] text-slate-500">
+                                                    {summaryDept && <span className="font-semibold text-slate-600">{summaryDept}:</span>}
+                                                    <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-emerald-500" />Free</span>
+                                                    <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-amber-500" />Few hours</span>
+                                                    <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-rose-500" />Full</span>
+                                                </div>
+                                            )}
                                         </div>
 
                                         {/* From / To — filled from the timeline */}
@@ -667,8 +772,20 @@ const filteredHistoryRequests = historyRequests.filter((req: any) => {
                                             )}
                                         </div>
                                         <p className="text-[11px] text-slate-500 mb-3">
-                                            {sessionRange ? "Click another free hour to change the end." : "Click a start hour, then an end hour."}
+                                            {sessionRange ? "Click another hour to change the end." : "Click a start hour, then an end hour."}
                                         </p>
+                                        {outsideMode && (
+                                            <div className="mb-3 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+                                                <Building2 size={16} className="shrink-0 mt-0.5" />
+                                                <p className="flex-1">
+                                                    <span className="font-bold">Another department.</span>{" "}
+                                                    {summaryDept ? `${summaryDept} rooms are full. ` : ""}Pick the hours, then a free room from any department and a nurse.
+                                                </p>
+                                                <button type="button" onClick={() => { setOutsideMode(false); setSessionRange(null); }} className="font-semibold text-cyan-700 hover:underline">
+                                                    Back
+                                                </button>
+                                            </div>
+                                        )}
                                         <div className="rounded-2xl border border-slate-200 p-4 pt-5 min-h-[200px]">
                                             {!selectedDoctorId || !scheduleDate ? (
                                                 <p className="text-xs text-slate-400 text-center py-16">
@@ -680,15 +797,40 @@ const filteredHistoryRequests = historyRequests.filter((req: any) => {
                                                         <Skeleton key={i} className="h-10 rounded-lg" />
                                                     ))}
                                                 </div>
-                                            ) : timelineSlots.length > 0 && timelineSlots.every(s => !s.isAvailable) ? (
-                                                <div className="text-center py-14">
-                                                    <p className="text-sm font-bold text-red-600">No free hours</p>
-                                                    <p className="text-xs text-slate-500 mt-1">Please choose another date.</p>
+                                            ) : dayIsFull && !outsideMode ? (
+                                                <div className="text-center py-10">
+                                                    <p className="text-sm font-bold text-red-600">Fully booked</p>
+                                                    <p className="text-xs text-slate-500 mt-1">
+                                                        All {summaryDept || "department"} rooms are taken this day.
+                                                    </p>
+                                                    {timelineSlots.some(s => !s.isPast) && (
+                                                        <Button
+                                                            type="button"
+                                                            onClick={() => { setOutsideMode(true); setSessionRange(null); }}
+                                                            className="mt-4 bg-amber-600 hover:bg-amber-700 text-white rounded-xl gap-2"
+                                                        >
+                                                            <Building2 size={16} /> Use a room from another department
+                                                        </Button>
+                                                    )}
+                                                    <p className="text-[11px] text-slate-400 mt-3">or pick another date</p>
                                                 </div>
                                             ) : (
-                                                <HourTimeline slots={timelineSlots} range={sessionRange} onChange={setSessionRange} />
+                                                <HourTimeline slots={activeSlots} range={sessionRange} onChange={setSessionRange} />
                                             )}
                                         </div>
+                                        {outsideMode && sessionRange && (
+                                            <div className="mt-4 rounded-2xl border border-slate-200 p-4">
+                                                <RoomNursePicker
+                                                    loading={loadingRes}
+                                                    rooms={freeRes.rooms}
+                                                    nurses={freeRes.nurses}
+                                                    room={outRoom}
+                                                    nurse={outNurse}
+                                                    onRoom={setOutRoom}
+                                                    onNurse={setOutNurse}
+                                                />
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
 
@@ -813,6 +955,8 @@ const filteredHistoryRequests = historyRequests.filter((req: any) => {
 
 function RequestCard({ req, onAction, onDelete, loadingId, isHistory, formatDate, formatTime }: any) {
     const isLoading = loadingId === req._id;
+    const isHospitalRequest = req.requestType === "hospital_contact";
+    const [assignOpen, setAssignOpen] = useState(false);
 
     const getStatusBadge = (status: string) => {
         if (status === "approved") {
@@ -837,6 +981,14 @@ function RequestCard({ req, onAction, onDelete, loadingId, isHistory, formatDate
                         <div>
                             <h3 className="font-bold text-slate-800 leading-tight">{req.doctorName}</h3>
                             <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">{req.specialization || "Medical Staff"}</p>
+                            {isHospitalRequest && (
+                                <Badge className="mt-1.5 bg-amber-100 text-amber-800 border-none hover:bg-amber-100 text-[10px] font-bold gap-1">
+                                    <Building2 size={12} /> Hospital request · dept. full
+                                </Badge>
+                            )}
+                            {req.note && (
+                                <p className="text-xs text-slate-500 mt-1 italic max-w-xs">&ldquo;{req.note}&rdquo;</p>
+                            )}
                         </div>
                     </div>
 
@@ -848,7 +1000,7 @@ function RequestCard({ req, onAction, onDelete, loadingId, isHistory, formatDate
                         </div>
                         <div className="flex items-center gap-2 text-slate-600">
                             <Clock size={18} className="text-cyan-600" />
-                            <span className="text-sm font-medium">{formatTime(req.startTime)}</span>
+                            <span className="text-sm font-medium">{formatTime(req.startTime)} – {formatTime(req.endTime)}</span>
                         </div>
                         <Badge variant="outline" className="border-slate-200 text-slate-500 font-bold">
                             {req.isUnlimited ? "∞ Unlimited" : `${req.queueLimit || 0} Slots`}
@@ -890,20 +1042,197 @@ function RequestCard({ req, onAction, onDelete, loadingId, isHistory, formatDate
                                 >
                                     Reject
                                 </Button>
-                                <Button 
-                                    size="sm"
-                                    onClick={() => onAction(req._id, "approved")}
-                                    className="bg-cyan-600 hover:bg-cyan-700 text-white min-w-[90px]"
-                                    disabled={isLoading}
-                                >
-                                    {isLoading ? <Loader2 size={16} className="animate-spin" /> : "Approve"}
-                                </Button>
+                                {isHospitalRequest ? (
+                                    <Button
+                                        size="sm"
+                                        onClick={() => setAssignOpen(true)}
+                                        className="bg-amber-600 hover:bg-amber-700 text-white min-w-[90px]"
+                                        disabled={isLoading}
+                                    >
+                                        Assign & Approve
+                                    </Button>
+                                ) : (
+                                    <Button 
+                                        size="sm"
+                                        onClick={() => onAction(req._id, "approved")}
+                                        className="bg-cyan-600 hover:bg-cyan-700 text-white min-w-[90px]"
+                                        disabled={isLoading}
+                                    >
+                                        {isLoading ? <Loader2 size={16} className="animate-spin" /> : "Approve"}
+                                    </Button>
+                                )}
                             </>
                         )}
                     </div>
                 </div>
             </CardContent>
+            {isHospitalRequest && !isHistory && (
+                <AssignResourcesDialog
+                    open={assignOpen}
+                    onOpenChange={setAssignOpen}
+                    req={req}
+                    saving={isLoading}
+                    formatDate={formatDate}
+                    formatTime={formatTime}
+                    onConfirm={async (allocatedRoom: string, allocatedNurse: string) => {
+                        const ok = await onAction(req._id, "approved", { allocatedRoom, allocatedNurse });
+                        if (ok) setAssignOpen(false);
+                    }}
+                />
+            )}
         </Card>
+    );
+}
+
+type FreeRoom = { room: string; department: string; isDoctorDept: boolean; free: boolean };
+type FreeNurse = { name: string; free: boolean };
+
+// Reception picks a free room from ANY department plus a free nurse for a
+// request the doctor sent while their own department was fully booked.
+function AssignResourcesDialog({ open, onOpenChange, req, saving, onConfirm, formatDate, formatTime }: any) {
+    const [rooms, setRooms] = useState<FreeRoom[]>([]);
+    const [nurses, setNurses] = useState<FreeNurse[]>([]);
+    const [loading, setLoading] = useState(false);
+    const [room, setRoom] = useState("");
+    const [nurse, setNurse] = useState("");
+
+    useEffect(() => {
+        if (!open) return;
+        setRoom("");
+        setNurse("");
+        setLoading(true);
+        const token = getAdminToken() || "";
+        fetch(`${API_URL}/schedule-requests/${req._id}/free-resources`, {
+            headers: { "Authorization": `Bearer ${token}`, "x-auth-token": token, "ngrok-skip-browser-warning": "true" },
+        })
+            .then(r => (r.ok ? r.json() : Promise.reject(r)))
+            .then(data => {
+                setRooms(data.rooms || []);
+                setNurses(data.nurses || []);
+            })
+            .catch(() => notify("Could not load free rooms and nurses."))
+            .finally(() => setLoading(false));
+    }, [open, req._id]);
+
+    return (
+        <Dialog open={open} onOpenChange={onOpenChange}>
+            <DialogContent className="max-w-2xl sm:rounded-2xl bg-white p-0 overflow-hidden max-h-[90vh] flex flex-col">
+                <DialogHeader className="border-b border-slate-100 bg-amber-50/60 p-6">
+                    <DialogTitle className="text-base font-bold text-slate-900 flex items-center gap-2">
+                        <Building2 className="h-5 w-5 text-amber-600" />
+                        Assign room & nurse
+                    </DialogTitle>
+                    <DialogDescription className="text-slate-600 text-xs mt-1">
+                        {req.doctorName} · {formatDate(req.date)} · {formatTime(req.startTime)} – {formatTime(req.endTime)} ·{" "}
+                        {req.isUnlimited ? "Unlimited queue" : `${req.queueLimit || 0} patients`}
+                    </DialogDescription>
+                    {req.note && <p className="text-xs text-slate-500 italic mt-2">Doctor&apos;s note: &ldquo;{req.note}&rdquo;</p>}
+                </DialogHeader>
+
+                <div className="flex-1 min-h-0 overflow-y-auto p-6 space-y-6">
+                    <RoomNursePicker
+                        loading={loading}
+                        rooms={rooms}
+                        nurses={nurses}
+                        room={room}
+                        nurse={nurse}
+                        onRoom={setRoom}
+                        onNurse={setNurse}
+                    />
+                </div>
+
+                <div className="border-t border-slate-100 p-4 flex justify-end gap-2">
+                    <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={saving}>Close</Button>
+                    <Button
+                        className="bg-cyan-600 hover:bg-cyan-700 text-white"
+                        disabled={!room || !nurse || saving}
+                        onClick={() => onConfirm(room, nurse)}
+                    >
+                        {saving ? <Loader2 size={16} className="animate-spin" /> : "Approve with this room & nurse"}
+                    </Button>
+                </div>
+            </DialogContent>
+        </Dialog>
+    );
+}
+
+// Free rooms (grouped by department, the doctor's own first) and free nurses to choose from.
+function RoomNursePicker({ loading, rooms, nurses, room, nurse, onRoom, onNurse }: {
+    loading: boolean;
+    rooms: FreeRoom[];
+    nurses: FreeNurse[];
+    room: string;
+    nurse: string;
+    onRoom: (room: string) => void;
+    onNurse: (nurse: string) => void;
+}) {
+    const roomGroups = useMemo(() => {
+        const groups: Record<string, FreeRoom[]> = {};
+        rooms.filter(r => r.free).forEach(r => { (groups[r.department] ||= []).push(r); });
+        return Object.entries(groups).sort(([, a], [, b]) => Number(b[0].isDoctorDept) - Number(a[0].isDoctorDept));
+    }, [rooms]);
+    const freeNurses = nurses.filter(n => n.free);
+
+    return (
+        <div className="space-y-6">
+        {loading ? (
+            <div className="flex items-center justify-center py-10 text-slate-400 gap-2">
+                <Loader2 className="animate-spin" size={18} /> Checking free rooms and nurses…
+            </div>
+        ) : (
+            <>
+                <section>
+                    <h4 className="text-sm font-bold text-slate-800 mb-1">Room (any department)</h4>
+                    <p className="text-xs text-slate-500 mb-3">Only rooms free for the whole session are shown.</p>
+                    {roomGroups.length === 0 ? (
+                        <p className="text-sm text-rose-600">No room in the hospital is free at this time.</p>
+                    ) : (
+                        <div className="space-y-3">
+                            {roomGroups.map(([dept, list]) => (
+                                <div key={dept}>
+                                    <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">
+                                        {dept}{list[0].isDoctorDept ? " · doctor's department" : ""}
+                                    </p>
+                                    <div className="flex flex-wrap gap-2">
+                                        {list.map(r => (
+                                            <button
+                                                key={r.room}
+                                                type="button"
+                                                onClick={() => onRoom(r.room)}
+                                                className={`px-3 py-1.5 rounded-lg text-sm font-semibold border transition ${room === r.room ? "bg-cyan-600 border-cyan-600 text-white" : "bg-white border-slate-200 text-slate-700 hover:border-cyan-400"}`}
+                                            >
+                                                {r.room}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </section>
+
+                <section>
+                    <h4 className="text-sm font-bold text-slate-800 mb-3">Nurse</h4>
+                    {freeNurses.length === 0 ? (
+                        <p className="text-sm text-rose-600">No nurse is free at this time.</p>
+                    ) : (
+                        <div className="flex flex-wrap gap-2">
+                            {freeNurses.map(n => (
+                                <button
+                                    key={n.name}
+                                    type="button"
+                                    onClick={() => onNurse(n.name)}
+                                    className={`px-3 py-1.5 rounded-lg text-sm font-semibold border transition ${nurse === n.name ? "bg-cyan-600 border-cyan-600 text-white" : "bg-white border-slate-200 text-slate-700 hover:border-cyan-400"}`}
+                                >
+                                    {n.name}
+                                </button>
+                            ))}
+                        </div>
+                    )}
+                </section>
+            </>
+        )}
+        </div>
     );
 }
 

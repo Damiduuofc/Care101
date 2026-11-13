@@ -264,6 +264,23 @@ export default function PatientDashboardScreen() {
         };
     }, [token, user]);
 
+    // --- PROFILE PHOTO for the header (refreshed whenever the screen comes back into view,
+    // so a photo uploaded on the profile screen shows here straight away) ---
+    const [profileImage, setProfileImage] = useState<string | null>(null);
+    const fetchProfilePhoto = async () => {
+        try {
+            const res = await fetch(`${API_URL}/auth/me`, {
+                headers: { 'Authorization': `Bearer ${token}`, 'ngrok-skip-browser-warning': 'true' }
+            });
+            if (res.ok) {
+                const data = await res.json();
+                setProfileImage(data?.profileImage || null);
+            }
+        } catch (err) {
+            console.log("Profile photo fetch failed", err);
+        }
+    };
+
     // --- FETCH DASHBOARD DATA ---
     const fetchDashboardData = async () => {
         try {
@@ -597,6 +614,7 @@ export default function PatientDashboardScreen() {
                 WidgetService.syncWithServer(token, user._id || user.id);
             };
             refreshAll();
+            fetchProfilePhoto();
 
             const refreshInterval = setInterval(() => {
                 if (AppState.currentState === 'active') refreshAll();
@@ -719,9 +737,18 @@ export default function PatientDashboardScreen() {
             <SafeAreaView edges={['top']} style={styles.headerSafeArea}>
                 <View style={styles.headerContainer}>
                     <View style={styles.profileSection}>
-                        <View style={styles.avatarContainer}>
-                            <User size={24} color="#06b6d4" />
-                        </View>
+                        <TouchableOpacity
+                            style={styles.avatarContainer}
+                            onPress={() => router.push('/patient-dashboard/profile' as any)}
+                            accessibilityRole="button"
+                            accessibilityLabel="Open my profile"
+                        >
+                            {profileImage ? (
+                                <Image source={{ uri: profileImage }} style={styles.avatarImage} />
+                            ) : (
+                                <User size={24} color="#06b6d4" />
+                            )}
+                        </TouchableOpacity>
                         <View>
                             <Text style={styles.welcomeText}>Welcome Back,</Text>
                             <Text style={styles.userName}>{getFormattedName()}</Text>
@@ -1049,7 +1076,8 @@ const styles = StyleSheet.create({
     notificationButton: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#f1f5f9', alignItems: 'center', justifyContent: 'center' },
     unreadBadge: { position: 'absolute', top: 6, right: 6, minWidth: 18, height: 18, borderRadius: 9, backgroundColor: '#ef4444', alignItems: 'center', justifyContent: 'center' },
     unreadBadgeText: { color: '#fff', fontSize: 10, fontWeight: '700' },
-    avatarContainer: { width: 50, height: 50, borderRadius: 25, backgroundColor: '#ecfeff', alignItems: 'center', justifyContent: 'center', marginRight: 15, borderWidth: 1, borderColor: '#cffafe' },
+    avatarContainer: { width: 50, height: 50, borderRadius: 25, backgroundColor: '#ecfeff', alignItems: 'center', justifyContent: 'center', marginRight: 15, borderWidth: 1, borderColor: '#cffafe', overflow: 'hidden' },
+    avatarImage: { width: '100%', height: '100%', borderRadius: 25 },
     welcomeText: { fontSize: 14, color: '#64748b' },
     userName: { fontSize: 18, fontWeight: '700', color: '#0f172a' },
     

@@ -15,9 +15,10 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Clock, Send, ArrowLeft, Trash2, Minus, Plus } from 'lucide-react-native';
+import { Clock, Send, ArrowLeft, Trash2, Minus, Plus, Building2 } from 'lucide-react-native';
 import * as SecureStore from 'expo-secure-store';
 import HourTimeline, { TimelineSlot, HourRange } from '../../../components/HourTimeline';
+import AvailabilityCalendar, { DayAvailability } from '../../../components/AvailabilityCalendar';
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL;
 const DAYS_AHEAD = 60;
@@ -48,11 +49,20 @@ export default function AppointmentScreen() {
 
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
 
+  // Free-hour count per day, shown on the calendar before a date is picked
+  const [dayAvailability, setDayAvailability] = useState<Record<string, DayAvailability>>({});
+  const [loadingCalendar, setLoadingCalendar] = useState(true);
+
   // Timeline
   const [slots, setSlots] = useState<TimelineSlot[]>([]);
   const [department, setDepartment] = useState('');
   const [loadingSlots, setLoadingSlots] = useState(false);
   const [range, setRange] = useState<HourRange>(null);
+
+  // Department fully booked → doctor sends the request to the hospital, which
+  // assigns a free room from any department and a nurse
+  const [contactMode, setContactMode] = useState(false);
+  const [note, setNote] = useState('');
 
   // Queue
   const [isUnlimited, setIsUnlimited] = useState(false);
@@ -66,6 +76,7 @@ export default function AppointmentScreen() {
 
   useEffect(() => {
     fetchSchedules();
+    fetchCalendar();
   }, []);
 
   useEffect(() => {
@@ -89,10 +100,33 @@ export default function AppointmentScreen() {
     }
   };
 
+  const fetchCalendar = async () => {
+    setLoadingCalendar(true);
+    try {
+      const token = await SecureStore.getItemAsync('token');
+      const response = await fetch(
+        `${API_URL}/schedule-requests/availability/summary?from=${toDateKey(dates[0])}&days=${DAYS_AHEAD}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      if (response.ok) {
+        const data = await response.json();
+        const map: Record<string, DayAvailability> = {};
+        (data.days || []).forEach((d: DayAvailability) => { map[d.date] = d; });
+        setDayAvailability(map);
+        if (data.department) setDepartment(data.department);
+      }
+    } catch (error) {
+      console.error("Fetch Calendar Error:", error);
+    } finally {
+      setLoadingCalendar(false);
+    }
+  };
+
   const fetchAvailability = async (date: Date) => {
     setLoadingSlots(true);
     setRange(null);
     setSlots([]);
+    setContactMode(false);
     try {
       const token = await SecureStore.getItemAsync('token');
       const response = await fetch(`${API_URL}/schedule-requests/availability?date=${toDateKey(date)}`, {
@@ -138,6 +172,8 @@ export default function AppointmentScreen() {
               if (response.ok) {
                 Alert.alert("Success", "Schedule has been cancelled.");
                 fetchSchedules();
+                fetchCalendar();
+                if (selectedDate) fetchAvailability(selectedDate);
               } else {
                 const errData = await response.json();
                 Alert.alert("Error", errData.msg || "Failed to cancel schedule.");
@@ -189,10 +225,16 @@ export default function AppointmentScreen() {
 
   const queueNumber = parseInt(queueLimit, 10);
   const queueValid = isUnlimited || (Number.isFinite(queueNumber) && queueNumber >= 1);
-  const rangeValid =
-    !!range && slots.filter(s => s.hour >= range.start && s.hour <= range.end).every(s => s.isAvailable);
-  const canSend = !!selectedDate && rangeValid && queueValid && !isSubmitting;
   const freeCount = slots.filter(s => s.isAvailable).length;
+  const dayIsFull = slots.length > 0 && freeCount === 0;
+  // In hospital-contact mode every hour that hasn't passed can be requested
+  const activeSlots = useMemo(
+    () => (contactMode ? slots.map(s => ({ ...s, isAvailable: !s.isPast })) : slots),
+    [contactMode, slots]
+  );
+  const rangeValid =
+    !!range && activeSlots.filter(s => s.hour >= range.start && s.hour <= range.end).every(s => s.isAvailable);
+  const canSend = !!selectedDate && rangeValid && queueValid && !isSubmitting;
 
   const sendLabel = !selectedDate
     ? 'Choose a date'
@@ -200,7 +242,7 @@ export default function AppointmentScreen() {
       ? 'Choose your hours'
       : !queueValid
         ? 'Set patient limit'
-        : 'Send request';
+        : contactMode ? 'Send to hospital' : 'Send request';
 
   const changeQueue = (delta: number) => {
     const next = Math.max(1, (Number.isFinite(queueNumber) ? queueNumber : 0) + delta);
@@ -232,18 +274,28 @@ export default function AppointmentScreen() {
           endTime: endTime.toISOString(),
           isUnlimited,
           queueLimit: isUnlimited ? null : queueNumber,
+          contactHospital: contactMode,
+          note: contactMode ? note.trim() : '',
         })
       });
 
       if (response.ok) {
-        Alert.alert("Request sent", "The hospital will confirm your session soon.");
+        Alert.alert(
+          "Request sent",
+          contactMode
+            ? "Reception will find a free room and nurse for you and confirm your session."
+            : "The hospital will confirm your session soon."
+        );
         setRange(null);
+        setNote('');
         fetchSchedules();
         fetchAvailability(selectedDate);
+        fetchCalendar();
       } else {
         const errData = await response.json().catch(() => ({}));
         Alert.alert("Not sent", errData.msg || "Please try again.");
         fetchAvailability(selectedDate);
+        fetchCalendar();
       }
     } catch (error) {
       console.error(error);
@@ -272,41 +324,25 @@ export default function AppointmentScreen() {
       >
         <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
 
-          {/* 1. DATE */}
+          {/* 1. DATE — calendar shows free hours per day before picking */}
           <View style={styles.stepHeader}>
             <Text style={styles.stepNumber}>1</Text>
             <Text style={styles.stepTitle}>Date</Text>
-            <Text style={styles.stepMeta}>
-              {(selectedDate || dates[0]).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
-            </Text>
+            {!!department && (
+              <View style={styles.deptBadge}>
+                <Text style={styles.deptBadgeText}>{department}</Text>
+              </View>
+            )}
           </View>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.dateStrip}>
-            {dates.map((day) => {
-              const isSelected = !!selectedDate && toDateKey(day) === toDateKey(selectedDate);
-              return (
-                <TouchableOpacity
-                  key={toDateKey(day)}
-                  style={[styles.dateChip, isSelected && styles.dateChipSelected]}
-                  onPress={() => setSelectedDate(day)}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected: isSelected }}
-                  accessibilityLabel={day.toDateString()}
-                >
-                  <Text style={[styles.dateChipDay, isSelected && styles.dateChipTextSelected]}>
-                    {day.toLocaleDateString('en-US', { weekday: 'short' })}
-                  </Text>
-                  <Text style={[styles.dateChipNum, isSelected && styles.dateChipTextSelected]}>
-                    {day.getDate()}
-                  </Text>
-                  {day.getDate() === 1 && (
-                    <Text style={[styles.dateChipMonth, isSelected && styles.dateChipTextSelected]}>
-                      {day.toLocaleDateString('en-US', { month: 'short' })}
-                    </Text>
-                  )}
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
+          <Text style={styles.hint}>Each day shows how many hours are still free. On a fully booked day you can contact the hospital.</Text>
+          <AvailabilityCalendar
+            minDate={dates[0]}
+            maxDate={dates[dates.length - 1]}
+            availability={dayAvailability}
+            loading={loadingCalendar}
+            selectedDate={selectedDate}
+            onSelect={setSelectedDate}
+          />
 
           {/* 2. HOURS */}
           {selectedDate && (
@@ -314,34 +350,64 @@ export default function AppointmentScreen() {
               <View style={styles.stepHeader}>
                 <Text style={styles.stepNumber}>2</Text>
                 <Text style={styles.stepTitle}>Hours</Text>
-                {!!department && !range && (
-                  <View style={styles.deptBadge}>
-                    <Text style={styles.deptBadgeText}>{department}</Text>
-                  </View>
-                )}
                 {range && (
                   <TouchableOpacity onPress={() => setRange(null)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
                     <Text style={styles.clearText}>Clear</Text>
                   </TouchableOpacity>
                 )}
               </View>
-              <Text style={styles.hint}>
-                {range ? 'Tap another free hour to change the end.' : 'Tap a start hour, then an end hour.'}
-              </Text>
+              {(!dayIsFull || contactMode) && (
+                <Text style={styles.hint}>
+                  {range ? 'Tap another hour to change the end.' : 'Tap a start hour, then an end hour.'}
+                </Text>
+              )}
+
+              {contactMode && (
+                <View style={styles.contactBanner}>
+                  <Building2 size={18} color="#b45309" />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.contactBannerTitle}>Hospital request</Text>
+                    <Text style={styles.contactBannerText}>
+                      {department ? `${department} rooms are full. ` : ''}Pick the hours you want; reception will assign a free room from any department and a nurse.
+                    </Text>
+                  </View>
+                  <TouchableOpacity
+                    onPress={() => { setContactMode(false); setRange(null); }}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    accessibilityRole="button"
+                  >
+                    <Text style={styles.clearText}>Back</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
 
               <View style={styles.card}>
                 {loadingSlots ? (
                   <SkeletonGrid items={12} columns={4} style={{ marginVertical: 8 }} />
-                ) : slots.length > 0 && freeCount === 0 ? (
+                ) : dayIsFull && !contactMode ? (
                   <View style={styles.emptyDay}>
-                    <Text style={styles.emptyDayTitle}>No free hours</Text>
-                    <Text style={styles.emptyDayText}>Please choose another date.</Text>
+                    <Text style={styles.emptyDayTitle}>Fully booked</Text>
+                    <Text style={styles.emptyDayText}>
+                      All {department || 'department'} rooms are taken this day.
+                    </Text>
+                    {slots.some(s => !s.isPast) && (
+                      <TouchableOpacity
+                        style={styles.contactBtn}
+                        onPress={() => { setContactMode(true); setRange(null); }}
+                        accessibilityRole="button"
+                      >
+                        <Building2 size={18} color="#fff" style={{ marginRight: 8 }} />
+                        <Text style={styles.contactBtnText}>Contact hospital</Text>
+                      </TouchableOpacity>
+                    )}
+                    <Text style={styles.emptyDayHint}>or pick another date</Text>
                   </View>
                 ) : (
-                  <HourTimeline slots={slots} range={range} onChange={setRange} />
+                  <HourTimeline slots={activeSlots} range={range} onChange={setRange} />
                 )}
               </View>
 
+              {(!dayIsFull || contactMode) && (<>
               {/* From / To — filled from the timeline */}
               <View style={styles.timeRow}>
                 <View style={[styles.timeField, range && styles.timeFieldFilled]}>
@@ -412,6 +478,26 @@ export default function AppointmentScreen() {
                   </TouchableOpacity>
                 </View>
               )}
+
+              {contactMode && (
+                <>
+                  <View style={styles.stepHeader}>
+                    <Text style={styles.stepNumber}>4</Text>
+                    <Text style={styles.stepTitle}>Note to reception</Text>
+                  </View>
+                  <TextInput
+                    style={styles.noteInput}
+                    placeholder="Optional, e.g. any room on the ground floor"
+                    placeholderTextColor="#94a3b8"
+                    value={note}
+                    onChangeText={setNote}
+                    multiline
+                    maxLength={500}
+                    accessibilityLabel="Note to reception"
+                  />
+                </>
+              )}
+              </>)}
             </>
           )}
 
@@ -428,7 +514,12 @@ export default function AppointmentScreen() {
               schedules.map((sched) => (
                 <View key={sched._id} style={styles.historyCard}>
                   <View style={styles.historyCardHeader}>
-                    <Text style={styles.historyDate}>{new Date(sched.date).toDateString()}</Text>
+                    <View style={{ flexShrink: 1 }}>
+                      <Text style={styles.historyDate}>{new Date(sched.date).toDateString()}</Text>
+                      {sched.requestType === 'hospital_contact' && (
+                        <Text style={styles.hospitalTag}>Hospital request</Text>
+                      )}
+                    </View>
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                       <View style={[
                         styles.statusBadge,
@@ -575,23 +666,6 @@ const styles = StyleSheet.create({
     marginBottom: 12
   },
 
-  // Date strip
-  dateStrip: { paddingHorizontal: 20, gap: 8 },
-  dateChip: {
-    width: 56,
-    paddingVertical: 12,
-    borderRadius: 14,
-    backgroundColor: '#fff',
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-    alignItems: 'center',
-  },
-  dateChipSelected: { backgroundColor: CYAN, borderColor: CYAN },
-  dateChipDay: { fontSize: 12, fontWeight: '600', color: '#64748b' },
-  dateChipNum: { fontSize: 20, fontWeight: '700', color: '#0f172a', marginTop: 2 },
-  dateChipMonth: { fontSize: 10, fontWeight: '700', color: '#64748b', marginTop: 2 },
-  dateChipTextSelected: { color: '#fff' },
-
   // Timeline card
   card: {
     backgroundColor: '#fff',
@@ -604,7 +678,45 @@ const styles = StyleSheet.create({
   },
   emptyDay: { alignItems: 'center', paddingVertical: 28 },
   emptyDayTitle: { fontSize: 16, fontWeight: '700', color: '#dc2626' },
-  emptyDayText: { fontSize: 13, color: '#64748b', marginTop: 4 },
+  emptyDayText: { fontSize: 13, color: '#64748b', marginTop: 4, textAlign: 'center' },
+  emptyDayHint: { fontSize: 12, color: '#94a3b8', marginTop: 10 },
+  contactBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#d97706',
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+    borderRadius: 12,
+    marginTop: 16,
+  },
+  contactBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
+  contactBanner: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    marginHorizontal: 20,
+    marginBottom: 12,
+    padding: 12,
+    borderRadius: 12,
+    backgroundColor: '#fffbeb',
+    borderWidth: 1,
+    borderColor: '#fde68a',
+  },
+  contactBannerTitle: { fontSize: 14, fontWeight: '700', color: '#92400e' },
+  contactBannerText: { fontSize: 12, color: '#92400e', marginTop: 2 },
+  noteInput: {
+    marginHorizontal: 20,
+    minHeight: 72,
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    borderRadius: 12,
+    padding: 12,
+    fontSize: 14,
+    color: '#0f172a',
+    textAlignVertical: 'top',
+  },
+  hospitalTag: { fontSize: 11, fontWeight: '700', color: '#d97706', marginTop: 2 },
 
   // From / To
   timeRow: { flexDirection: 'row', gap: 12, marginHorizontal: 20, marginTop: 12 },

@@ -37,6 +37,7 @@ import BottomNavBar from '../../components/BottomNavBar';
 import Skeleton from '../../components/Skeleton';
 import { io } from 'socket.io-client';
 
+
 const API_URL = `${process.env.EXPO_PUBLIC_API_URL}/doctor`;
 const API_BASE = process.env.EXPO_PUBLIC_API_URL;
 
@@ -368,7 +369,8 @@ export default function DashboardScreen() {
       <SafeAreaView edges={['top']} style={styles.headerSafeArea}>
         <View style={styles.headerContainer}>
           <View style={styles.profileSection}>
-            {/* AVATAR WITH PHOTO LOGIC */}
+            {/* AVATAR WITH PHOTO LOGIC + red cross doctor badge */}
+            <View style={styles.avatarWrap}>
             <TouchableOpacity 
                 style={styles.avatarContainer}
                 onPress={() => router.push('/dashboard/profile' as any)}
@@ -381,6 +383,11 @@ export default function DashboardScreen() {
                 <User size={24} color="#06b6d4" />
               )}
             </TouchableOpacity>
+              <View style={styles.crossBadge} accessibilityLabel="Doctor">
+                <View style={styles.crossV} />
+                <View style={styles.crossH} />
+              </View>
+            </View>
             
             <View style={{ flex: 1 }}>
               <Text style={styles.welcomeText}>Welcome Doctor</Text>
@@ -388,19 +395,20 @@ export default function DashboardScreen() {
               <Text style={styles.specialization}>{stats.specialization}</Text>
             </View>
 
-            <TouchableOpacity
-              style={styles.notifBtn}
-              onPress={() => setShowNotifModal(true)}
-              accessibilityRole="button"
-              accessibilityLabel={unreadCount > 0 ? `Notifications, ${unreadCount} unread` : 'Notifications'}
-            >
-              <Bell size={24} color="#64748b" />
-              {unreadCount > 0 && (
-                <View style={styles.unreadBadge}>
-                  <Text style={styles.unreadText}>{unreadCount}</Text>
-                </View>
-              )}
-            </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.notifBtn}
+            onPress={() => setShowNotifModal(true)}
+            accessibilityRole="button"
+            accessibilityLabel={unreadCount > 0 ? `Notifications, ${unreadCount} unread` : 'Notifications'}
+          >
+            <Bell size={24} color="#64748b" />
+            {unreadCount > 0 && (
+              <View style={styles.unreadBadge}>
+                <Text style={styles.unreadText}>{unreadCount}</Text>
+              </View>
+            )}
+          </TouchableOpacity>
+
           </View>
         </View>
       </SafeAreaView>
@@ -550,6 +558,28 @@ const styles = StyleSheet.create({
     borderBottomColor: '#f1f5f9',
     backgroundColor: '#fff',
   },
+  avatarWrap: { marginRight: 18 },
+  // Plain red cross (Care101 red) in a small white disc on the avatar's corner
+  crossBadge: {
+    position: 'absolute',
+    right: -6,
+    bottom: -6,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#fff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: '#D41A24',
+    shadowColor: '#D41A24',
+    shadowOpacity: 0.35,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 4,
+  },
+  crossV: { position: 'absolute', width: 6, height: 16, borderRadius: 1.5, backgroundColor: '#D41A24' },
+  crossH: { position: 'absolute', width: 16, height: 6, borderRadius: 1.5, backgroundColor: '#D41A24' },
   profileSection: { flexDirection: 'row', alignItems: 'center' },
   avatarContainer: {
     width: 50,
@@ -558,7 +588,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#ecfeff',
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 15,
     borderWidth: 1,
     borderColor: '#cffafe',
     overflow: 'hidden',

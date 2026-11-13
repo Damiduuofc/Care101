@@ -47,7 +47,7 @@ router.get("/dashboard-stats", auth, async (req, res) => {
     // Everything below is independent, so fetch it in one parallel round trip
     const [doctor, todaySchedule, recordCount, totalIncome, todayAppointmentsCount, todayArrivalsCount] = await Promise.all([
       Doctor.findById(doctorId)
-        .select("name fullName specialization channelingTime isArrived channelingStatus currentQueueNumber allocatedRoom")
+        .select("name fullName specialization profileImage channelingTime isArrived channelingStatus currentQueueNumber allocatedRoom")
         .lean(),
       mongoose.model('ScheduleRequest')
         .findOne({ doctorId, status: 'approved', date: today })
@@ -75,6 +75,7 @@ router.get("/dashboard-stats", auth, async (req, res) => {
     res.json({
       name: doctor.name || doctor.fullName || "Doctor",
       specialization: doctor.specialization || "Specialist",
+      profileImage: doctor.profileImage || "",
       channelingTime,
       channelingStatus: doctor.channelingStatus,
       currentQueueNumber: doctor.currentQueueNumber || 0,
