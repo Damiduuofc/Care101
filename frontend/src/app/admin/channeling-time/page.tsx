@@ -25,6 +25,7 @@ import {
     DialogTitle, 
     DialogDescription 
 } from "@/components/ui/dialog";
+import { DatePicker } from "@/components/ui/date-picker";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
@@ -546,13 +547,15 @@ const filteredHistoryRequests = historyRequests.filter((req: any) => {
                                         <div>
                                             <div className="flex items-center justify-between mb-1">
                                                 <label className="block text-xs font-semibold text-slate-700">2. Date</label>
-                                                <input
-                                                    type="date"
+                                                <DatePicker
                                                     value={scheduleDate}
                                                     min={toDateKey(new Date())}
-                                                    onChange={(e) => setScheduleDate(e.target.value)}
+                                                    onChange={setScheduleDate}
                                                     aria-label="Pick any date"
-                                                    className="text-[11px] text-slate-500 bg-transparent border-none focus:outline-none cursor-pointer"
+                                                    placeholder="Pick date"
+                                                    align="end"
+                                                    displayFormat="d MMM yyyy"
+                                                    className="h-8 w-auto rounded-lg px-2.5 text-xs font-semibold text-cyan-700 border-cyan-200 bg-cyan-50/60 hover:bg-cyan-50"
                                                 />
                                             </div>
                                             <div className="flex gap-2 overflow-x-auto pb-2 -mx-1 px-1">
@@ -563,6 +566,7 @@ const filteredHistoryRequests = historyRequests.filter((req: any) => {
                                                         <button
                                                             type="button"
                                                             key={key}
+                                                            ref={selected ? (el) => el?.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "smooth" }) : undefined}
                                                             onClick={() => setScheduleDate(key)}
                                                             aria-pressed={selected}
                                                             className={`shrink-0 w-14 py-2 rounded-xl border text-center transition-colors ${

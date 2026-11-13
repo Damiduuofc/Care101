@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { clearAdminSession, getAdminToken, getAdminUser } from "@/lib/adminSession";
+import { DatePicker } from "@/components/ui/date-picker";
 
 // ─── Constants & Configurations ──────────────────────────────────────────────
 const ROOM_DEPARTMENTS: Record<string, string> = {
@@ -887,15 +888,12 @@ export default function RoomAllocation() {
         </div>
 
         <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2 bg-white px-4 py-2 rounded-lg border border-slate-200 shadow-sm h-11">
-            <CalendarIcon className="h-4 w-4 text-cyan-600" />
-            <input 
-              type="date"
-              value={selectedDate}
-              onChange={(e) => setSelectedDate(e.target.value)}
-              className="outline-none text-sm font-semibold text-slate-700 bg-transparent cursor-pointer"
-            />
-          </div>
+          <DatePicker
+            value={selectedDate}
+            onChange={(v) => v && setSelectedDate(v)}
+            align="end"
+            className="h-11 w-auto min-w-[210px] rounded-lg px-4 font-semibold text-slate-700 shadow-sm"
+          />
 
           <Button 
             onClick={() => setIsModalOpen(true)}

@@ -17,6 +17,7 @@ import { loadStripe } from "@stripe/stripe-js";
 import { Elements, CardElement, useStripe, useElements } from "@stripe/react-stripe-js";
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { toast } from "@/hooks/use-toast";
+import { DatePicker } from "@/components/ui/date-picker";
 
 const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY || "");
 
@@ -1300,11 +1301,15 @@ const fetchNextPatientId = async () => {
                             </div>
                             <div className="space-y-1">
                               <label className="text-xs font-semibold text-slate-600">Date of Birth</label>
-                              <Input
-                                type="date"
+                              <DatePicker
                                 value={formData.dob}
-                                onChange={(e) => setFormData({ ...formData, dob: e.target.value })}
-                                className="bg-white border-slate-200"
+                                onChange={(v) => setFormData({ ...formData, dob: v })}
+                                max={new Date().toISOString().substring(0, 10)}
+                                placeholder="Select date of birth"
+                                displayFormat="d MMM yyyy"
+                                withYearPicker
+                                clearable
+                                showToday={false}
                               />
                             </div>
                             <div className="space-y-1">

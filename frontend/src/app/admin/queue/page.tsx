@@ -17,6 +17,7 @@ import { playDingSound } from "@/lib/soundUtils";
 import NurseHeader from "@/components/admin/NurseHeader";
 import LabTestPicker from "@/components/admin/LabTestPicker";
 import { useSidebar } from "@/components/admin/SidebarContext";
+import { DatePicker } from "@/components/ui/date-picker";
 
 export default function NurseQueueDashboard() {
     const router = useRouter();
@@ -1346,12 +1347,9 @@ export default function NurseQueueDashboard() {
 
                             <div className="space-y-1">
                                 <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Date *</label>
-                                <input 
-                                    type="date" 
-                                    required
-                                    className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent" 
+                                <DatePicker
                                     value={newRecordData.date}
-                                    onChange={(e) => setNewRecordData(prev => ({ ...prev, date: e.target.value }))}
+                                    onChange={(v) => setNewRecordData(prev => ({ ...prev, date: v }))}
                                 />
                             </div>
 
@@ -1517,12 +1515,11 @@ export default function NurseQueueDashboard() {
 
                                     <div className="space-y-2">
                                         <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">3. Link Expiry Date</label>
-                                        <input
-                                            type="date"
+                                        <DatePicker
                                             value={shareExpiry}
                                             min={new Date().toISOString().substring(0, 10)}
-                                            onChange={(e) => setShareExpiry(e.target.value)}
-                                            className="w-full h-10 px-3 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                                            onChange={setShareExpiry}
+                                            placeholder="Select expiry date"
                                         />
                                     </div>
                                 </>

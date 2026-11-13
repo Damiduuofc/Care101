@@ -19,7 +19,6 @@ export default function HospitalDetailsScreen() {
   const [loading, setLoading] = useState(true);
   const [hospital, setHospital] = useState<any>(null);
 
-  const [activeTab, setActiveTab] = useState<'channeling' | 'surgical'>('channeling');
   const [modalVisible, setModalVisible] = useState(false);
   const [date, setDate] = useState(new Date());
   const [showDatePicker, setShowDatePicker] = useState(false);
@@ -27,8 +26,6 @@ export default function HospitalDetailsScreen() {
   // Form Inputs
   const [patients, setPatients] = useState('');
   const [income, setIncome] = useState('');
-  const [bht, setBht] = useState('');
-  const [amount, setAmount] = useState('');
 
   useEffect(() => {
     fetchDetails();
@@ -68,16 +65,14 @@ export default function HospitalDetailsScreen() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({
-          type: activeTab,
+          type: 'channeling',
           date: date.toISOString(),
-          patients: activeTab === 'channeling' ? patients : undefined,
-          income: activeTab === 'channeling' ? income : undefined,
-          bht: activeTab === 'surgical' ? bht : undefined,
-          amount: activeTab === 'surgical' ? amount : undefined
+          patients,
+          income
         })
       });
       setModalVisible(false);
-      setPatients(''); setIncome(''); setBht(''); setAmount('');
+      setPatients(''); setIncome('');
       fetchDetails();
     } catch (error) {
       console.error(error);
@@ -97,8 +92,8 @@ export default function HospitalDetailsScreen() {
     }
   };
 
-  // Filter Data for List
-  const records = hospital?.records?.filter((r: any) => r.type === activeTab) || [];
+  // Channeling records only — surgical finance is no longer tracked
+  const records = hospital?.records?.filter((r: any) => r.type === 'channeling') || [];
 
   const renderCard = ({ item }: any) => (
     <View style={styles.recordCard}>
@@ -113,13 +108,13 @@ export default function HospitalDetailsScreen() {
       </View>
       <View style={styles.recordRow}>
         <View style={styles.recordStat}>
-          <Text style={styles.statLabel}>{activeTab === 'channeling' ? 'Patients' : 'BHT'}</Text>
-          <Text style={styles.statValue}>{activeTab === 'channeling' ? item.patients : item.bht}</Text>
+          <Text style={styles.statLabel}>Patients</Text>
+          <Text style={styles.statValue}>{item.patients}</Text>
         </View>
         <View style={styles.verticalDivider} />
         <View style={styles.recordStat}>
-          <Text style={styles.statLabel}>{activeTab === 'channeling' ? 'Income' : 'Amount'}</Text>
-          <Text style={styles.statValueBlue}>{(item.income || item.amount).toLocaleString()} LKR</Text>
+          <Text style={styles.statLabel}>Income</Text>
+          <Text style={styles.statValueBlue}>{(item.income || 0).toLocaleString()} LKR</Text>
         </View>
       </View>
     </View>
@@ -134,18 +129,9 @@ export default function HospitalDetailsScreen() {
       </View>
 
       <View style={styles.content}>
-        <View style={styles.tabContainer}>
-          <TouchableOpacity style={[styles.tabButton, activeTab === 'channeling' && styles.tabButtonActive]} onPress={() => setActiveTab('channeling')}>
-            <Text style={[styles.tabText, activeTab === 'channeling' && styles.tabTextActive]}>Channeling</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={[styles.tabButton, activeTab === 'surgical' && styles.tabButtonActive]} onPress={() => setActiveTab('surgical')}>
-            <Text style={[styles.tabText, activeTab === 'surgical' && styles.tabTextActive]}>Surgical</Text>
-          </TouchableOpacity>
-        </View>
-
         <TouchableOpacity style={styles.mainAddButton} onPress={() => setModalVisible(true)}>
           <Plus size={20} color="#fff" style={{ marginRight: 8 }} />
-          <Text style={styles.mainAddButtonText}>Add {activeTab === 'channeling' ? 'Session' : 'Record'}</Text>
+          <Text style={styles.mainAddButtonText}>Add Session</Text>
         </TouchableOpacity>
 
         {loading ? <SkeletonList rows={5} style={{ paddingHorizontal: 0 }} /> : (
@@ -162,19 +148,9 @@ export default function HospitalDetailsScreen() {
       <Modal animationType="fade" transparent={true} visible={modalVisible} onRequestClose={() => setModalVisible(false)}>
         <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Add Record</Text>
-            {/* Inputs based on activeTab */}
-            {activeTab === 'channeling' ? (
-              <>
-                <TextInput style={styles.input} placeholder="Patients" keyboardType="numeric" value={patients} onChangeText={setPatients} />
-                <TextInput style={styles.input} placeholder="Income" keyboardType="numeric" value={income} onChangeText={setIncome} />
-              </>
-            ) : (
-              <>
-                <TextInput style={styles.input} placeholder="BHT Number" value={bht} onChangeText={setBht} />
-                <TextInput style={styles.input} placeholder="Amount" keyboardType="numeric" value={amount} onChangeText={setAmount} />
-              </>
-            )}
+            <Text style={styles.modalTitle}>Add Session</Text>
+            <TextInput style={styles.input} placeholder="Patients" keyboardType="numeric" value={patients} onChangeText={setPatients} />
+            <TextInput style={styles.input} placeholder="Income" keyboardType="numeric" value={income} onChangeText={setIncome} />
 
             {/* Date Picker Trigger */}
             <TouchableOpacity style={styles.dateInputWrapper} onPress={() => setShowDatePicker(true)}>
@@ -209,11 +185,6 @@ const styles = StyleSheet.create({
   header: { flexDirection: 'row', alignItems: 'center', padding: 20, backgroundColor: '#fff', gap: 16 },
   hospitalTitle: { fontSize: 20, fontWeight: '700', color: '#0f172a' },
   content: { flex: 1, padding: 20 },
-  tabContainer: { flexDirection: 'row', backgroundColor: '#e2e8f0', borderRadius: 8, padding: 4, marginBottom: 24 },
-  tabButton: { flex: 1, paddingVertical: 10, alignItems: 'center', borderRadius: 6 },
-  tabButtonActive: { backgroundColor: '#fff' },
-  tabText: { fontSize: 14, fontWeight: '600', color: '#64748b' },
-  tabTextActive: { color: '#06B6D4' },
   mainAddButton: { backgroundColor: '#06B6D4', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 16, borderRadius: 8, marginBottom: 24 },
   mainAddButtonText: { color: '#fff', fontSize: 16, fontWeight: '700' },
   listContainer: { paddingBottom: 20 },

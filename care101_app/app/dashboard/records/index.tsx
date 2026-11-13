@@ -138,7 +138,7 @@ export default function RecordsScreen() {
 
       {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Surgery Records</Text>
+        <Text style={styles.headerTitle}>Medical Records</Text>
         {!loading && (
           <Text style={styles.headerSubtitle}>
             {records.length} {records.length === 1 ? 'patient' : 'patients'}

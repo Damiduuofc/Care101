@@ -6,18 +6,13 @@ import {
   StyleSheet,
   TouchableOpacity,
   FlatList,
-  Modal,
-  TextInput,
   StatusBar,
-  KeyboardAvoidingView,
-  Platform,
-  ActivityIndicator,
   Alert,
   RefreshControl
 } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Plus, Trash2, ChevronRight, X } from 'lucide-react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { Trash2, ChevronRight } from 'lucide-react-native';
 import BottomNavBar from '../../components/BottomNavBar';
 import * as SecureStore from 'expo-secure-store';
 
@@ -26,20 +21,12 @@ const REFRESH_INTERVAL = 30000; // Auto-refresh every 30 seconds
 
 export default function FinanceScreen() {
   const router = useRouter();
-  const insets = useSafeAreaInsets();
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Added <any[]> to fix TypeScript errors
   const [hospitals, setHospitals] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-
-  // Modal State
-  const [modalVisible, setModalVisible] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-
-  // Form State
-  const [newHospitalName, setNewHospitalName] = useState('');
 
   useFocusEffect(
     useCallback(() => {
@@ -91,44 +78,6 @@ export default function FinanceScreen() {
     fetchData();
   };
 
-  const handleAddHospital = async () => {
-    if (!newHospitalName.trim()) {
-      Alert.alert("Required", "Please enter a hospital name.");
-      return;
-    }
-
-    setIsSubmitting(true);
-
-    try {
-      const token = await SecureStore.getItemAsync('token');
-
-      const response = await fetch(`${API_URL}/finance/add-hospital`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`
-        },
-        body: JSON.stringify({ name: newHospitalName })
-      });
-
-      const resData = await response.json();
-
-      if (response.ok) {
-        await fetchData();
-        setModalVisible(false);
-        setNewHospitalName('');
-      } else {
-        Alert.alert("Error", resData.message || resData.error || "Failed to add hospital.");
-      }
-
-    } catch (error) {
-      console.error("Network Error:", error);
-      Alert.alert("Connection Error", "Could not connect to the server.");
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
   // Added type definition for 'id'
   const handleDelete = async (id: string) => {
     Alert.alert("Delete Hospital", "Are you sure? This will delete all financial records for this hospital.", [
@@ -151,10 +100,8 @@ export default function FinanceScreen() {
   // Added type definition for 'item'
   const renderHospitalCard = ({ item }: { item: any }) => {
     
-    // BULLETPROOF MATH: Frontend forces the calculation so it's always right
-    const safeChanneling = item.channelingIncome || 0;
-    const safeSurgical = item.surgicalIncome || 0;
-    const safeTotal = safeChanneling + safeSurgical;
+    // Channeling only — surgical finance is no longer tracked
+    const safeTotal = item.channelingIncome || 0;
 
     return (
       <View style={styles.card}>
@@ -171,21 +118,9 @@ export default function FinanceScreen() {
           )}
         </View>
 
-        <View style={styles.statsGrid}>
-          <View style={styles.statCol}>
-            <Text style={styles.statLabel}>Channeling</Text>
-            <Text style={styles.statValueBlue}>{safeChanneling.toLocaleString()} LKR</Text>
-          </View>
-          <View style={styles.statDivider} />
-          <View style={styles.statCol}>
-            <Text style={styles.statLabel}>Surgical</Text>
-            <Text style={styles.statValueBlue}>{safeSurgical.toLocaleString()} LKR</Text>
-          </View>
-        </View>
-
         <View style={styles.totalSection}>
           <View>
-            <Text style={styles.totalLabel}>Total Payable</Text>
+            <Text style={styles.totalLabel}>Channeling Income</Text>
           </View>
           <Text style={styles.totalValue}>{Math.round(safeTotal).toLocaleString()} LKR</Text>
         </View>
@@ -228,54 +163,11 @@ export default function FinanceScreen() {
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
               <Text style={styles.emptyTitle}>No Hospitals Added</Text>
-              <Text style={{ color: '#64748b', marginBottom: 20 }}>Add a hospital to start tracking finances.</Text>
+              <Text style={{ color: '#64748b', marginBottom: 20 }}>Your channeling income will appear here.</Text>
             </View>
           }
         />
       )}
-
-      <TouchableOpacity
-        style={[
-          styles.fab,
-          { bottom: Platform.OS === 'ios' ? insets.bottom + 90 : 100 }
-        ]}
-        onPress={() => setModalVisible(true)}
-        activeOpacity={0.8} accessibilityRole="button" accessibilityLabel="Add">
-        <Plus size={32} color="#fff" />
-      </TouchableOpacity>
-
-      <Modal animationType="fade" transparent={true} visible={modalVisible} onRequestClose={() => setModalVisible(false)}>
-        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Add Hospital</Text>
-              <TouchableOpacity onPress={() => setModalVisible(false)} accessibilityRole="button" accessibilityLabel="Close"><X size={24} color="#64748b" /></TouchableOpacity>
-            </View>
-
-            <View style={styles.inputGroup}>
-              <Text style={styles.label}>Hospital Name</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="Enter name"
-                value={newHospitalName}
-                onChangeText={setNewHospitalName}
-              />
-            </View>
-
-            <TouchableOpacity
-              style={[styles.addBtn, isSubmitting && { opacity: 0.7 }]}
-              onPress={handleAddHospital}
-              disabled={isSubmitting}
-            >
-              {isSubmitting ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <Text style={styles.addBtnText}>Add</Text>
-              )}
-            </TouchableOpacity>
-          </View>
-        </KeyboardAvoidingView>
-      </Modal>
 
       <BottomNavBar />
     </SafeAreaView>
@@ -291,26 +183,11 @@ const styles = StyleSheet.create({
   cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 },
   hospitalName: { fontSize: 18, fontWeight: '700', color: '#0f172a', marginBottom: 4 },
   iconBtn: { padding: 8, backgroundColor: '#f1f5f9', borderRadius: 8 },
-  statsGrid: { flexDirection: 'row', backgroundColor: '#f8fafc', borderRadius: 12, padding: 12, marginBottom: 12 },
-  statCol: { flex: 1, alignItems: 'center' },
-  statDivider: { width: 1, backgroundColor: '#cbd5e1', marginVertical: 4 },
-  statLabel: { fontSize: 12, color: '#64748b', marginBottom: 4 },
-  statValueBlue: { fontSize: 16, fontWeight: '700', color: '#06B6D4' },
   totalSection: { backgroundColor: '#eff6ff', borderRadius: 12, padding: 16, marginBottom: 16, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   totalLabel: { fontSize: 14, color: '#475569', fontWeight: '500' },
   totalValue: { fontSize: 20, fontWeight: '800', color: '#1e3a8a' },
   cardFooter: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', borderTopWidth: 1, borderTopColor: '#f1f5f9', paddingTop: 16 },
   footerLink: { color: '#06B6D4', fontWeight: '600', marginRight: 4, fontSize: 14 },
-  fab: { position: 'absolute', right: 24, width: 56, height: 56, borderRadius: 28, backgroundColor: '#06B6D4', alignItems: 'center', justifyContent: 'center', elevation: 6, shadowColor: "#06B6D4", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 4 },
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', padding: 20 },
-  modalContent: { backgroundColor: '#fff', borderRadius: 24, padding: 24, elevation: 5 },
-  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 },
-  modalTitle: { fontSize: 20, fontWeight: '700', color: '#0f172a' },
-  inputGroup: { marginBottom: 20 },
-  label: { fontSize: 14, fontWeight: '600', color: '#334155', marginBottom: 8 },
-  input: { borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 12, paddingHorizontal: 16, paddingVertical: 14, fontSize: 16, backgroundColor: '#f8fafc' },
-  addBtn: { paddingVertical: 16, borderRadius: 12, backgroundColor: '#06B6D4', alignItems: 'center', height: 56, justifyContent: 'center' },
-  addBtnText: { color: '#fff', fontWeight: '600', fontSize: 16 },
   emptyContainer: { alignItems: 'center', justifyContent: 'center', padding: 20, marginTop: 40 },
   emptyTitle: { fontSize: 18, fontWeight: '600', color: '#334155', marginBottom: 8 },
 });

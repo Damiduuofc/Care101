@@ -283,7 +283,7 @@ export default function DashboardScreen() {
     {
       id: 1,
       title: 'Finance Management',
-      subtitle: 'Track channeling and surgical finances',
+      subtitle: 'Track channeling finances',
       icon: BarChart3,
       link: '/dashboard/finance',
       color: '#10b981',
@@ -291,8 +291,8 @@ export default function DashboardScreen() {
     },
     {
       id: 2,
-      title: 'Surgery Records',
-      subtitle: 'Manage patient surgery records',
+      title: 'Medical Records',
+      subtitle: 'Manage patient Medical records',
       icon: Activity,
       link: '/dashboard/records',
       color: '#06b6d4',
