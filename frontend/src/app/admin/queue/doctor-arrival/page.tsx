@@ -175,9 +175,19 @@ export default function NurseDoctorArrivals() {
         };
         socket.on("dashboardUpdated", liveRefresh);
         socket.io.on("reconnect", liveRefresh);
+        // A nurse/room reassignment or schedule change can move a doctor (with their patients and
+        // queue) onto or off this nurse: refetch so the screen follows it without a reload
+        ["scheduleUpdated", "scheduleDeleted", "nurseReleased"].forEach(evt => socket.on(evt, liveRefresh));
+        // Anything sent while the socket was not connected yet was missed: catch up on every connect
+        socket.on("connect", liveRefresh);
+        // Fallback while the socket is down
+        const livePoll = setInterval(() => {
+            if (document.visibilityState === "visible") liveRefresh();
+        }, 30000);
 
         return () => {
             if (liveTimer) clearTimeout(liveTimer);
+            clearInterval(livePoll);
             socket.disconnect();
         };
     }, []);

@@ -35,8 +35,8 @@ import Doctor from "./models/Doctor.js";
 import ScheduleRequest from "./models/ScheduleRequest.js";
 import LabTest from "./models/LabTest.js";
 import labTests from "./config/labTests.js";
-import { joinDefaultRooms, dashboardSignalMiddleware, emitDoctorStatus } from "./utils/realtime.js";
-import { openSessionsToday, applyLiveAllocation } from "./utils/liveAllocation.js";
+import { joinDefaultRooms, dashboardSignalMiddleware } from "./utils/realtime.js";
+import { syncAllLiveAllocations } from "./utils/liveAllocation.js";
 import { releaseExpiredHolds } from "./utils/bookingService.js";
 
 const app = express();
@@ -241,32 +241,13 @@ const startServer = async () => {
       releaseExpiredHolds(io).catch(err => console.error("Unpaid hold release failed:", err.message));
     }, 60 * 1000);
 
-    // Automatic Room + Nurse Release Job (runs every 30 seconds)
+    // Live Room + Nurse Job (runs every 30 seconds)
     // Re-derives each doctor's live room/nurse from TODAY's sessions only: released once the
-    // doctor's last session today has passed (and the queue isn't running), handed over to the
-    // next session when there is a gap between sessions, and kept while a session runs late.
-    setInterval(async () => {
-      try {
-        const now = new Date();
-        const activeDoctors = await Doctor.find({
-          $or: [
-            { allocatedRoom: { $ne: "" } },
-            { allocatedNurse: { $ne: "" } }
-          ]
-        });
-
-        for (const doctor of activeDoctors) {
-          const open = await openSessionsToday(doctor._id, now);
-          const before = `${doctor.allocatedRoom}|${doctor.allocatedNurse}`;
-          if (applyLiveAllocation(doctor, open, now)) {
-            console.log(`[Auto-Release] Dr. ${doctor.name}: ${before} -> ${doctor.allocatedRoom}|${doctor.allocatedNurse}`);
-            await doctor.save();
-            emitDoctorStatus(io, doctor);
-          }
-        }
-      } catch (err) {
-        console.error("Auto-Release Job Error:", err);
-      }
+    // doctor has no open session left today, handed over to the next session when there is a gap
+    // between sessions, kept while a session runs late, and (re)assigned for doctors that have a
+    // session today but no live nurse yet.
+    setInterval(() => {
+      syncAllLiveAllocations(io).catch((err) => console.error("Live Allocation Job Error:", err));
     }, 30000);
 
   } catch (error) {

@@ -18,7 +18,7 @@ import ScheduleRequest from "../models/ScheduleRequest.js";
 import { protect, authorize, ROLES } from "../middleware/authRole.js";
 import { assignQueueToken, countPaidAhead } from "../utils/queueToken.js";
 import { emitAppointmentUpdated, emitNotification, emitDoctorQueueChanged, getLastWriteAt, emitDoctorStatus } from "../utils/realtime.js";
-import { applyLiveAllocation, openSessionsToday, pickCurrentSession } from "../utils/liveAllocation.js";
+import { applyLiveAllocation, openSessionsToday, pickCurrentSession, syncDoctorLiveAllocation } from "../utils/liveAllocation.js";
 import { getOrCreateBillIntent, verifyIntentForBill, markBillPaid } from "../utils/paymentService.js";
 import {
   findBookableSession,
@@ -968,7 +968,7 @@ router.put("/all-doctors/:id", protect, authorize(["system_admin"]), async (req,
   }
 });
 
-const syncTodaySchedulesToDoctorsNow = async () => {
+const syncTodaySchedulesToDoctorsNow = async (io) => {
   try {
     const now = new Date();
     
@@ -992,6 +992,7 @@ const syncTodaySchedulesToDoctorsNow = async () => {
     ]);
     // Saves are collected and written together at the end
     const dirty = new Set();
+    const needsAllocation = new Set();
 
     // Group schedules by doctorId
     const doctorSchedules = {};
@@ -1026,24 +1027,19 @@ const syncTodaySchedulesToDoctorsNow = async () => {
       const activeSchedules = schedules.filter(s => !s.sessionEnded);
 
       // If doctor has an active or upcoming schedule today, reset sessionEndedToday
-      if (activeSchedules.length > 0) {
-        if (doc.sessionEndedToday) {
-          doc.sessionEndedToday = false;
-          dirty.add(doc);
-        }
-      } else if (doc.sessionEndedToday) {
-        // If doctor already ended their session today and has no more active schedules, ensure nurse is released
-        if (doc.allocatedNurse !== "") {
-          doc.allocatedNurse = "";
-          dirty.add(doc);
-        }
-        continue;
+      if (activeSchedules.length > 0 && doc.sessionEndedToday) {
+        doc.sessionEndedToday = false;
+        dirty.add(doc);
       }
 
-      // Same rule as the queue screen: the session in progress (or next) owns the live room/nurse
-      if (applyLiveAllocation(doc, activeSchedules, now)) dirty.add(doc);
+      // Same rule as the queue screen: the session in progress (or next) owns the live room/nurse.
+      // Only detect the change here, on a copy: the doctors and schedules above are a snapshot,
+      // and writing the snapshot's room/nurse back could undo a reassignment saved meanwhile.
+      // Doctors that need a change are re-derived from fresh data below.
+      if (applyLiveAllocation(doc.toObject(), activeSchedules, now)) needsAllocation.add(docIdStr);
     }
     await Promise.all([...dirty].map((d) => d.save()));
+    for (const id of needsAllocation) await syncDoctorLiveAllocation(id, io);
   } catch (err) {
     console.error("Error in syncTodaySchedulesToDoctors:", err);
   }
@@ -1053,13 +1049,21 @@ const syncTodaySchedulesToDoctorsNow = async () => {
 // Concurrent callers share one run.
 let lastSyncAt = 0;
 let syncInFlight = null;
+let syncInFlightStartedAt = 0;
 const SYNC_MAX_AGE_MS = 60 * 1000;
-const syncTodaySchedulesToDoctors = async () => {
-  if (syncInFlight) return syncInFlight;
+const syncTodaySchedulesToDoctors = async (io) => {
+  if (syncInFlight) {
+    // A run that started before the latest write read the old schedules; wait for it, then run
+    // again instead of answering this request with the stale result
+    if (getLastWriteAt() < syncInFlightStartedAt) return syncInFlight;
+    await syncInFlight.catch(() => {});
+    if (syncInFlight) return syncInFlight;
+  }
   const fresh = Date.now() - lastSyncAt < SYNC_MAX_AGE_MS && getLastWriteAt() < lastSyncAt;
   if (fresh) return;
   const startedAt = Date.now();
-  syncInFlight = syncTodaySchedulesToDoctorsNow().finally(() => {
+  syncInFlightStartedAt = startedAt;
+  syncInFlight = syncTodaySchedulesToDoctorsNow(io).finally(() => {
     lastSyncAt = startedAt;
     syncInFlight = null;
   });
@@ -1068,7 +1072,7 @@ const syncTodaySchedulesToDoctors = async () => {
 
 router.get("/doctors", protect, authorize(["system_admin", "receptionist", "nurse"]), async (req, res) => {
   try {
-    await syncTodaySchedulesToDoctors();
+    await syncTodaySchedulesToDoctors(req.io);
     const doctors = await Doctor.find().select("name specialization isArrived allocatedRoom allocatedNurse channelingTime channelingStatus phone profileImage sessionStarted sessionEndedToday currentQueueNumber").lean();
     res.json(doctors);
   } catch (err) {
@@ -1138,12 +1142,16 @@ router.put("/doctors/:id/status", protect, authorize(["system_admin", "reception
         }
       }
     }
+    const prevNurse = doctor.allocatedNurse || "";
+    const prevRoom = doctor.allocatedRoom || "";
     if (allocatedRoom !== undefined) doctor.allocatedRoom = allocatedRoom;
     if (allocatedNurse !== undefined) doctor.allocatedNurse = allocatedNurse;
     // A manual room/nurse change applies to the session in progress (or next) today. Writing it
     // to that schedule too stops the dashboard sync from switching it back to the old nurse.
-    if (allocatedRoom !== undefined || allocatedNurse !== undefined) {
-      const current = pickCurrentSession(await openSessionsToday(doctor._id), doctor);
+    const allocationTouched = allocatedRoom !== undefined || allocatedNurse !== undefined;
+    const todaysOpen = allocationTouched || isArrived !== undefined ? await openSessionsToday(doctor._id) : null;
+    if (allocationTouched) {
+      const current = pickCurrentSession(todaysOpen, doctor);
       if (current) {
         if (allocatedRoom !== undefined) current.allocatedRoom = allocatedRoom || "";
         if (allocatedNurse !== undefined) current.allocatedNurse = allocatedNurse || "";
@@ -1153,6 +1161,9 @@ router.put("/doctors/:id/status", protect, authorize(["system_admin", "reception
         }
       }
     }
+    // A check-in (or a manual change) must leave the doctor on the nurse of their current session,
+    // the same rule every other path uses, so the nurse's queue picks the doctor up immediately
+    if (todaysOpen?.length && !doctor.sessionEndedToday) applyLiveAllocation(doctor, todaysOpen);
     if (channelingTime !== undefined) doctor.channelingTime = channelingTime;
     if (channelingStatus !== undefined) doctor.channelingStatus = channelingStatus;
     if (sessionStarted !== undefined) {
@@ -1265,6 +1276,10 @@ router.put("/doctors/:id/status", protect, authorize(["system_admin", "reception
     if (req.io) {
       emitDoctorStatus(req.io, doctor);
       emitDoctorQueueChanged(doctor._id);
+      if ((doctor.allocatedNurse || "") !== prevNurse || (doctor.allocatedRoom || "") !== prevRoom) {
+        // Nurse screens refetch on this: the new nurse gets the doctor, patients and queue
+        req.io.emit("scheduleUpdated", { doctorId: doctor._id, allocatedNurse: doctor.allocatedNurse, allocatedRoom: doctor.allocatedRoom });
+      }
       if (isArrived !== undefined && isArrived !== prevArrived) {
         req.io.emit("doctorArrivalAlert", {
           doctorId: doctor._id,

@@ -34,6 +34,7 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [nurseDoctors, setNurseDoctors] = useState<any[]>([]);
   const [nurseAppointments, setNurseAppointments] = useState<any[]>([]);
+  const [nurseSchedules, setNurseSchedules] = useState<any[]>([]);
 
   const fetchNurseAssignments = async () => {
     if (getAdminUser()?.role !== "nurse") return;
@@ -43,10 +44,17 @@ export default function Dashboard() {
         "x-auth-token": token || "",
         "ngrok-skip-browser-warning": "true"
       };
-      const [docRes, apptRes] = await Promise.all([
+      // Today's sessions are refetched with the doctors on every live update, so a nurse/room
+      // reassignment moves the session to the new nurse's list (and off the old one's) at once
+      const [docRes, apptRes, schedRes] = await Promise.all([
         fetch(`${process.env.NEXT_PUBLIC_API_URL}/admin/doctors`, { headers }),
-        fetch(`${process.env.NEXT_PUBLIC_API_URL}/admin/appointments`, { headers })
+        fetch(`${process.env.NEXT_PUBLIC_API_URL}/admin/appointments`, { headers }),
+        fetch(`${process.env.NEXT_PUBLIC_API_URL}/schedule-requests/approved/today`, { headers })
       ]);
+      if (schedRes.ok) {
+        const schedData = await schedRes.json();
+        if (Array.isArray(schedData)) setNurseSchedules(schedData);
+      }
       if (docRes.ok) {
         const docData = await docRes.json();
         if (Array.isArray(docData)) setNurseDoctors(docData);
@@ -229,6 +237,7 @@ export default function Dashboard() {
                   d.allocatedNurse && String(d.allocatedNurse).trim().toLowerCase() === String(user?.name || "").trim().toLowerCase()
                 )}
                 appointments={nurseAppointments}
+                schedules={nurseSchedules}
               />
             )}
           </div>

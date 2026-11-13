@@ -445,7 +445,7 @@ router.put('/:id/allocate', auth, authorize(ROLES.SCHEDULING), async (req, res) 
         _id: { $ne: request._id },
         status: 'approved',
         sessionEnded: { $ne: true },
-        date: request.date,
+        // Overlap by actual times: the stored "date" differs by booking path (midnight UTC vs noon)
         $or: [
           { allocatedRoom: allocatedRoom || "NEVER_MATCH" },
           { allocatedNurse: allocatedNurse || "NEVER_MATCH" }
@@ -465,6 +465,8 @@ router.put('/:id/allocate', auth, authorize(ROLES.SCHEDULING), async (req, res) 
     request.allocatedRoom = allocatedRoom || "";
     request.allocatedNurse = allocatedNurse || "";
     await request.save();
+    // Nurse screens list today's sessions by their nurse: refresh them for the old and new nurse
+    if (req.io) req.io.emit("scheduleUpdated", request);
 
     // Sync to Doctor model. Only changes the live nurse when this is the doctor's current session
     // today; editing a later session must not take the queue away from the nurse running this one.

@@ -1,19 +1,21 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { CalendarDays, Clock, DoorOpen, Sparkles, Stethoscope, Users } from "lucide-react";
-import { getAdminToken } from "@/lib/adminSession";
 import PatientSummaryModal from "./PatientSummaryModal";
 
 interface NurseTodayAssignmentsProps {
     nurseName?: string;
     assignedDoctors: any[];
     appointments: any[];
+    /** Today's approved sessions (all nurses). Kept live by the parent page. */
+    schedules: any[];
     /** Narrow layout for use in a half-width dashboard column. */
     compact?: boolean;
 }
 
 interface AssignmentRow {
+    key: string;
     doctorId: string;
     doctorName: string;
     specialization?: string;
@@ -39,30 +41,8 @@ const isToday = (dateStr: string) => {
 const formatTime = (value: string | Date) =>
     new Date(value).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
-export default function NurseTodayAssignments({ nurseName, assignedDoctors, appointments, compact = false }: NurseTodayAssignmentsProps) {
-    const [schedules, setSchedules] = useState<any[]>([]);
+export default function NurseTodayAssignments({ nurseName, assignedDoctors, appointments, schedules, compact = false }: NurseTodayAssignmentsProps) {
     const [summaryFor, setSummaryFor] = useState<{ id: string; name?: string; queueNumber?: number } | null>(null);
-
-    useEffect(() => {
-        const fetchSchedules = async () => {
-            try {
-                const token = getAdminToken();
-                const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/schedule-requests/approved/today`, {
-                    headers: {
-                        "x-auth-token": token || "",
-                        "ngrok-skip-browser-warning": "true"
-                    }
-                });
-                if (res.ok) {
-                    const data = await res.json();
-                    if (Array.isArray(data)) setSchedules(data);
-                }
-            } catch (err) {
-                console.error("Fetch today's schedules error:", err);
-            }
-        };
-        fetchSchedules();
-    }, []);
 
     const getTodayPatients = (doctorId: string) =>
         appointments
@@ -84,6 +64,7 @@ export default function NurseTodayAssignments({ nurseName, assignedDoctors, appo
             const liveDoc = assignedDoctors.find(d => d._id === doctorId);
             seenDoctors.add(doctorId);
             rows.push({
+                key: String(s._id || `${doctorId}-${s.startTime}`),
                 doctorId,
                 doctorName: s.doctorId?.name || s.doctorName,
                 specialization: s.doctorId?.specialization || liveDoc?.specialization,
@@ -99,6 +80,7 @@ export default function NurseTodayAssignments({ nurseName, assignedDoctors, appo
         .filter(d => !seenDoctors.has(d._id))
         .forEach(d => {
             rows.push({
+                key: `doctor-${d._id}`,
                 doctorId: d._id,
                 doctorName: d.name,
                 specialization: d.specialization,
@@ -145,7 +127,7 @@ export default function NurseTodayAssignments({ nurseName, assignedDoctors, appo
             ) : (
                 <div className={`divide-y divide-slate-100 ${compact ? "flex-1 overflow-y-auto max-h-[28rem]" : ""}`}>
                     {rows.map(row => (
-                        <div key={row.doctorId} className={compact ? "p-4 space-y-3" : "p-4 sm:p-5 grid grid-cols-1 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] gap-4"}>
+                        <div key={row.key} className={compact ? "p-4 space-y-3" : "p-4 sm:p-5 grid grid-cols-1 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] gap-4"}>
                             <div className={`grid gap-3 ${compact ? "grid-cols-3" : "grid-cols-2 sm:grid-cols-4 lg:grid-cols-2"}`}>
                                 <div className={compact ? "col-span-3" : "col-span-2"}>
                                     <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Doctor</p>

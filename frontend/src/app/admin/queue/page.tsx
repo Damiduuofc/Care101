@@ -559,9 +559,19 @@ export default function NurseQueueDashboard() {
         };
         socket.on("dashboardUpdated", liveRefresh);
         socket.io.on("reconnect", liveRefresh);
+        // A nurse/room reassignment or schedule change can move a doctor (with their patients and
+        // queue) onto or off this nurse: refetch so the screen follows it without a reload
+        ["scheduleUpdated", "scheduleDeleted", "nurseReleased"].forEach(evt => socket.on(evt, liveRefresh));
+        // Anything sent while the socket was not connected yet was missed: catch up on every connect
+        socket.on("connect", liveRefresh);
+        // Fallback while the socket is down
+        const livePoll = setInterval(() => {
+            if (document.visibilityState === "visible") liveRefresh();
+        }, 30000);
 
         return () => {
             if (liveTimer) clearTimeout(liveTimer);
+            clearInterval(livePoll);
             socket.disconnect();
         };
     }, []);
@@ -571,12 +581,11 @@ export default function NurseQueueDashboard() {
         try {
             const d = new Date(dateStr);
             const today = new Date();
-            const isLocalSame = d.getDate() === today.getDate() &&
-                                d.getMonth() === today.getMonth() &&
-                                d.getFullYear() === today.getFullYear();
-            const dateOnlyStr = dateStr.substring(0, 10);
-            const todayOnlyStr = today.toISOString().substring(0, 10);
-            return isLocalSame || dateOnlyStr === todayOnlyStr;
+            // Local calendar day only, like the backend (hospital time zone). Comparing the UTC
+            // date as well put yesterday's / tomorrow's bookings into today's queue around midnight.
+            return d.getDate() === today.getDate() &&
+                   d.getMonth() === today.getMonth() &&
+                   d.getFullYear() === today.getFullYear();
         } catch {
             return false;
         }
