@@ -5,6 +5,7 @@ import {
     Home,
     Calendar,
     FileText,
+    FlaskConical,
     User,
     LucideIcon
 } from 'lucide-react-native';
@@ -55,6 +56,12 @@ export default function PatientBottomNavBar() {
                 label="Records"
                 active={isActive('/patient-dashboard/records')}
                 onPress={() => handlePress('/patient-dashboard/records')}
+            />
+            <NavItem
+                icon={FlaskConical}
+                label="Lab"
+                active={isActive('/patient-dashboard/lab-reports')}
+                onPress={() => handlePress('/patient-dashboard/lab-reports')}
             />
             <NavItem
                 icon={User}

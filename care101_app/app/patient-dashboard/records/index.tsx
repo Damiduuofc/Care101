@@ -5,7 +5,7 @@ import {
     Text,
     StyleSheet,
     TextInput,
-    FlatList,
+    SectionList,
     TouchableOpacity,
     StatusBar,
     ActivityIndicator,
@@ -17,7 +17,7 @@ import {
 } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Search, ChevronRight, FileText, Award, X, Download } from 'lucide-react-native';
+import { Search, ChevronRight, FileText, Award, X, Download, ArrowUpDown } from 'lucide-react-native';
 import * as SecureStore from 'expo-secure-store';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
@@ -34,6 +34,10 @@ export default function PatientRecordsListScreen() {
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
+    const [selectedDepartment, setSelectedDepartment] = useState('All');
+    const [deptSort, setDeptSort] = useState<'az' | 'za' | 'recent'>('az');
+    const DEPT_SORT_LABELS = { az: 'Dept A–Z', za: 'Dept Z–A', recent: 'Latest first' } as const;
+    const cycleDeptSort = () => setDeptSort((m) => (m === 'az' ? 'za' : m === 'za' ? 'recent' : 'az'));
 
     const [selectedRecordData, setSelectedRecordData] = useState<any>(null);
     const [showViewRecordModal, setShowViewRecordModal] = useState(false);
@@ -221,13 +225,49 @@ export default function PatientRecordsListScreen() {
         if (r.isSurgery) {
             const doctorName = (r.doctorName || r.doctorId?.name || '').toLowerCase();
             const hospital = (r.hospital || r.doctorId?.hospital || '').toLowerCase();
-            return doctorName.includes(query) || hospital.includes(query);
+            const dept = (r.doctorSpecialization || r.doctorId?.specialization || '').toLowerCase();
+            return doctorName.includes(query) || hospital.includes(query) || dept.includes(query);
         } else {
             const title = (r.title || '').toLowerCase();
             const doctorName = (r.doctorName || '').toLowerCase();
-            return title.includes(query) || doctorName.includes(query);
+            const dept = (r.doctorId?.specialization || '').toLowerCase();
+            return title.includes(query) || doctorName.includes(query) || dept.includes(query);
         }
     });
+
+    // Department = the doctor's specialization; lab uploads and self uploads get their own groups
+    const getDepartment = (r: any): string => {
+        const name = (r.doctorName || '').toLowerCase();
+        if (name.includes('lab assistant') || (!r.isSurgery && r.type === 'lab_tests' && !r.doctorId)) return 'Laboratory';
+        if (name === 'self uploaded') return 'Self Uploaded';
+        const spec = r.doctorSpecialization || r.doctorId?.specialization;
+        return (spec && String(spec).trim()) || 'General Practitioner';
+    };
+
+    const departments = React.useMemo(() => {
+        const set = new Set(records.map(getDepartment));
+        return ['All', ...Array.from(set).sort((a, b) => a.localeCompare(b))];
+    }, [records]);
+
+    const sections = React.useMemo(() => {
+        const groups = new Map<string, any[]>();
+        filteredRecords
+            .filter((r: any) => selectedDepartment === 'All' || getDepartment(r) === selectedDepartment)
+            .forEach((r: any) => {
+                const dept = getDepartment(r);
+                if (!groups.has(dept)) groups.set(dept, []);
+                groups.get(dept)!.push(r);
+            });
+        const latest = (items: any[]) =>
+            Math.max(...items.map((r) => new Date(r.updatedAt || r.date || r.createdAt).getTime() || 0));
+        return Array.from(groups.entries())
+            .sort(([a, aItems], [b, bItems]) => {
+                if (deptSort === 'za') return b.localeCompare(a);
+                if (deptSort === 'recent') return latest(bItems) - latest(aItems);
+                return a.localeCompare(b);
+            })
+            .map(([title, data]) => ({ title, data }));
+    }, [filteredRecords, selectedDepartment, deptSort]);
 
     const getInitials = (name: string) => {
         if (!name) return 'DR';
@@ -257,7 +297,7 @@ export default function PatientRecordsListScreen() {
                         </View>
                         <View style={styles.doctorInfo}>
                             <Text style={styles.doctorNameText}>{doctorName}</Text>
-                            <Text style={styles.specializationText}>MEDICAL RECORD BOOK</Text>
+                            <Text style={styles.specializationText}>{getDepartment(item).toUpperCase()} · RECORD BOOK</Text>
                             
                             <View style={styles.detailRow}>
                                 <Award size={14} color="#64748b" style={styles.inlineIcon} />
@@ -334,25 +374,65 @@ export default function PatientRecordsListScreen() {
 
                 {/* Search Bar */}
                 <View style={styles.searchContainer}>
-                    <View style={styles.searchBar}>
+                    <View style={styles.searchRow}>
+                    <View style={[styles.searchBar, { flex: 1 }]}>
                         <Search size={20} color="#94a3b8" />
                         <TextInput
                             style={styles.searchInput}
-                            placeholder="Search by doctor or hospital..."
+                            placeholder="Search by doctor, department or hospital..."
                             placeholderTextColor="#94a3b8"
                             value={searchQuery}
                             onChangeText={setSearchQuery}
                         />
                     </View>
+                    <TouchableOpacity
+                        style={styles.sortBtn}
+                        onPress={cycleDeptSort}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Sort departments: ${DEPT_SORT_LABELS[deptSort]}`}
+                    >
+                        <ArrowUpDown size={16} color="#0891b2" />
+                        <Text style={styles.sortBtnText}>{DEPT_SORT_LABELS[deptSort]}</Text>
+                    </TouchableOpacity>
+                    </View>
+                    {departments.length > 1 && (
+                        <ScrollView
+                            horizontal
+                            showsHorizontalScrollIndicator={false}
+                            contentContainerStyle={styles.chipRow}
+                        >
+                            {departments.map((dept) => {
+                                const active = dept === selectedDepartment;
+                                return (
+                                    <TouchableOpacity
+                                        key={dept}
+                                        style={[styles.chip, active && styles.chipActive]}
+                                        onPress={() => setSelectedDepartment(dept)}
+                                        accessibilityRole="button"
+                                        accessibilityState={{ selected: active }}
+                                    >
+                                        <Text style={[styles.chipText, active && styles.chipTextActive]}>{dept}</Text>
+                                    </TouchableOpacity>
+                                );
+                            })}
+                        </ScrollView>
+                    )}
                 </View>
 
                 {loading ? (
                     <SkeletonList rows={6} />
                 ) : (
-                    <FlatList
-                        data={filteredRecords}
+                    <SectionList
+                        sections={sections}
                         keyExtractor={(item: any) => item._id}
                         renderItem={renderRecordItem}
+                        stickySectionHeadersEnabled={false}
+                        renderSectionHeader={({ section }) => (
+                            <View style={styles.sectionHeader}>
+                                <Text style={styles.sectionHeaderText}>{section.title}</Text>
+                                <Text style={styles.sectionCount}>{section.data.length}</Text>
+                            </View>
+                        )}
                         contentContainerStyle={[styles.listContent, { paddingBottom: 100 }]}
                         refreshControl={
                             <RefreshControl
@@ -506,6 +586,55 @@ const styles = StyleSheet.create({
     },
     listContent: {
         padding: 20,
+    },
+    chipRow: { gap: 8, paddingTop: 12 },
+    searchRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+    sortBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 5,
+        height: 48,
+        paddingHorizontal: 12,
+        borderRadius: 12,
+        backgroundColor: '#ecfeff',
+        borderWidth: 1,
+        borderColor: '#a5f3fc',
+    },
+    sortBtnText: { fontSize: 12, fontWeight: '700', color: '#0891b2' },
+    chip: {
+        paddingHorizontal: 14,
+        paddingVertical: 7,
+        borderRadius: 999,
+        backgroundColor: '#f1f5f9',
+        borderWidth: 1,
+        borderColor: '#e2e8f0',
+    },
+    chipActive: { backgroundColor: '#06b6d4', borderColor: '#06b6d4' },
+    chipText: { fontSize: 13, fontWeight: '600', color: '#475569' },
+    chipTextActive: { color: '#fff' },
+    sectionHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        marginBottom: 10,
+        marginTop: 4,
+    },
+    sectionHeaderText: {
+        fontSize: 13,
+        fontWeight: '700',
+        color: '#475569',
+        textTransform: 'uppercase',
+        letterSpacing: 0.6,
+    },
+    sectionCount: {
+        fontSize: 12,
+        fontWeight: '700',
+        color: '#0891b2',
+        backgroundColor: '#ecfeff',
+        paddingHorizontal: 8,
+        paddingVertical: 2,
+        borderRadius: 999,
+        overflow: 'hidden',
     },
     doctorCard: {
         backgroundColor: '#fff',
