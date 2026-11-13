@@ -234,16 +234,13 @@ jobs:
       # ---------------------------------------------------------
       # 10. Optional GitHub Release
       # ---------------------------------------------------------
-      - name: Create GitHub Release
+      #     Adds the APK to a draft release; the release is published
+      #     once the iOS workflow has attached its .app.zip too.
+      - name: Attach to GitHub Release
         if: startsWith(github.ref, 'refs/tags/') || inputs.create_github_release == true
-        uses: softprops/action-gh-release@v2
-        with:
-          files: ${{ env.APK_PATH }}
-          name: Release ${{ inputs.release_tag || github.ref_name || env.APK_NAME }}
-          tag_name: ${{ inputs.release_tag || github.ref_name || format('build-{0}', github.run_number) }}
-          generate_release_notes: true
-          draft: false
-          prerelease: false
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ inputs.release_tag || (startsWith(github.ref, 'refs/tags/') && github.ref_name) || format('build-{0}', github.run_number) }}
+        run: bash .github/scripts/attach-to-release.sh "$TAG" "$APK_PATH"
 

@@ -40,6 +40,9 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 60
 
+    outputs:
+      app_zip_name: ${{ steps.prepare.outputs.app_zip_name }}
+
     env:
       LANG: en_US.UTF-8
       LC_ALL: en_US.UTF-8
@@ -181,6 +184,7 @@ jobs:
       # 7. Package .app (must contain the widget extension)
       # ---------------------------------------------------------
       - name: Prepare App
+        id: prepare
         run: |
           set -e
 
@@ -202,6 +206,7 @@ jobs:
 
           echo "APP_ZIP=build_output/$FINAL_NAME" >> "$GITHUB_ENV"
           echo "APP_ZIP_NAME=$FINAL_NAME" >> "$GITHUB_ENV"
+          echo "app_zip_name=$FINAL_NAME" >> "$GITHUB_OUTPUT"
 
           cat >> "$GITHUB_STEP_SUMMARY" << EOF
           ## 🍎 Care101 iOS Simulator App
@@ -238,12 +243,114 @@ jobs:
       # ---------------------------------------------------------
       # 8. Optional GitHub Release (same tag as the Android APK)
       # ---------------------------------------------------------
+      #    Adds the .app.zip to a draft release; the release is published
+      #    once the Android workflow has attached its APK too.
       - name: Attach to GitHub Release
         if: startsWith(github.ref, 'refs/tags/') || inputs.create_github_release == true
-        uses: softprops/action-gh-release@v2
-        with:
-          files: ${{ env.APP_ZIP }}
-          tag_name: ${{ inputs.release_tag || github.ref_name || format('build-{0}', github.run_number) }}
-          generate_release_notes: true
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ inputs.release_tag || (startsWith(github.ref, 'refs/tags/') && github.ref_name) || format('build-{0}', github.run_number) }}
+        run: bash .github/scripts/attach-to-release.sh "$TAG" "$APP_ZIP"
+
+  # -----------------------------------------------------------
+  # Install + launch the built app on specific iPhone simulators
+  # -----------------------------------------------------------
+  test-on-devices:
+    name: Run on ${{ matrix.device }}
+    needs: build-ios-simulator
+    runs-on: macos-26
+    timeout-minutes: 30
+
+    strategy:
+      fail-fast: false
+      matrix:
+        device:
+          - iPhone 17 Pro
+          - iPhone 18 Pro
+
+    steps:
+      - name: Select Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Download App Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.build-ios-simulator.outputs.app_zip_name }}
+          path: artifact
+
+      - name: Boot ${{ matrix.device }} Simulator
+        id: sim
+        env:
+          DEVICE: ${{ matrix.device }}
+        run: |
+          set -eo pipefail
+          xcodebuild -version
+
+          TYPE_ID=$(xcrun simctl list devicetypes -j \
+            | jq -r --arg n "$DEVICE" '.devicetypes[] | select(.name == $n) | .identifier' | head -1)
+          if [ -z "$TYPE_ID" ]; then
+            echo "::error::'$DEVICE' simulator is not available in this Xcode. Available iPhones:"
+            xcrun simctl list devicetypes | grep -i iphone
+            exit 1
+          fi
+
+          # Newest installed iOS runtime that supports this device type
+          RUNTIME_ID=$(xcrun simctl list runtimes -j | jq -r --arg t "$TYPE_ID" '
+            [.runtimes[]
+              | select(.platform == "iOS" and .isAvailable)
+              | select(any(.supportedDeviceTypes[]?; .identifier == $t))]
+            | sort_by(.version | split(".") | map(tonumber)) | last | .identifier // empty')
+          if [ -z "$RUNTIME_ID" ]; then
+            echo "::error::No installed iOS runtime supports '$DEVICE'."
+            xcrun simctl list runtimes
+            exit 1
+          fi
+
+          UDID=$(xcrun simctl create "Care101 $DEVICE" "$TYPE_ID" "$RUNTIME_ID")
+          echo "Created $DEVICE ($RUNTIME_ID): $UDID"
+          xcrun simctl bootstatus "$UDID" -b
+          echo "udid=$UDID" >> "$GITHUB_OUTPUT"
+          echo "runtime=$RUNTIME_ID" >> "$GITHUB_OUTPUT"
+
+      - name: Install and Launch App
+        env:
+          UDID: ${{ steps.sim.outputs.udid }}
+          DEVICE: ${{ matrix.device }}
+        run: |
+          set -eo pipefail
+
+          ZIP=$(ls artifact/*.app.zip | head -1)
+          ditto -x -k "$ZIP" app
+          APP=$(ls -d app/*.app | head -1)
+          BUNDLE_ID=$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$APP/Info.plist")
+
+          xcrun simctl install "$UDID" "$APP"
+          xcrun simctl launch "$UDID" "$BUNDLE_ID"
+
+          # Give the app time to start; it must still be running afterwards
+          sleep 25
+          if ! xcrun simctl spawn "$UDID" launchctl list | grep -q "UIKitApplication:$BUNDLE_ID"; then
+            echo "::error::App exited or crashed on $DEVICE shortly after launch."
+            exit 1
+          fi
+
+          SHOT="screenshot-${DEVICE// /-}.png"
+          xcrun simctl io "$UDID" screenshot "$SHOT"
+          echo "SHOT=$SHOT" >> "$GITHUB_ENV"
+
+          cat >> "$GITHUB_STEP_SUMMARY" << EOF
+          ### ✅ $DEVICE
+          Installed and launched \`$BUNDLE_ID\` on \`${{ steps.sim.outputs.runtime }}\`; app still running after 25s.
+          EOF
+
+      - name: Upload Screenshot
+        if: always() && env.SHOT != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.SHOT }}
+          path: ${{ env.SHOT }}
+          if-no-files-found: ignore
+          retention-days: 14
