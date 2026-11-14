@@ -15,6 +15,7 @@ import { clearAdminSession, getAdminToken, getAdminUser } from "@/lib/adminSessi
 import { useLiveRefresh } from "@/lib/useLiveRefresh";
 import { Skeleton } from "@/components/ui/skeleton";
 import { playDingSound } from "@/lib/soundUtils";
+import { isDelayAlertForCurrentUser } from "@/lib/delayAlerts";
 
 export default function Dashboard() {
   const router = useRouter();
@@ -130,7 +131,9 @@ export default function Dashboard() {
     },
     {
       on: {
-        doctorDelayAlert: () => playDingSound(),
+        doctorDelayAlert: (alertData: any) => {
+          if (isDelayAlertForCurrentUser(alertData)) playDingSound();
+        },
       },
     }
   );

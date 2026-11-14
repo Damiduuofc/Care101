@@ -204,10 +204,12 @@ export default function BillingPage() {
         return () => clearTimeout(t);
     }, [billingSearchQuery]);
     const [historyTotal, setHistoryTotal] = useState(0);
+    // Status filter for billing history (applied on the server, across all pages)
+    const [statusFilter, setStatusFilter] = useState<"all" | "unpaid" | "paid">("all");
     const [totalRevenue, setTotalRevenue] = useState(0);
     const { page, setPage, pageSize, setPageSize } = usePagination(historyTotal, {
         pageSize: 20,
-        resetOn: [debouncedBillingSearch],
+        resetOn: [debouncedBillingSearch, statusFilter],
     });
     const filteredHistory = history;
 
@@ -308,6 +310,7 @@ export default function BillingPage() {
             const token = getAdminToken();
             const params = new URLSearchParams({ page: String(page), limit: String(pageSize) });
             if (debouncedBillingSearch) params.set("q", debouncedBillingSearch);
+            if (statusFilter !== "all") params.set("status", statusFilter);
             const res = await fetch(`${API_URL}/admin/bills/all?${params}`, {
                 headers: { "x-auth-token": token || "", "ngrok-skip-browser-warning": "true" }
             });
@@ -377,7 +380,7 @@ const fetchHistoryAndDoctors = async () => {
         }
         fetchHistory();
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [page, pageSize, debouncedBillingSearch]);
+    }, [page, pageSize, debouncedBillingSearch, statusFilter]);
 
     // Live: payments and new bills from other desks appear without a reload
     useLiveRefresh(() => fetchHistoryAndDoctors());
@@ -768,7 +771,32 @@ const fetchHistoryAndDoctors = async () => {
     </Button>
   </div>
 
-  <div className="flex items-center gap-3 w-full sm:w-auto">
+  <div className="flex flex-col sm:flex-row sm:items-center gap-3 w-full sm:w-auto">
+    <div className="inline-flex rounded-lg border border-slate-200 bg-white p-0.5 text-xs font-medium self-start sm:self-auto" role="group" aria-label="Filter bills by status">
+      {([
+        { value: "all", label: "All" },
+        { value: "unpaid", label: "Unpaid" },
+        { value: "paid", label: "Paid" },
+      ] as const).map(opt => (
+        <button
+          key={opt.value}
+          type="button"
+          aria-pressed={statusFilter === opt.value}
+          onClick={() => setStatusFilter(opt.value)}
+          className={`px-3 h-8 rounded-md transition-colors ${
+            statusFilter === opt.value
+              ? opt.value === "unpaid"
+                ? "bg-amber-100 text-amber-700"
+                : opt.value === "paid"
+                  ? "bg-emerald-100 text-emerald-700"
+                  : "bg-[#06b6d4] text-white"
+              : "text-slate-600 hover:bg-slate-50"
+          }`}
+        >
+          {opt.label}
+        </button>
+      ))}
+    </div>
     <div className="relative w-full sm:w-64">
       <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
       <Input

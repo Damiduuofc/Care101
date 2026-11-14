@@ -15,25 +15,25 @@ export const ROLE_META: Record<string, RoleMeta> = {
   system_admin: {
     label: "System Admin",
     dashboard: "System Admin Dashboard",
-    description: "Doctors, staff, billing and hospital settings.",
+    description: "",
     icon: ShieldCheck,
   },
   nurse: {
     label: "Nurse",
     dashboard: "Nurse Dashboard",
-    description: "Today's OPD queue, arrivals and your assigned doctors.",
+    description: "Today's OPD queue",
     icon: HeartPulse,
   },
   receptionist: {
     label: "Receptionist",
     dashboard: "Receptionist Dashboard",
-    description: "Bookings, payments, arrivals and room allocation.",
+    description: "",
     icon: ConciergeBell,
   },
   lab_assistant: {
     label: "Lab Assistant",
     dashboard: "Lab Assistant Dashboard",
-    description: "Lab requests and patient reports.",
+    description: "",
     icon: FlaskConical,
   },
 };

@@ -615,7 +615,7 @@ const combinedBillsPipeline = (billed) => [
   },
 ];
 
-// Paginated: ?page=1&limit=20&q=<patient name or id>
+// Paginated: ?page=1&limit=20&q=<patient name or id>&status=<all|paid|unpaid>
 // -> { items, total, page, limit, totalPages, summary: { revenue } } (revenue over all bills, like before)
 const listBillsPage = async (query, paging) => {
   const billed = await appointmentIdsWithBills();
@@ -625,6 +625,10 @@ const listBillsPage = async (query, paging) => {
     const rx = { $regex: escapeRegex(q), $options: "i" };
     match.patientId = { $in: await Patient.find({ $or: [{ fullName: rx }, { patientId: rx }] }).distinct("_id") };
   }
+  // ?status=unpaid -> everything not paid (Pending etc.), ?status=paid -> paid only
+  const status = String(query.status || "").trim().toLowerCase();
+  if (status === "paid") match.status = { $regex: "^paid$", $options: "i" };
+  else if (status === "unpaid") match.status = { $not: /^paid$/i };
 
   const [facet] = await Bill.aggregate([
     ...combinedBillsPipeline(billed),

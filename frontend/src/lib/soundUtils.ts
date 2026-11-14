@@ -156,56 +156,41 @@ function playSynthesizedChime(ctx: AudioContext) {
   }
 }
 
+// Plays exactly ONE ding: the preloaded buffer when audio is unlocked, otherwise an HTML5
+// <audio> element (WAV, then MP3), and only if both fail, the synthesized chime.
 export const playDingSound = () => {
   if (typeof window === "undefined") return;
 
   unlockAudio();
 
   const ctx = getAudioContext();
-  let playedViaBuffer = false;
 
-  // 1. If we have a decoded AudioBuffer and running context, play it directly
-  if (ctx && cachedAudioBuffer) {
+  // 1. Decoded AudioBuffer on a running context: lowest latency
+  if (ctx && cachedAudioBuffer && ctx.state === "running") {
     try {
-      const playBuffer = () => {
-        const source = ctx.createBufferSource();
-        const gain = ctx.createGain();
-        source.buffer = cachedAudioBuffer;
-        gain.gain.setValueAtTime(1.0, ctx.currentTime);
-        source.connect(gain);
-        gain.connect(ctx.destination);
-        source.start(0);
-      };
-
-      if (ctx.state === "suspended") {
-        ctx.resume().then(playBuffer).catch(() => {});
-      } else {
-        playBuffer();
-      }
-      playedViaBuffer = true;
+      const source = ctx.createBufferSource();
+      const gain = ctx.createGain();
+      source.buffer = cachedAudioBuffer;
+      gain.gain.setValueAtTime(1.0, ctx.currentTime);
+      source.connect(gain);
+      gain.connect(ctx.destination);
+      source.start(0);
+      return;
     } catch (e) {
       console.warn("AudioBuffer playback failed:", e);
     }
   }
 
-  // 2. Synthesized Web Audio chime (guaranteed fallback with zero network requirements)
-  if (ctx && !playedViaBuffer) {
-    playSynthesizedChime(ctx);
-  }
-
-  // 3. Concurrently trigger standard HTML5 Audio with WAV/MP3 fallback
-  try {
-    const audio = new Audio("/Ding.wav");
+  // 2. HTML5 Audio (WAV, then MP3), 3. synthesized chime as the last resort
+  const playFile = (src: string) => {
+    const audio = new Audio(src);
     audio.volume = 1.0;
-    const playPromise = audio.play();
-    if (playPromise !== undefined) {
-      playPromise.catch(() => {
-        const mp3 = new Audio("/Ding.mp3");
-        mp3.volume = 1.0;
-        mp3.play().catch(() => {});
-      });
-    }
-  } catch (err) {
-    console.warn("HTML5 audio playback error:", err);
-  }
+    return audio.play();
+  };
+  playFile("/Ding.wav")
+    .catch(() => playFile("/Ding.mp3"))
+    .catch((err) => {
+      console.warn("HTML5 audio playback failed, using synthesized chime:", err);
+      if (ctx) playSynthesizedChime(ctx);
+    });
 };

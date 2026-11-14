@@ -14,6 +14,7 @@ import { useRouter } from "next/navigation";
 import { clearAdminSession, getAdminToken, getAdminUser } from "@/lib/adminSession";
 import { io } from "socket.io-client";
 import { playDingSound } from "@/lib/soundUtils";
+import { isDelayAlertForCurrentUser } from "@/lib/delayAlerts";
 import NurseHeader from "@/components/admin/NurseHeader";
 import LabTestPicker from "@/components/admin/LabTestPicker";
 import { useSidebar } from "@/components/admin/SidebarContext";
@@ -504,7 +505,7 @@ export default function NurseQueueDashboard() {
 
         socket.on("doctorDelayAlert", (alertData: any) => {
             console.log("🚨 Received doctor delay alert in queue dashboard:", alertData);
-            playDingSound();
+            if (isDelayAlertForCurrentUser(alertData)) playDingSound();
             if (alertData?.doctorId) {
                 setDoctors(prev => prev.map(d => {
                     if (d._id !== alertData.doctorId) return d;

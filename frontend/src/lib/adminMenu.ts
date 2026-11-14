@@ -11,7 +11,8 @@ import {
   Clock,
   Lock,
   FileText,
-  FlaskConical
+  FlaskConical,
+  Contact
 } from "lucide-react";
 
 export const menuItems = [
@@ -73,6 +74,12 @@ export const menuItems = [
     roles: ["receptionist"],
   },
 
+  {
+    title: "Patients",
+    href: "/admin/patients",
+    icon: Contact,
+    roles: ["receptionist", "system_admin"],
+  },
   {
     title: "Billing & Invoices",
     href: "/admin/billing",

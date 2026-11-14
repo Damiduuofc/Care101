@@ -21,6 +21,7 @@ import { useRouter } from "next/navigation";
 import { clearAdminSession, getAdminToken, getAdminUser } from "@/lib/adminSession";
 import { io, Socket } from "socket.io-client";
 import { playDingSound } from "@/lib/soundUtils";
+import { isDelayAlertForCurrentUser } from "@/lib/delayAlerts";
 import NurseHeader from "@/components/admin/NurseHeader";
 import { useSidebar } from "@/components/admin/SidebarContext";
 
@@ -144,14 +145,17 @@ export default function NurseDoctorArrivals() {
                 read: false
             };
 
-            // Prepend alert to notification list
-            setNotifications(prev => [newAlert, ...prev]);
+            // Only alert the nurse this doctor is allocated to (the server broadcasts to all staff)
+            if (isDelayAlertForCurrentUser(alertData)) {
+                // Prepend alert to notification list
+                setNotifications(prev => [newAlert, ...prev]);
 
-            // Open Alert Popup Modal immediately
-            setActiveModalAlert(newAlert);
+                // Open Alert Popup Modal immediately
+                setActiveModalAlert(newAlert);
 
-            // Play notification chime
-            playAlertChime();
+                // Play notification chime
+                playAlertChime();
+            }
 
             // Also update doctor status in the local state
             setDoctors(prev => prev.map(d => {
