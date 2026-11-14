@@ -267,7 +267,7 @@ jobs:
       matrix:
         device:
           - iPhone 17 Pro
-          - iPhone 18 Pro
+          - iPhone 17 Pro Max
 
     steps:
       - name: Select Xcode
