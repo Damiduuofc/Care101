@@ -104,7 +104,10 @@ export const syncAllLiveAllocations = async (io, now = new Date()) => {
     if (!doctor) continue;
     const open = await openSessionsToday(doctor._id, now);
     const before = `${doctor.allocatedRoom}|${doctor.allocatedNurse}`;
-    if (applyLiveAllocation(doctor, open, now)) {
+    // Same rule as syncDoctorLiveAllocation: a day flagged "ended" with a session still open is stale
+    const reopened = open.length > 0 && doctor.sessionEndedToday;
+    if (reopened) doctor.sessionEndedToday = false;
+    if (applyLiveAllocation(doctor, open, now) || reopened) {
       console.log(`[Live-Allocation] Dr. ${doctor.name}: ${before} -> ${doctor.allocatedRoom}|${doctor.allocatedNurse}`);
       await doctor.save();
       emitDoctorStatus(io, doctor);

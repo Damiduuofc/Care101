@@ -971,14 +971,14 @@ function RequestCard({ req, onAction, onDelete, loadingId, isHistory, formatDate
     return (
         <Card className={`group border-slate-200 shadow-sm overflow-hidden transition-all duration-300 ${isHistory ? 'bg-slate-50/50' : 'hover:shadow-md hover:border-cyan-500/30 bg-white'}`}>
             <CardContent className="p-5">
-                <div className="flex flex-col lg:flex-row items-center justify-between gap-6">
+                <div className="flex flex-col gap-4 lg:grid lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)_15rem] lg:items-center lg:gap-6">
                     
                     {/* 1. Doctor Profile */}
-                    <div className="flex items-center gap-4 w-full lg:w-1/3">
-                        <div className={`h-12 w-12 rounded-xl flex items-center justify-center ${isHistory ? 'bg-slate-200 text-slate-500' : 'bg-cyan-50 text-cyan-600'}`}>
+                    <div className="flex items-center gap-4 w-full min-w-0">
+                        <div className={`h-12 w-12 shrink-0 rounded-xl flex items-center justify-center ${isHistory ? 'bg-slate-200 text-slate-500' : 'bg-cyan-50 text-cyan-600'}`}>
                             <User size={24} />
                         </div>
-                        <div>
+                        <div className="min-w-0">
                             <h3 className="font-bold text-slate-800 leading-tight">{req.doctorName}</h3>
                             <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">{req.specialization || "Medical Staff"}</p>
                             {isHospitalRequest && (
@@ -993,14 +993,14 @@ function RequestCard({ req, onAction, onDelete, loadingId, isHistory, formatDate
                     </div>
 
                     {/* 2. Timing */}
-                    <div className="flex flex-wrap items-center gap-5 w-full lg:w-auto">
-                        <div className="flex items-center gap-2 text-slate-600">
-                            <CalendarDays size={18} className="text-cyan-600" />
+                    <div className="flex flex-wrap items-center gap-x-5 gap-y-2 w-full min-w-0">
+                        <div className="flex items-center gap-2 text-slate-600 lg:w-32 shrink-0">
+                            <CalendarDays size={18} className="text-cyan-600 shrink-0" />
                             <span className="text-sm font-medium">{formatDate(req.date)}</span>
                         </div>
-                        <div className="flex items-center gap-2 text-slate-600">
-                            <Clock size={18} className="text-cyan-600" />
-                            <span className="text-sm font-medium">{formatTime(req.startTime)} – {formatTime(req.endTime)}</span>
+                        <div className="flex items-center gap-2 text-slate-600 lg:w-44 shrink-0">
+                            <Clock size={18} className="text-cyan-600 shrink-0" />
+                            <span className="text-sm font-medium tabular-nums">{formatTime(req.startTime)} – {formatTime(req.endTime)}</span>
                         </div>
                         <Badge variant="outline" className="border-slate-200 text-slate-500 font-bold">
                             {req.isUnlimited ? "∞ Unlimited" : `${req.queueLimit || 0} Slots`}
@@ -1013,7 +1013,7 @@ function RequestCard({ req, onAction, onDelete, loadingId, isHistory, formatDate
                     </div>
 
                     {/* 3. Actions */}
-                    <div className="flex items-center gap-3 w-full lg:w-auto justify-end">
+                    <div className="flex items-center gap-3 w-full justify-end">
                         {isHistory ? (
                             <div className="flex items-center gap-2">
                                 <Badge className={`${getStatusBadge(req.status)} border-none px-3 py-1 uppercase text-[10px]`}>

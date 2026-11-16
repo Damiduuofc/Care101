@@ -1,0 +1,53 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "backend",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "--prefix",
+        "backend",
+        "start"
+      ],
+      "port": 5002
+    },
+    {
+      "name": "web-portal",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "--prefix",
+        "frontend",
+        "run",
+        "dev"
+      ],
+      "port": 9002
+    },
+    {
+      "name": "backend-qa",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "MONGO_URI=mongodb://127.0.0.1:27099/test",
+        "PORT=5002",
+        "STRIPE_SECRET_KEY=sk_test_dummy",
+        "npm",
+        "--prefix",
+        "backend",
+        "start"
+      ],
+      "port": 5002
+    },
+    {
+      "name": "web-qa",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "NEXT_PUBLIC_API_URL=http://localhost:5002/api",
+        "npm",
+        "--prefix",
+        "frontend",
+        "run",
+        "dev"
+      ],
+      "port": 9002
+    }
+  ]
+}

@@ -73,13 +73,6 @@ export const menuItems = [
     icon: Clock,
     roles: ["receptionist"],
   },
-
-  {
-    title: "Patients",
-    href: "/admin/patients",
-    icon: Contact,
-    roles: ["receptionist", "system_admin"],
-  },
   {
     title: "Billing & Invoices",
     href: "/admin/billing",

@@ -1,0 +1,114 @@
+✔ D-01 the doctor shows on the assigned nurse's list, and on nobody else's (636.67525ms)
+✔ D-02 reception changes the nurse: doctor moves to the new nurse, old nurse is locked out (26.09575ms)
+✔ D-03 a nurse already booked at the same time cannot be assigned twice (409) (9.662625ms)
+✔ D-04 nurses cannot allocate nurses/rooms (8.600416ms)
+✔ D-05 full queue cycle: start -> next -> complete -> end (33.6615ms)
+✔ D-06 patient queue status counts only paid patients ahead (12.406875ms)
+✔ D-07 simultaneous bookings never share a queue token (15.374417ms)
+[Live-Allocation] Dr. Perera: | -> Room 1|Nimali
+[Live-Allocation] Dr. Perera: Room 1|Nimali -> |
+✔ D-08 live-allocation job restores a released nurse and releases when no session is left (9.742125ms)
+[Live-Allocation] Dr. Perera: | -> Room 1|Nimali
+✔ D-09 a new session after the day was flagged ended lets the doctor start again (11.64275ms)
+✔ D-10 live queue endpoint reports serving token and paid count (10.969209ms)
+✔ QA-01 assigning a nurse puts the doctor (and patients) on that nurse's queue (0.396625ms)
+✔ QA-02 changing the nurse moves the doctor from the old nurse to the new one (0.056ms)
+✔ QA-03 changing the nurse while the queue is LIVE moves it to the new nurse (0.169541ms)
+✔ QA-04 re-assigning the same nurse changes nothing (0.04475ms)
+✔ QA-05 editing a LATER session's nurse does not take the queue from the current nurse (0.048375ms)
+✔ QA-06 a live session running past its end time keeps its nurse, not the next session's (0.046917ms)
+✔ QA-07 after the first session ends, the next session's nurse takes over (0.042333ms)
+✔ QA-08 no open session left -> nurse released, doctor vanishes from every queue (0.039292ms)
+✔ QA-09 a late doctor (session time passed, not ended) stays on the nurse (0.057125ms)
+✔ QA-10 a session with no nurse assigned leaves the doctor on nobody's queue (0.062042ms)
+✔ QA-11 nurse matching ignores case and surrounding spaces (0.038458ms)
+✔ QA-12 pickCurrentSession: live queue follows the started session even if it is not the earliest (0.045209ms)
+✔ QA-13 two doctors on different nurses never show up on each other's queue (0.274791ms)
+✔ Q-01 unauthenticated and patient callers are rejected (19.079625ms)
+✔ Q-02 unknown doctor returns 404 (1.5945ms)
+✔ Q-03 the allocated nurse can start the session; live room/nurse follow the session (2.637916ms)
+✔ Q-04 start lands on the first PAID token (unpaid skipped) (1.257125ms)
+✔ Q-05 a different nurse cannot run another nurse's doctor (0.944291ms)
+✔ Q-06 a nurse with no allocation or unknown account is refused (2.218792ms)
+✔ Q-07 receptionist and admin are not limited by nurse allocation (1.80775ms)
+✔ Q-08 cannot start before the doctor is marked arrived (0.684167ms)
+✔ Q-09 increment / decrement move the serving token; decrement never goes below 0 (2.53075ms)
+✔ Q-10 explicit currentServingNumber sets the token (0.926458ms)
+✔ Q-11 completing an appointment marks it completed and logs consultation history (0.954375ms)
+✔ Q-12 completing another doctor's appointment is ignored (0.849209ms)
+✔ Q-13 ending a session releases the nurse, hands over to the next session, broadcasts nurseReleased (0.786542ms)
+✔ Q-14 ending the last session of the day marks the day ended and blocks restart (0.781125ms)
+✔ Q-15 queueUpdated is broadcast with serving token, nurse and room (0.61275ms)
+✔ Q-16 changing the nurse mid-day: old nurse locked out, new nurse in, doctor re-synced (1.212708ms)
+✔ Q-17 patients ahead / notifications use paid tokens only (0.637958ms)
+[dotenv@17.2.3] injecting env (17) from .env -- tip: 🔐 prevent building .env in docker: https://dotenvx.com/prebuild
+[dotenv@17.2.3] injecting env (0) from .env -- tip: 🔐 encrypt with Dotenvx: https://dotenvx.com
+Error getting next patient ID: MongooseError: Cannot call `patients.findOne()` before initial connection is complete if `bufferCommands = false`. Make sure you `await mongoose.connect()` if you have `bufferCommands = false`.
+    at NativeCollection.<computed> [as findOne] (/Users/damiduuofc/Documents/Care101/backend/node_modules/mongoose/lib/drivers/node-mongodb-native/collection.js:237:15)
+    at model.Query._findOne (/Users/damiduuofc/Documents/Care101/backend/node_modules/mongoose/lib/query.js:2721:45)
+    at model.Query.exec (/Users/damiduuofc/Documents/Care101/backend/node_modules/mongoose/lib/query.js:4627:80)
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at async getNextPatientId (file:///Users/damiduuofc/Documents/Care101/backend/controllers/authController.js:482:25)
+Error fetching public doctors: Cannot call `doctors.find()` before initial connection is complete if `bufferCommands = false`. Make sure you `await mongoose.connect()` if you have `bufferCommands = false`.
+Login Error: Cannot call `admins.findOne()` before initial connection is complete if `bufferCommands = false`. Make sure you `await mongoose.connect()` if you have `bufferCommands = false`.
+Forgot Password Error: MongooseError: Cannot call `admins.findOne()` before initial connection is complete if `bufferCommands = false`. Make sure you `await mongoose.connect()` if you have `bufferCommands = false`.
+    at NativeCollection.<computed> [as findOne] (/Users/damiduuofc/Documents/Care101/backend/node_modules/mongoose/lib/drivers/node-mongodb-native/collection.js:237:15)
+    at model.Query._findOne (/Users/damiduuofc/Documents/Care101/backend/node_modules/mongoose/lib/query.js:2721:45)
+    at model.Query.exec (/Users/damiduuofc/Documents/Care101/backend/node_modules/mongoose/lib/query.js:4627:80)
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at async file:///Users/damiduuofc/Documents/Care101/backend/routes/adminRoutes.js:1485:19
+Reset Password Error: MongooseError: Cannot call `admins.findOne()` before initial connection is complete if `bufferCommands = false`. Make sure you `await mongoose.connect()` if you have `bufferCommands = false`.
+    at NativeCollection.<computed> [as findOne] (/Users/damiduuofc/Documents/Care101/backend/node_modules/mongoose/lib/drivers/node-mongodb-native/collection.js:237:15)
+    at model.Query._findOne (/Users/damiduuofc/Documents/Care101/backend/node_modules/mongoose/lib/query.js:2721:45)
+    at model.Query.exec (/Users/damiduuofc/Documents/Care101/backend/node_modules/mongoose/lib/query.js:4627:80)
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at async file:///Users/damiduuofc/Documents/Care101/backend/routes/adminRoutes.js:1529:19
+Error fetching shared instruction: MongooseError: Cannot call `instructionshares.findOne()` before initial connection is complete if `bufferCommands = false`. Make sure you `await mongoose.connect()` if you have `bufferCommands = false`.
+    at NativeCollection.<computed> [as findOne] (/Users/damiduuofc/Documents/Care101/backend/node_modules/mongoose/lib/drivers/node-mongodb-native/collection.js:237:15)
+    at model.Query._findOne (/Users/damiduuofc/Documents/Care101/backend/node_modules/mongoose/lib/query.js:2721:45)
+    at model.Query.exec (/Users/damiduuofc/Documents/Care101/backend/node_modules/mongoose/lib/query.js:4627:80)
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at async file:///Users/damiduuofc/Documents/Care101/backend/routes/instructionRoutes.js:596:19
+Error rendering patient instruction view: MongooseError: Cannot call `instructionshares.findOne()` before initial connection is complete if `bufferCommands = false`. Make sure you `await mongoose.connect()` if you have `bufferCommands = false`.
+    at NativeCollection.<computed> [as findOne] (/Users/damiduuofc/Documents/Care101/backend/node_modules/mongoose/lib/drivers/node-mongodb-native/collection.js:237:15)
+    at model.Query._findOne (/Users/damiduuofc/Documents/Care101/backend/node_modules/mongoose/lib/query.js:2721:45)
+    at model.Query.exec (/Users/damiduuofc/Documents/Care101/backend/node_modules/mongoose/lib/query.js:4627:80)
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at async handlePatientInstructionsView (file:///Users/damiduuofc/Documents/Care101/backend/routes/instructionRoutes.js:466:19)
+Error rendering patient instruction view: MongooseError: Cannot call `instructionshares.findOne()` before initial connection is complete if `bufferCommands = false`. Make sure you `await mongoose.connect()` if you have `bufferCommands = false`.
+    at NativeCollection.<computed> [as findOne] (/Users/damiduuofc/Documents/Care101/backend/node_modules/mongoose/lib/drivers/node-mongodb-native/collection.js:237:15)
+    at model.Query._findOne (/Users/damiduuofc/Documents/Care101/backend/node_modules/mongoose/lib/query.js:2721:45)
+    at model.Query.exec (/Users/damiduuofc/Documents/Care101/backend/node_modules/mongoose/lib/query.js:4627:80)
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at async handlePatientInstructionsView (file:///Users/damiduuofc/Documents/Care101/backend/routes/instructionRoutes.js:466:19)
+Error rendering patient instruction view: MongooseError: Cannot call `instructionshares.findOne()` before initial connection is complete if `bufferCommands = false`. Make sure you `await mongoose.connect()` if you have `bufferCommands = false`.
+    at NativeCollection.<computed> [as findOne] (/Users/damiduuofc/Documents/Care101/backend/node_modules/mongoose/lib/drivers/node-mongodb-native/collection.js:237:15)
+    at model.Query._findOne (/Users/damiduuofc/Documents/Care101/backend/node_modules/mongoose/lib/query.js:2721:45)
+    at model.Query.exec (/Users/damiduuofc/Documents/Care101/backend/node_modules/mongoose/lib/query.js:4627:80)
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at async handlePatientInstructionsView (file:///Users/damiduuofc/Documents/Care101/backend/routes/instructionRoutes.js:466:19)
+✔ SYS-01 every route module loads and registers routes (214.168291ms)
+✔ SYS-02 no protected route crashes (5xx) or hangs when called without a token (0.519708ms)
+✔ SYS-04 doctor registration with an empty body is a 400, not a server crash (0.056ms)
+✔ SYS-03 every route that is not an intended public one rejects anonymous callers (0.074792ms)
+✔ UT-01 valid Sri Lankan mobile numbers are accepted (0.548958ms)
+✔ UT-02 invalid phone numbers are rejected (0.16375ms)
+✔ UT-03 pagination is opt-in and clamps page/limit (0.332083ms)
+✔ UT-04 page response reports total pages (0.057667ms)
+✔ UT-05 queue day key is formatted YYYY-MM-DD (0.412875ms)
+✔ UT-06 only clinical roles may view any patient (0.069875ms)
+✔ UT-07 search input is escaped before use in a regular expression (0.117959ms)
+✔ UT-08 doctor arrival only counts for today (0.284125ms)
+✔ UT-09 stale doctor session from an earlier day is cleared (0.094917ms)
+✔ UT-10 queue is live only when doctor arrived today and session started (0.082958ms)
+✔ UT-11 doctor specialization maps to the correct room department (0.106208ms)
+✔ UT-12 role guard blocks users without an allowed role (0.130917ms)
+✔ UT-13 login rate limiter returns 429 after the limit (0.139792ms)
+ℹ tests 57
+ℹ suites 0
+ℹ pass 57
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1380.498708

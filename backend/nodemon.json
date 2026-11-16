@@ -1,4 +1,5 @@
 {
   "watch": [".", ".env"],
+  "ignore": ["tests/"],
   "ext": "js,mjs,json,env"
 }

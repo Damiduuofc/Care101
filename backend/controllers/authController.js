@@ -11,6 +11,10 @@ import { sendPatientWelcomeEmail, sendPasswordResetOtp } from "../utils/emailSer
 export const registerDoctor = async (req, res) => {
   try {
     const { fullName, email, password, specialization, nicNumber, phoneNumber, slmcRegistrationNumber, nameWithInitials } = req.body;
+    if (!fullName || !email || typeof password !== "string" || !password) {
+      const msg = "Full name, email and password are required.";
+      return res.status(400).json({ msg, message: msg });
+    }
     if (phoneNumber && !isValidPhone(phoneNumber)) {
       return res.status(400).json({ msg: PHONE_HINT, message: PHONE_HINT });
     }

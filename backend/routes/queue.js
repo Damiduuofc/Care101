@@ -1,6 +1,7 @@
 import express from "express";
 import { protect, authorize } from "../middleware/authRole.js";
 import Doctor from "../models/Doctor.js";
+import Admin from "../models/Admin.js";
 
 import Appointment from "../models/Appointment.js";
 import ScheduleRequest from "../models/ScheduleRequest.js";
@@ -31,6 +32,15 @@ router.post("/update", protect, authorize(["doctor", "nurse", "receptionist", "s
     // Today's open sessions, earliest first; the live room/nurse always follows one of them
     const open = await openSessionsToday(doctor._id);
     if (!doctor.sessionEndedToday) applyLiveAllocation(doctor, open);
+
+    // A nurse may only run the queue of a doctor allocated to them (reception/admin/doctor are not limited)
+    if (req.user?.role === "nurse") {
+      const nurse = await Admin.findById(req.user.id).select("name");
+      const mine = String(doctor.allocatedNurse || "").trim().toLowerCase();
+      if (!nurse || !mine || mine !== String(nurse.name || "").trim().toLowerCase()) {
+        return res.status(403).json({ msg: "This doctor is not allocated to you." });
+      }
+    }
 
     if (action === "start") {
       // A check-in left over from an earlier day does not count
@@ -93,7 +103,7 @@ router.post("/update", protect, authorize(["doctor", "nurse", "receptionist", "s
     // Log consultation history on completion
     if (appointmentId && action === "complete") {
       const appt = await Appointment.findById(appointmentId);
-      if (appt) {
+      if (appt && String(appt.doctorId) === String(doctor._id)) {
         appt.status = "completed";
         appt.consultationEndTime = new Date();
         await appt.save();

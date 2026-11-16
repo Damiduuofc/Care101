@@ -43,3 +43,6 @@ Thumbs.db
 *.key
 *.mobileprovision
 backend/.env
+
+# Local database backups (contain personal data)
+backend/backups/

@@ -26,7 +26,7 @@ export const ROLE_META: Record<string, RoleMeta> = {
   },
   receptionist: {
     label: "Receptionist",
-    dashboard: "Receptionist Dashboard",
+    dashboard: "Receptionist Dask",
     description: "",
     icon: ConciergeBell,
   },
